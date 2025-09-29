@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import pLimit from 'p-limit';
 import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -56,10 +55,9 @@ export async function POST(req: NextRequest) {
     await sql`SELECT id, name, code FROM hotels ORDER BY id ASC`
   ).rows as Array<{ id: number; name: string; code: string }>;
 
-  const limit = pLimit(10);
   const results: Record<string, Record<string, 'green' | 'red'>> = {};
-  const tasks: Promise<void>[] = [];
 
+  // Simple sequential loop: fewer moving parts, no bundler issues
   for (const h of hotels) {
     results[h.code] = {};
     for (const checkIn of checkInDates) {
@@ -74,49 +72,41 @@ export async function POST(req: NextRequest) {
         locale: 'de_DE',
       };
 
-      const task = limit(async () => {
-        let status: 'green' | 'red' = 'red';
-        try {
-          const res = await fetch(`${BASE_URL}/hotel/offer`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            cache: 'no-store',
-          });
-          if (res.status === 200) {
-            const text = (await res.text()).trim();
-            if (text.startsWith('data')) {
-              status = 'green';
-            } else {
-              try {
-                const j = JSON.parse(text);
-                if (Object.prototype.hasOwnProperty.call(j, 'data')) {
-                  status = 'green';
-                }
-              } catch {
-                // ignore JSON parse error, keep red
-              }
+      let status: 'green' | 'red' = 'red';
+      try {
+        const res = await fetch(`${BASE_URL}/hotel/offer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          cache: 'no-store',
+        });
+        if (res.status === 200) {
+          const text = (await res.text()).trim();
+          if (text.startsWith('data')) {
+            status = 'green';
+          } else {
+            try {
+              const j = JSON.parse(text);
+              if (Object.prototype.hasOwnProperty.call(j, 'data')) status = 'green';
+            } catch {
+              // keep red
             }
           }
-        } catch {
-          // network error → keep red
         }
+      } catch {
+        // keep red
+      }
 
-        results[h.code][checkIn] = status;
+      results[h.code][checkIn] = status;
 
-        await sql`
-          INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status)
-          VALUES (${scan.id}, ${h.id}, ${checkIn}, ${status})
-          ON CONFLICT (scan_id, hotel_id, check_in_date)
-          DO UPDATE SET status = EXCLUDED.status
-        `;
-      });
-
-      tasks.push(task);
+      await sql`
+        INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status)
+        VALUES (${scan.id}, ${h.id}, ${checkIn}, ${status})
+        ON CONFLICT (scan_id, hotel_id, check_in_date)
+        DO UPDATE SET status = EXCLUDED.status
+      `;
     }
   }
-
-  await Promise.all(tasks);
 
   return NextResponse.json({
     scanId: scan.id,
