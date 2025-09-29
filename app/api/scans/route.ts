@@ -4,7 +4,8 @@ import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
-const BASE_URL = process.env.AMELLO_BASE_URL || 'https://prod-api.amello.plusline.net/api/v1';
+const BASE_URL =
+  process.env.AMELLO_BASE_URL || 'https://prod-api.amello.plusline.net/api/v1';
 
 function toYMD(d: Date) {
   const y = d.getFullYear();
@@ -15,7 +16,9 @@ function toYMD(d: Date) {
 
 function datesBerlin(startOffset: number, endOffset: number, anchor?: Date): string[] {
   const now = anchor ?? new Date();
-  const berlinNow = new Date(now.toLocaleString('en-GB', { timeZone: 'Europe/Berlin' }));
+  const berlinNow = new Date(
+    now.toLocaleString('en-GB', { timeZone: 'Europe/Berlin' }),
+  );
   const out: string[] = [];
   for (let off = startOffset; off <= endOffset; off++) {
     const d = new Date(berlinNow);
@@ -27,7 +30,11 @@ function datesBerlin(startOffset: number, endOffset: number, anchor?: Date): str
 
 // GET /api/scans → list scans
 export async function GET() {
-  const { rows } = await sql`SELECT id, scanned_at, fixed_checkout, start_offset, end_offset, timezone FROM scans ORDER BY scanned_at DESC`;
+  const { rows } = await sql`
+    SELECT id, scanned_at, fixed_checkout, start_offset, end_offset, timezone
+    FROM scans
+    ORDER BY scanned_at DESC
+  `;
   return NextResponse.json(rows);
 }
 
@@ -45,9 +52,11 @@ export async function POST(req: NextRequest) {
   `;
   const scan = scanIns.rows[0] as { id: number; scanned_at: string };
 
-  const hotels = (await sql`SELECT id, name, code FROM hotels ORDER BY id ASC`).rows as Array<{ id: number; name: string; code: string }>;
+  const hotels = (
+    await sql`SELECT id, name, code FROM hotels ORDER BY id ASC`
+  ).rows as Array<{ id: number; name: string; code: string }>;
 
-  const limit = pLimit(10); // cap concurrency
+  const limit = pLimit(10);
   const results: Record<string, Record<string, 'green' | 'red'>> = {};
   const tasks: Promise<void>[] = [];
 
@@ -56,46 +65,63 @@ export async function POST(req: NextRequest) {
     for (const checkIn of checkInDates) {
       const payload = {
         hotelId: h.code,
-        departureDate: checkIn,          // upstream expects "departureDate"; in our domain this is check-in
-        returnDate: fixedCheckout,       // fixed checkout = today+12
+        departureDate: checkIn, // upstream field name; our check-in
+        returnDate: fixedCheckout, // fixed checkout = today+12
         currency: 'EUR',
         roomConfigurations: [
-          { travellers: { id: 1, adultCount: 1, childrenAges: [] } }
+          { travellers: { id: 1, adultCount: 1, childrenAges: [] } },
         ],
-        locale: 'de_DE'
+        locale: 'de_DE',
       };
 
-      tasks.push(limit(async () => {
+      const task = limit(async () => {
         let status: 'green' | 'red' = 'red';
         try {
           const res = await fetch(`${BASE_URL}/hotel/offer`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-            cache: 'no-store'
+            cache: 'no-store',
           });
           if (res.status === 200) {
             const text = (await res.text()).trim();
-            if (text.startsWith('data')) status = 'green';
-            else {
+            if (text.startsWith('data')) {
+              status = 'green';
+            } else {
               try {
                 const j = JSON.parse(text);
-                if (Object.prototype.hasOwnProperty.call(j, 'data')) status = 'green';
-              } catch {}
+                if (Object.prototype.hasOwnProperty.call(j, 'data')) {
+                  status = 'green';
+                }
+              } catch {
+                // ignore JSON parse error, keep red
+              }
             }
           }
-        } catch {}
+        } catch {
+          // network error → keep red
+        }
+
         results[h.code][checkIn] = status;
+
         await sql`
           INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status)
           VALUES (${scan.id}, ${h.id}, ${checkIn}, ${status})
-          ON CONFLICT (scan_id, hotel_id, check_in_date) DO UPDATE SET status = EXCLUDED.status
+          ON CONFLICT (scan_id, hotel_id, check_in_date)
+          DO UPDATE SET status = EXCLUDED.status
         `;
-      })));
+      });
+
+      tasks.push(task);
     }
   }
 
   await Promise.all(tasks);
 
-  return NextResponse.json({ scanId: scan.id, dates: checkInDates, results, scannedAt: scan.scanned_at });
+  return NextResponse.json({
+    scanId: scan.id,
+    dates: checkInDates,
+    results,
+    scannedAt: scan.scanned_at,
+  });
 }
