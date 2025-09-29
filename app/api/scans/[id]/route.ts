@@ -1,53 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import pLimit from 'p-limit';
 import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
-const BASE_URL = process.env.AMELLO_BASE_URL || 'https://prod-api.amello.plusline.net/api/v1';
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const id = Number(params.id);
+  const scanQ = await sql`SELECT id, scanned_at, fixed_checkout, start_offset, end_offset, timezone FROM scans WHERE id = ${id}`;
+  if (scanQ.rowCount === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const scan = scanQ.rows[0] as any;
 
-function toYMD(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+  const hotels = (await sql`SELECT id, name, code FROM hotels ORDER BY id ASC`).rows as Array<{ id:number; name:string; code:string }>;
+  const byId = new Map(hotels.map(h => [h.id, h]));
 
-function datesBerlin(startOffset: number, endOffset: number, anchor?: Date): string[] {
-  const now = anchor ?? new Date();
-  const berlinNow = new Date(now.toLocaleString('en-GB', { timeZone: 'Europe/Berlin' }));
-  const out: string[] = [];
-  for (let off = startOffset; off <= endOffset; off++) {
-    const d = new Date(berlinNow);
-    d.setDate(d.getDate() + off);
-    out.push(toYMD(d));
+  const resQ = await sql`SELECT hotel_id, check_in_date, status FROM scan_results WHERE scan_id = ${id}`;
+
+  const results: Record<string, Record<string, 'green'|'red'>> = {};
+  const datesSet = new Set<string>();
+  for (const row of resQ.rows as Array<{ hotel_id:number; check_in_date: string; status:'green'|'red' }>) {
+    const hotel = byId.get(row.hotel_id);
+    if (!hotel) continue;
+    results[hotel.code] = results[hotel.code] || {};
+    const d = row.check_in_date instanceof Date ? row.check_in_date.toISOString().slice(0,10) : String(row.check_in_date);
+    datesSet.add(d);
+    results[hotel.code][d] = row.status;
   }
-  return out;
+  const dates = Array.from(datesSet).sort();
+
+  return NextResponse.json({ scanId: scan.id, dates, results, scannedAt: scan.scanned_at, fixedCheckout: scan.fixed_checkout });
 }
-
-// GET /api/scans → list scans
-export async function GET() {
-  const { rows } = await sql`
-    SELECT id, scanned_at, fixed_checkout, start_offset, end_offset, timezone
-    FROM scans
-    ORDER BY scanned_at DESC
-  `;
-  return NextResponse.json(rows);
-}
-
-// POST /api/scans → run a new scan and persist results
-export async function POST(req: NextRequest) {
-  const { startOffset = 5, endOffset = 90 } = await req.json().catch(() => ({}));
-  const anchor = new Date();
-  const checkInDates = datesBerlin(startOffset, endOffset, anchor);
-  const fixedCheckout = datesBerlin(12, 12, anchor)[0];
-
-  const scanIns = await sql`
-    INSERT INTO scans (fixed_checkout, start_offset, end_offset, timezone)
-    VALUES (${fixedCheckout}, ${startOffset}, ${endOffset}, 'Europe/Berlin')
-    RETURNING id, scanned_at
-  `;
-  const scan = scanIns.rows[0] as { id: number; scanned_at: string };
-
-  const hotels = (await sql`
-    SELECT id, name, code
