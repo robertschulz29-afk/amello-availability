@@ -36,4 +36,3 @@ if (!code) return NextResponse.json({ error: 'code required' }, { status: 400 })
 await sql`DELETE FROM hotels WHERE code = ${code}`;
 const { rows } = await sql`SELECT id, name, code FROM hotels ORDER BY id ASC`;
 return NextResponse.json(rows);
-}
