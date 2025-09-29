@@ -1,23 +1,7 @@
 'use client';
-const [code, setCode] = useState('');
-
-
-const lastUpdDisplay = useMemo(() => {
-if (!lastUpdated) return '—';
-const d = new Date(lastUpdated);
-return d.toLocaleString('de-DE', { timeZone: 'Europe/Berlin' });
-}, [lastUpdated]);
-
-
-return (
-<div style={{ padding: 24, display: 'grid', gap: 16 }}>
-<header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-<h1 style={{ fontSize: 20, fontWeight: 600 }}>Hotel Availability Matrix</h1>
-<div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-<button onClick={updateMatrix} disabled={loading || hotels.length === 0} style={{ padding: '8px 12px' }}>
-{loading ? 'Updating…' : 'Update'}
-</button>
-<span style={{ color: '#666' }}>Last updated: {lastUpdDisplay}</span>
+</select>
+<button onClick={createScan} disabled={loading || hotels.length === 0} style={{ padding: '8px 12px' }}>{loading ? 'Updating…' : 'New scan'}</button>
+<span style={{ color: '#666' }}>Displayed scan: {lastUpdDisplay}</span>
 </div>
 </header>
 
@@ -27,7 +11,7 @@ return (
 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
 <input placeholder="Hotel name" value={name} onChange={(e) => setName(e.target.value)} />
 <input placeholder="Hotel code" value={code} onChange={(e) => setCode(e.target.value)} />
-<button onClick={() => { if (name && code) { addHotel(name, code); setName(''); setCode(''); } }}>Add</button>
+<button onClick={addHotel}>Add</button>
 </div>
 <ul style={{ fontSize: 14 }}>
 {hotels.map(h => (
@@ -37,9 +21,7 @@ return (
 <button onClick={() => removeHotel(h.code)} style={{ color: '#b00020' }}>Remove</button>
 </li>
 ))}
-{hotels.length === 0 && (
-<li style={{ color: '#666' }}>Add hotels to begin.</li>
-)}
+{hotels.length === 0 && <li style={{ color: '#666' }}>Add hotels to begin.</li>}
 </ul>
 </section>
 
