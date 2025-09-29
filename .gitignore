@@ -1,15 +1,5 @@
-# dependencies
-/node_modules
-
-
-# next
 /.next
+/node_modules
 /out
-
-
-# env
 .env*
-
-
-# misc
 .DS_Store
