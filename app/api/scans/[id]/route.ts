@@ -10,8 +10,13 @@ function toYMD(date: Date) {
   return `${y}-${m}-${d}`;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
   const id = Number(params.id);
+
+  // Fetch scan row
   const scanQ = await sql`
     SELECT id, scanned_at, fixed_checkout, start_offset, end_offset, timezone
     FROM scans
@@ -22,11 +27,13 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
   const scan = scanQ.rows[0] as any;
 
+  // Fetch hotels to map id -> code
   const hotels = (
     await sql`SELECT id, name, code FROM hotels ORDER BY id ASC`
   ).rows as Array<{ id: number; name: string; code: string }>;
   const byId = new Map(hotels.map((h) => [h.id, h]));
 
+  // Fetch saved cell results for this scan
   const resQ = await sql`
     SELECT hotel_id, check_in_date, status
     FROM scan_results
@@ -36,11 +43,37 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const results: Record<string, Record<string, 'green' | 'red'>> = {};
   const datesSet = new Set<string>();
 
-  for (const row of resQ.rows as Array<{ hotel_id: number; check_in_date: unknown; status: 'green' | 'red' }>) {
+  for (const row of resQ.rows as Array<{
+    hotel_id: number;
+    check_in_date: unknown;
+    status: 'green' | 'red';
+  }>) {
     const hotel = byId.get(row.hotel_id);
     if (!hotel) continue;
 
-    // Normalize check_in_date to 'YYYY-MM-DD' as a string
+    // Normalize check_in_date to 'YYYY-MM-DD'
+    const raw = row.check_in_date as unknown;
     let d: string;
-    if (typeof row.check_in_date === 'string') {
-      // Expect 'YYYY-MM-DD'
+    if (typeof raw === 'string') {
+      d = raw.slice(0, 10);
+    } else if (raw instanceof Date) {
+      d = toYMD(raw);
+    } else {
+      d = String(raw).slice(0, 10);
+    }
+
+    datesSet.add(d);
+    if (!results[hotel.code]) results[hotel.code] = {};
+    results[hotel.code][d] = row.status;
+  }
+
+  const dates = Array.from(datesSet).sort();
+
+  return NextResponse.json({
+    scanId: scan.id,
+    dates,
+    results,
+    scannedAt: scan.scanned_at,
+    fixedCheckout: scan.fixed_checkout,
+  });
+}
