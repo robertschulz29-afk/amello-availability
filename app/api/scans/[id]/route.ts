@@ -1,37 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
-
-
-export const runtime = 'nodejs';
-
-
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-const id = Number(params.id);
-const scanQ = await sql`SELECT id, scanned_at, fixed_checkout, start_offset, end_offset, timezone FROM scans WHERE id = ${id}`;
-if (scanQ.rowCount === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-const scan = scanQ.rows[0] as any;
-
-
-// Pull hotels to map id→code/name
-const hotels = (await sql`SELECT id, name, code FROM hotels ORDER BY id ASC`).rows as Array<{ id:number; name:string; code:string }>;
-const byId = new Map(hotels.map(h => [h.id, h]));
-
-
-const resQ = await sql`SELECT hotel_id, departure_date, status FROM scan_results WHERE scan_id = ${id}`;
-
-
-const results: Record<string, Record<string, 'green'|'red'>> = {};
-const datesSet = new Set<string>();
-for (const row of resQ.rows as Array<{ hotel_id:number; departure_date: string; status:'green'|'red' }>) {
-const hotel = byId.get(row.hotel_id);
-if (!hotel) continue;
-results[hotel.code] = results[hotel.code] || {};
-const d = row.departure_date instanceof Date ? row.departure_date.toISOString().slice(0,10) : String(row.departure_date);
-datesSet.add(d);
-results[hotel.code][d] = row.status;
+const { rows } = await sql`SELECT id, scanned_at, fixed_checkout, start_offset, end_offset, timezone FROM scans ORDER BY scanned_at DESC`;
+return NextResponse.json(rows);
 }
-const dates = Array.from(datesSet).sort();
 
 
-return NextResponse.json({ scanId: scan.id, dates, results, scannedAt: scan.scanned_at, fixedCheckout: scan.fixed_checkout });
+// POST /api/scans → perform a new scan and persist results
+export async function POST(req: NextRequest) {
+const { startOffset = 5, endOffset = 90 } = await req.json().catch(() => ({}));
+const scanAnchor = new Date();
+const checkInDates = datesBerlin(startOffset, endOffset, scanAnchor);
+const fixedCheckout = datesBerlin(12, 12, scanAnchor)[0];
+
+
+const scanIns = await sql`
+INSERT INTO scans (fixed_checkout, start_offset, end_offset, timezone)
+VALUES (${fixedCheckout}, ${startOffset}, ${endOffset}, 'Europe/Berlin')
+RETURNING id, scanned_at
+`;
+const scan = scanIns.rows[0] as { id: number; scanned_at: string };
+
+
+const hotels = (await sql`SELECT id, name, code FROM hotels ORDER BY id ASC`).rows as Array<{ id: number; name: string; code: string; }>;
+const limit = pLimit(10);
+
+
+const results: Record<string, Record<string, 'green' | 'red'>> = {};
+const inserts: Array<Promise<any>> = [];
+
+
+for (const h of hotels) {
+results[h.code] = {};
+for (const checkIn of checkInDates) {
+const payload = {
+hotelId: h.code,
+departureDate: checkIn, // upstream expects this field; it's our check-in
+returnDate: fixedCheckout,
+currency: 'EUR',
+roomConfigurations: [ { travellers: { id: 1, adultCount: 1, childrenAges: [] } } ],
+locale: 'de_DE'
+};
+
+
+inserts.push(limit(async () => {
+let status: 'green' | 'red' = 'red';
+try {
+const res = await fetch(`${BASE_URL}/hotel/offer`, {
+method: 'POST', headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(payload), cache: 'no-store'
+});
+if (res.status === 200) {
+const text = (await res.text()).trim();
+if (text.startsWith('data')) status = 'green';
+else {
+try { const j = JSON.parse(text); if (Object.prototype.hasOwnProperty.call(j, 'data')) status = 'green'; } catch {}
+}
+}
+} catch {}
+results[h.code][checkIn] = status;
+await sql`INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status)
+VALUES (${scan.id}, ${h.id}, ${checkIn}, ${status})
+ON CONFLICT (scan_id, hotel_id, check_in_date) DO UPDATE SET status = EXCLUDED.status`;
+}))
+}
+}
+
+
+await Promise.all(inserts);
+
+
+const lastUpdated = new Date().toISOString();
+await sql`INSERT INTO meta(key, value) VALUES('last_updated', ${lastUpdated})
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+
+
+return NextResponse.json({ scanId: scan.id, dates: checkInDates, results, scannedAt: scan.scanned_at });
 }
