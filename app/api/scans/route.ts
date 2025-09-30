@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
-
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const BASE_URL =
   process.env.AMELLO_BASE_URL || 'https://prod-api.amello.plusline.net/api/v1';
