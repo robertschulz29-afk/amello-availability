@@ -73,4 +73,97 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
       }
     }
-    const { startOff
+    const { startOffset = 5, endOffset = 90 } = body;
+
+    // Build Berlin check-in dates and fixed check-out (today+12, Berlin)
+    const checkInDates = berlinDateRangeYMD(startOffset, endOffset);
+    const [fixedCheckout] = berlinDateRangeYMD(12, 12);
+
+    // Persist the scan header (fixed_checkout is a DATE column)
+    const scanIns = await sql`
+      INSERT INTO scans (fixed_checkout, start_offset, end_offset, timezone)
+      VALUES (${fixedCheckout}, ${startOffset}, ${endOffset}, 'Europe/Berlin')
+      RETURNING id, scanned_at
+    `;
+    const scan = scanIns.rows[0] as { id: number; scanned_at: string };
+
+    // Fetch hotels
+    const hotels = (
+      await sql`SELECT id, name, code FROM hotels ORDER BY id ASC`
+    ).rows as Array<{ id: number; name: string; code: string }>;
+
+    const results: Record<string, Record<string, 'green' | 'red'>> = {};
+
+    // Call upstream for each hotel/date and store cell result
+    for (const h of hotels) {
+      results[h.code] = {};
+      for (const checkIn of checkInDates) {
+        const payload = {
+          hotelId: h.code,
+          // Upstream field is named 'departureDate'; our business meaning is check-in
+          departureDate: checkIn,
+          returnDate: fixedCheckout,
+          currency: 'EUR',
+          roomConfigurations: [
+            { travellers: { id: 1, adultCount: 1, childrenAges: [] } },
+          ],
+          locale: 'de_DE',
+        };
+
+        let status: 'green' | 'red' = 'red';
+        try {
+          const res = await fetch(`${BASE_URL}/hotel/offer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            cache: 'no-store',
+          });
+          if (res.status === 200) {
+            const text = (await res.text()).trim();
+            if (text.startsWith('data')) {
+              status = 'green';
+            } else {
+              try {
+                const j = JSON.parse(text);
+                if (Object.prototype.hasOwnProperty.call(j, 'data')) status = 'green';
+              } catch {
+                // keep red
+              }
+            }
+          }
+        } catch (e) {
+          console.error('[POST /api/scans] upstream error:', e);
+        }
+
+        results[h.code][checkIn] = status;
+
+        // Persist/Upsert cell
+        try {
+          await sql`
+            INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status)
+            VALUES (${scan.id}, ${h.id}, ${checkIn}, ${status})
+            ON CONFLICT (scan_id, hotel_id, check_in_date)
+            DO UPDATE SET status = EXCLUDED.status
+          `;
+        } catch (e) {
+          console.error('[POST /api/scans] DB write error:', e, {
+            scanId: scan.id,
+            hotelId: h.id,
+            checkIn,
+            status,
+          });
+        }
+      }
+    }
+
+    return NextResponse.json({
+      scanId: scan.id,
+      dates: checkInDates,
+      results,
+      scannedAt: scan.scanned_at,
+    });
+  } catch (err: any) {
+    console.error('[POST /api/scans] fatal error:', err);
+    return NextResponse.json({ error: 'Scan failed' }, { status: 500 });
+  }
+}
