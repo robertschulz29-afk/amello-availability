@@ -1,28 +1,31 @@
 // lib/db.ts
 import { Pool } from 'pg';
 
-// 1) Hard-prefer a full connection string
-const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+// Use ONLY our own URL (do not read POSTGRES_URL, PGHOST, etc.)
+const connectionString = process.env.DATABASE_URL;
+
 if (!connectionString) {
-  throw new Error('Missing DATABASE_URL (or POSTGRES_URL) env var');
+  // Fail fast so we never silently fall back to PGHOST / localhost.
+  throw new Error('Missing DATABASE_URL env var');
 }
 
-// 2) Proactively remove per-field PG env that can hijack config
+// Proactively remove per-field env that can hijack pg config
 for (const k of [
-  'PGHOST','PGPORT','PGUSER','PGPASSWORD','PGDATABASE',
-  'POSTGRES_HOST','POSTGRES_USER','POSTGRES_PASSWORD','POSTGRES_DATABASE'
+  'PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE',
+  'POSTGRES_HOST', 'POSTGRES_PORT', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DATABASE',
+  'POSTGRES_URL', 'POSTGRES_URL_NON_POOLING', 'POSTGRES_PRISMA_URL'
 ]) {
-  if (process.env[k]) delete process.env[k];
+  if (process.env[k]) delete (process.env as any)[k];
 }
 
-// 3) Create pool using ONLY the URL
 const pool = new Pool({
   connectionString,
-  ssl: { rejectUnauthorized: false }, // required for managed PG (Supabase)
+  ssl: { rejectUnauthorized: false }, // managed PG requires SSL; Supabase is fine with this
 });
 
-// Tiny helper to keep your existing sql`...${}` calls
+// Keep the template tag API you already use
 type Primitive = string | number | boolean | null | Date;
+
 export async function sql<T = any>(
   strings: TemplateStringsArray,
   ...values: Primitive[]
