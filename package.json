@@ -1,17 +1,9 @@
 {
-  "name": "amello-availability",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
-  },
   "dependencies": {
-    "@vercel/postgres": "^0.8.0",
     "next": "14.2.6",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "pg": "^8.12.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.9",
