@@ -1,3 +1,6 @@
 import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
-export async function GET() { return NextResponse.json({ ok: true }); }
+export const dynamic = 'force-dynamic';
+export async function GET() {
+  return NextResponse.json({ ok: true });
+}
