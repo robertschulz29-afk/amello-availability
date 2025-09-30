@@ -118,26 +118,53 @@ export async function POST(req: NextRequest) {
         };
 
         let status: 'green' | 'red' = 'red';
-        try {
-          const res = await fetch(`${BASE_URL}/hotel/offer`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            cache: 'no-store',
-          });
-          if (res.status === 200) {
-            const text = (await res.text()).trim();
-            if (text.startsWith('data')) {
-              status = 'green';
-            } else {
-              try {
-                const j = JSON.parse(text);
-                if (Object.prototype.hasOwnProperty.call(j, 'data')) status = 'green';
-              } catch { /* keep red */ }
-            }
-          }
-        } catch (e) {
-          console.error('[POST /api/scans] upstream error:', e, { hotel: h.code, checkIn, checkOut });
+try {
+  const res = await fetch(`${BASE_URL}/hotel/offer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+
+  if (res.status === 200) {
+    // Only trust JSON if server says it's JSON
+    const ctype = res.headers.get('content-type') || '';
+    if (ctype.includes('application/json')) {
+      const j: any = await res.json();
+
+      // helper to test "rooms" arrays in various shapes
+      const hasNonEmptyRooms = (obj: any): boolean => {
+        if (!obj || typeof obj !== 'object') return false;
+
+        // case 1: top-level rooms
+        if (Array.isArray(obj.rooms) && obj.rooms.length > 0) return true;
+
+        // case 2: data.rooms
+        if (obj.data && Array.isArray(obj.data.rooms) && obj.data.rooms.length > 0) return true;
+
+        // case 3: some APIs wrap result deeper; do a shallow scan for a key named "rooms"
+        for (const [k, v] of Object.entries(obj)) {
+          if (k.toLowerCase() === 'rooms' && Array.isArray(v) && v.length > 0) return true;
+        }
+        return false;
+      };
+
+      status = hasNonEmptyRooms(j) ? 'green' : 'red';
+    } else {
+      // Non-JSON 200 → treat as red; optionally read text to debug:
+      // const txt = await res.text(); console.log('non-JSON 200:', txt.slice(0,200));
+      status = 'red';
+    }
+  } else {
+    // non-200 → red
+    status = 'red';
+  }
+} catch (e) {
+  // network/parse error → red
+  console.error('[POST /api/scans] upstream error:', e, { hotel: h.code, checkIn, checkOut });
+  status = 'red';
+}
+
         }
 
         results[h.code][checkIn] = status;
