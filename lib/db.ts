@@ -36,4 +36,10 @@ export async function sql<T = any>(
   strings: TemplateStringsArray,
   ...values: Primitive[]
 ): Promise<{ rows: T[]; rowCount: number }> {
-  const
+  const text = strings.reduce(
+    (acc, cur, i) => acc + cur + (i < values.length ? `$${i + 1}` : ''),
+    ''
+  );
+  const res = await pool.query({ text, values });
+  return { rows: T[] = res.rows as T[], rowCount: res.rowCount ?? 0 };
+}
