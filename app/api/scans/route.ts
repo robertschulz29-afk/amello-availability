@@ -1,3 +1,4 @@
+// app/api/scans/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 
@@ -48,10 +49,22 @@ function addDaysYMD(ymd: string, days: number): string {
   return toYMDUTC(dt);
 }
 
+/** Determine green/red from a 200 JSON response per your rule */
+function hasNonEmptyRooms(obj: any): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  if (Array.isArray(obj.rooms) && obj.rooms.length > 0) return true;
+  if (obj.data && Array.isArray(obj.data.rooms) && obj.data.rooms.length > 0) return true;
+  // shallow scan for a key literally named "rooms"
+  for (const [k, v] of Object.entries(obj)) {
+    if (k.toLowerCase() === 'rooms' && Array.isArray(v) && v.length > 0) return true;
+  }
+  return false;
+}
+
 export async function GET() {
   try {
     const { rows } = await sql`
-      SELECT id, scanned_at, fixed_checkout, start_offset, end_offset, timezone
+      SELECT id, scanned_at, fixed_checkout, start_offset, end_offset, stay_nights, timezone
       FROM scans
       ORDER BY scanned_at DESC
     `;
@@ -68,11 +81,15 @@ export async function POST(req: NextRequest) {
     const txt = await req.text();
     let body: any = {};
     if (txt) {
-      try { body = JSON.parse(txt); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
+      try {
+        body = JSON.parse(txt);
+      } catch {
+        return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+      }
     }
     const startOffset: number = Number.isFinite(body?.startOffset) ? body.startOffset : 5;
-    const endOffset: number   = Number.isFinite(body?.endOffset)   ? body.endOffset   : 90;
-    const stayNights: number  = Number.isFinite(body?.stayNights)  ? body.stayNights  : 7; // 12-5 = 7 in your example
+    const endOffset: number = Number.isFinite(body?.endOffset) ? body.endOffset : 90;
+    const stayNights: number = Number.isFinite(body?.stayNights) ? body.stayNights : 7;
 
     if (endOffset < startOffset) {
       return NextResponse.json({ error: 'endOffset must be >= startOffset' }, { status: 400 });
@@ -82,12 +99,12 @@ export async function POST(req: NextRequest) {
     }
 
     const checkIns = berlinCheckinsYMD(startOffset, endOffset);
-    const firstCheckout = addDaysYMD(checkIns[0], stayNights); // stored just to keep schema happy
+    const firstCheckout = addDaysYMD(checkIns[0], stayNights); // keep schema happy
 
     // Persist scan header
     const scanIns = await sql`
-      INSERT INTO scans (fixed_checkout, start_offset, end_offset, timezone)
-      VALUES (${firstCheckout}, ${startOffset}, ${endOffset}, 'Europe/Berlin')
+      INSERT INTO scans (fixed_checkout, start_offset, end_offset, stay_nights, timezone)
+      VALUES (${firstCheckout}, ${startOffset}, ${endOffset}, ${stayNights}, 'Europe/Berlin')
       RETURNING id, scanned_at
     `;
     const scan = scanIns.rows[0] as { id: number; scanned_at: string };
@@ -118,53 +135,29 @@ export async function POST(req: NextRequest) {
         };
 
         let status: 'green' | 'red' = 'red';
-try {
-  const res = await fetch(`${BASE_URL}/hotel/offer`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    cache: 'no-store',
-  });
 
-  if (res.status === 200) {
-    // Only trust JSON if server says it's JSON
-    const ctype = res.headers.get('content-type') || '';
-    if (ctype.includes('application/json')) {
-      const j: any = await res.json();
+        try {
+          const res = await fetch(`${BASE_URL}/hotel/offer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            cache: 'no-store',
+          });
 
-      // helper to test "rooms" arrays in various shapes
-      const hasNonEmptyRooms = (obj: any): boolean => {
-        if (!obj || typeof obj !== 'object') return false;
-
-        // case 1: top-level rooms
-        if (Array.isArray(obj.rooms) && obj.rooms.length > 0) return true;
-
-        // case 2: data.rooms
-        if (obj.data && Array.isArray(obj.data.rooms) && obj.data.rooms.length > 0) return true;
-
-        // case 3: some APIs wrap result deeper; do a shallow scan for a key named "rooms"
-        for (const [k, v] of Object.entries(obj)) {
-          if (k.toLowerCase() === 'rooms' && Array.isArray(v) && v.length > 0) return true;
-        }
-        return false;
-      };
-
-      status = hasNonEmptyRooms(j) ? 'green' : 'red';
-    } else {
-      // Non-JSON 200 → treat as red; optionally read text to debug:
-      // const txt = await res.text(); console.log('non-JSON 200:', txt.slice(0,200));
-      status = 'red';
-    }
-  } else {
-    // non-200 → red
-    status = 'red';
-  }
-} catch (e) {
-  // network/parse error → red
-  console.error('[POST /api/scans] upstream error:', e, { hotel: h.code, checkIn, checkOut });
-  status = 'red';
-}
-
+          if (res.status === 200) {
+            const ctype = res.headers.get('content-type') || '';
+            if (ctype.includes('application/json')) {
+              const j: any = await res.json();
+              status = hasNonEmptyRooms(j) ? 'green' : 'red';
+            } else {
+              status = 'red';
+            }
+          } else {
+            status = 'red';
+          }
+        } catch (e) {
+          console.error('[POST /api/scans] upstream error:', e, { hotel: h.code, checkIn, checkOut });
+          status = 'red';
         }
 
         results[h.code][checkIn] = status;
@@ -178,7 +171,12 @@ try {
             DO UPDATE SET status = EXCLUDED.status
           `;
         } catch (e) {
-          console.error('[POST /api/scans] DB write error:', e, { scanId: scan.id, hotelId: h.id, checkIn, status });
+          console.error('[POST /api/scans] DB write error:', e, {
+            scanId: scan.id,
+            hotelId: h.id,
+            checkIn,
+            status,
+          });
         }
       }
     }
