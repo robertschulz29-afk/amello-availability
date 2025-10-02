@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
             departureDate: cell.checkIn,
             returnDate: cell.checkOut,
             currency: 'EUR',
-            roomConfigurations: [{ travellers: { id: 1, adultCount: 1, childrenAges: [] } }],
+            roomConfigurations: [{ travellers: { id: 1, adultCount: 2, childrenAges: [] } }],
             locale: 'de_DE',
           };
           const res = await fetch(`${BASE_URL}/hotel/offer`, {
