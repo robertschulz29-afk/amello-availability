@@ -1,9 +1,18 @@
-// app/page.tsx
 'use client';
 
 import * as React from 'react';
 
 type Hotel = { id: number; name: string; code: string };
+type ScanRow = {
+  id: number;
+  scanned_at: string;
+  start_offset: number;
+  end_offset: number;
+  stay_nights: number;
+  total_cells: number;
+  done_cells: number;
+  status: 'queued' | 'running' | 'done' | 'error';
+};
 type ResultsMatrix = {
   scanId: number;
   scannedAt: string;
@@ -25,6 +34,15 @@ async function fetchJSON(input: RequestInfo, init?: RequestInit) {
   return text ? JSON.parse(text) : null;
 }
 
+function fmtDateTime(dt: string) {
+  // friendly UTC→local display; you can change to Europe/Berlin if preferred
+  try {
+    return new Date(dt).toLocaleString();
+  } catch {
+    return dt;
+  }
+}
+
 export default function Page() {
   const [activeTab, setActiveTab] = React.useState<'hotels' | 'scan'>('hotels');
 
@@ -35,7 +53,11 @@ export default function Page() {
   const [hError, setHError] = React.useState<string | null>(null);
   const [hBusy, setHBusy] = React.useState(false);
 
-  // Scan/progress/results state
+  // Scans state (list + selected)
+  const [scans, setScans] = React.useState<ScanRow[]>([]);
+  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
+
+  // Progress + results for currently loaded scan (selected or just-run)
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [progress, setProgress] = React.useState<{
@@ -46,7 +68,7 @@ export default function Page() {
   }>({});
   const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
 
-  // Load hotels on mount (and when switching to Hotels tab)
+  // Load hotels
   const loadHotels = React.useCallback(async () => {
     try {
       const data = await fetchJSON('/api/hotels', { cache: 'no-store' });
@@ -56,9 +78,68 @@ export default function Page() {
     }
   }, []);
 
+  // Load scans list
+  const loadScans = React.useCallback(async () => {
+    try {
+      const list = await fetchJSON('/api/scans', { cache: 'no-store' });
+      const arr: ScanRow[] = Array.isArray(list) ? list : [];
+      // Newest first already by backend; sort again defensively
+      arr.sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
+      setScans(arr);
+      if (arr.length > 0 && selectedScanId == null) {
+        setSelectedScanId(arr[0].id);
+      }
+    } catch (e: any) {
+      setError(e.message || 'Failed to load scans');
+    }
+  }, [selectedScanId]);
+
+  // Load matrix for a scan id
+  const loadScanById = React.useCallback(async (scanId: number) => {
+    setError(null);
+    setMatrix(null);
+    setProgress({});
+    try {
+      const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
+
+      // Derive progress from the scans list if we have it
+      const s = scans.find((x) => x.id === scanId);
+      if (s) {
+        setProgress({
+          scanId,
+          total: s.total_cells,
+          done: s.done_cells,
+          status: s.status,
+        });
+      }
+
+      const safeDates: string[] = Array.isArray(data?.dates) ? data.dates : [];
+      const safeResults: Record<string, Record<string, 'green' | 'red'>> =
+        data && typeof data.results === 'object' && data.results !== null ? data.results : {};
+
+      setMatrix({
+        scanId,
+        scannedAt: String(data?.scannedAt ?? ''),
+        dates: safeDates,
+        results: safeResults,
+      });
+    } catch (e: any) {
+      setError(e.message || 'Failed to load scan');
+    }
+  }, [scans]);
+
+  // Initial loads
   React.useEffect(() => {
     loadHotels();
-  }, [loadHotels]);
+    loadScans();
+  }, [loadHotels, loadScans]);
+
+  // When selectedScanId changes, load that scan
+  React.useEffect(() => {
+    if (selectedScanId != null) {
+      loadScanById(selectedScanId);
+    }
+  }, [selectedScanId, loadScanById]);
 
   // Add a hotel
   const onAddHotel = async (e: React.FormEvent) => {
@@ -70,7 +151,6 @@ export default function Page() {
     }
     setHBusy(true);
     try {
-      // API accepts single object or array; we’ll send single
       const next = await fetchJSON('/api/hotels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -86,19 +166,17 @@ export default function Page() {
     }
   };
 
-  // Kickoff + batched processing + load matrix
+  // Kickoff + process (new scan)
   const startScan = React.useCallback(async () => {
     setBusy(true);
     setError(null);
     setMatrix(null);
     setProgress({});
-
     try {
       // 1) Kickoff
       const kick = await fetchJSON('/api/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Optionally override defaults:
         // body: JSON.stringify({ startOffset: 5, endOffset: 90, stayNights: 7 }),
       });
       const scanId = Number(kick?.scanId);
@@ -108,7 +186,7 @@ export default function Page() {
 
       // 2) Process in batches
       let idx = 0;
-      const size = 50; // tune 25..100
+      const size = 50;
       while (true) {
         const r = await fetchJSON('/api/scans/process', {
           method: 'POST',
@@ -125,23 +203,11 @@ export default function Page() {
           status: doneFlag ? 'done' : 'running',
         }));
         if (doneFlag) break;
-        // Optional throttle:
-        // await new Promise(res => setTimeout(res, 150));
       }
 
-      // 3) Load matrix
-      const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
-      const safeDates: string[] = Array.isArray(data?.dates) ? data.dates : [];
-      const safeResults: Record<string, Record<string, 'green' | 'red'>> =
-        data && typeof data.results === 'object' && data.results !== null ? data.results : {};
-
-      setMatrix({
-        scanId,
-        scannedAt: String(data?.scannedAt ?? ''),
-        dates: safeDates,
-        results: safeResults,
-      });
-      // Switch to Scan tab automatically to show results
+      // 3) Refresh scans list and select the new one
+      await loadScans();
+      setSelectedScanId(scanId); // triggers loadScanById
       setActiveTab('scan');
     } catch (e: any) {
       setError(e?.message || 'Scan failed');
@@ -149,7 +215,45 @@ export default function Page() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [loadScans]);
+
+  // Continue processing an existing running scan
+  const continueProcessing = React.useCallback(async () => {
+    if (!selectedScanId) return;
+    const s = scans.find((x) => x.id === selectedScanId);
+    if (!s) return;
+    setBusy(true);
+    setError(null);
+    try {
+      let idx = s.done_cells ?? 0;
+      const total = s.total_cells ?? 0;
+      const size = 50;
+      setProgress({ scanId: s.id, total, done: idx, status: 'running' });
+      while (true) {
+        const r = await fetchJSON('/api/scans/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scanId: s.id, startIndex: idx, size }),
+        });
+        idx = Number(r?.nextIndex ?? idx);
+        const processed = Number(r?.processed ?? 0);
+        const doneFlag = Boolean(r?.done);
+        setProgress((prev) => ({
+          scanId: s.id,
+          total,
+          done: Math.min((prev.done ?? 0) + processed, total),
+          status: doneFlag ? 'done' : 'running',
+        }));
+        if (doneFlag) break;
+      }
+      await loadScans();
+      await loadScanById(s.id);
+    } catch (e: any) {
+      setError(e?.message || 'Continue failed');
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedScanId, scans, loadScans, loadScanById]);
 
   // Derived for results table
   const dates = matrix?.dates ?? [];
@@ -160,11 +264,33 @@ export default function Page() {
   }, [hotels]);
   const hotelCodes = React.useMemo(() => {
     const codes = Object.keys(matrix?.results ?? {});
-    // Ensure we include hotels with no data yet if needed
     return codes.length ? codes : hotels.map((h) => h.code);
   }, [matrix, hotels]);
   const cell = (code: string, date: string): 'green' | 'red' | undefined =>
     matrix?.results?.[code]?.[date];
+
+  // Scan navigation helpers
+  const currentIndex = React.useMemo(
+    () => (selectedScanId != null ? scans.findIndex((s) => s.id === selectedScanId) : -1),
+    [scans, selectedScanId]
+  );
+  const onPrev = () => {
+    if (currentIndex < 0) return;
+    const nextIdx = currentIndex + 1; // newer → older list, so +1 goes older
+    if (nextIdx < scans.length) setSelectedScanId(scans[nextIdx].id);
+  };
+  const onNext = () => {
+    if (currentIndex <= 0) return;
+    const nextIdx = currentIndex - 1; // -1 goes newer
+    if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id);
+  };
+  const onLoadLatest = () => {
+    if (scans.length > 0) setSelectedScanId(scans[0].id);
+  };
+  const onRefreshSelected = async () => {
+    await loadScans();
+    if (selectedScanId != null) await loadScanById(selectedScanId);
+  };
 
   return (
     <main>
@@ -192,7 +318,6 @@ export default function Page() {
         </li>
       </ul>
 
-      {/* Tabs content */}
       <div className="tab-content pt-3">
         {/* Hotels tab */}
         <div className={`tab-pane fade ${activeTab === 'hotels' ? 'show active' : ''}`}>
@@ -267,18 +392,53 @@ export default function Page() {
 
         {/* Scan Results tab */}
         <div className={`tab-pane fade ${activeTab === 'scan' ? 'show active' : ''}`}>
-          <div className="d-flex align-items-center gap-2 mb-3">
+          <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
             <button className="btn btn-success" onClick={startScan} disabled={busy || hotels.length === 0}>
               {busy ? 'Scanning…' : 'Start Scan'}
             </button>
-            <div className="small text-muted">
-              {hotels.length === 0 ? 'Add at least one hotel to enable scanning.' : null}
+
+            {/* Scan picker */}
+            <div className="d-flex align-items-center gap-2">
+              <select
+                className="form-select"
+                style={{ minWidth: 260 }}
+                value={selectedScanId ?? ''}
+                onChange={(e) => setSelectedScanId(Number(e.target.value))}
+              >
+                {scans.length === 0 ? (
+                  <option value="">No scans</option>
+                ) : (
+                  scans.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
+                    </option>
+                  ))
+                )}
+              </select>
+              <button className="btn btn-outline-secondary" onClick={onLoadLatest} disabled={scans.length === 0}>
+                Load latest
+              </button>
+              <button className="btn btn-outline-secondary" onClick={onPrev} disabled={currentIndex < 0 || currentIndex + 1 >= scans.length}>
+                Prev
+              </button>
+              <button className="btn btn-outline-secondary" onClick={onNext} disabled={currentIndex <= 0}>
+                Next
+              </button>
+              <button className="btn btn-outline-secondary" onClick={onRefreshSelected} disabled={selectedScanId == null}>
+                Refresh
+              </button>
+              {progress.status === 'running' ? (
+                <button className="btn btn-outline-primary" onClick={continueProcessing} disabled={busy}>
+                  Continue processing
+                </button>
+              ) : null}
             </div>
           </div>
 
+          {/* Progress */}
           {progress?.scanId ? (
             <div className="mb-3">
-              <div className="d-flex justify-content-between">
+              <div className="d-flex justify-content-between small">
                 <div>
                   Scan <strong>#{progress.scanId}</strong> — {progress.status}
                 </div>
@@ -327,7 +487,6 @@ export default function Page() {
                         </td>
                         {dates.map((d) => {
                           const s = cell(code, d);
-                          // Bootstrap contextual backgrounds
                           const cls =
                             s === 'green' ? 'table-success' :
                             s === 'red'   ? 'table-danger'  : '';
@@ -344,7 +503,7 @@ export default function Page() {
               </table>
             </div>
           ) : (
-            <p className="text-muted">No results yet. Start a scan to populate the table.</p>
+            <p className="text-muted">No results yet for this scan.</p>
           )}
         </div>
       </div>
