@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
             returnDate: cell.checkOut,
             currency: 'EUR',
             roomConfigurations: [
-              { travellers: { id: 1, adultCount: 1, childrenAges: [] } },
+              { travellers: { id: 1, adultCount: 2, childrenAges: [] } },
             ],
             locale: 'de_DE',
           };
