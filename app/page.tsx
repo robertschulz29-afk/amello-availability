@@ -144,7 +144,7 @@ export default function Page() {
             <tbody>
               {hotelCodes.map((code) => (
                 <tr key={code}>
-                  <td style={{ position: 'sticky', left: 0, background: '#fff', borderRight: '1px solid #eee' }}>{code}</td>
+                  <td style={{ position: 'sticky', left: 0, background: '#fff', borderRight: '1px solid #eee' }}>{name} - {code}</td>
                   {dates.map((d) => {
                     const s = cell(code, d);
                     const bg = s === 'green' ? '#d4edda' : s === 'red' ? '#f8d7da' : '#f0f0f0';
