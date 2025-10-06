@@ -35,7 +35,6 @@ async function fetchJSON(input: RequestInfo, init?: RequestInit) {
 }
 
 function fmtDateTime(dt: string) {
-  // friendly UTC→local display; you can change to Europe/Berlin if preferred
   try {
     return new Date(dt).toLocaleString();
   } catch {
@@ -83,7 +82,6 @@ export default function Page() {
     try {
       const list = await fetchJSON('/api/scans', { cache: 'no-store' });
       const arr: ScanRow[] = Array.isArray(list) ? list : [];
-      // Newest first already by backend; sort again defensively
       arr.sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
       setScans(arr);
       if (arr.length > 0 && selectedScanId == null) {
@@ -102,7 +100,6 @@ export default function Page() {
     try {
       const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
 
-      // Derive progress from the scans list if we have it
       const s = scans.find((x) => x.id === scanId);
       if (s) {
         setProgress({
@@ -173,11 +170,9 @@ export default function Page() {
     setMatrix(null);
     setProgress({});
     try {
-      // 1) Kickoff
       const kick = await fetchJSON('/api/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // body: JSON.stringify({ startOffset: 5, endOffset: 90, stayNights: 7 }),
       });
       const scanId = Number(kick?.scanId);
       const total = Number(kick?.totalCells ?? 0);
@@ -205,9 +200,8 @@ export default function Page() {
         if (doneFlag) break;
       }
 
-      // 3) Refresh scans list and select the new one
       await loadScans();
-      setSelectedScanId(scanId); // triggers loadScanById
+      setSelectedScanId(scanId);
       setActiveTab('scan');
     } catch (e: any) {
       setError(e?.message || 'Scan failed');
@@ -269,6 +263,27 @@ export default function Page() {
   const cell = (code: string, date: string): 'green' | 'red' | undefined =>
     matrix?.results?.[code]?.[date];
 
+  // NEW: per-date counters (greens, total(=greens+reds)), computed from matrix.results
+  const columnCounters = React.useMemo(() => {
+    const counters: { date: string; greens: number; total: number }[] = [];
+    if (!matrix) return counters;
+    for (const date of matrix.dates) {
+      let greens = 0;
+      let total = 0;
+      for (const [hotelCode, row] of Object.entries(matrix.results ?? {})) {
+        const v = row[date];
+        if (v === 'green') {
+          greens++;
+          total++;
+        } else if (v === 'red') {
+          total++;
+        } // undefined = no data -> excluded
+      }
+      counters.push({ date, greens, total });
+    }
+    return counters;
+  }, [matrix]);
+
   // Scan navigation helpers
   const currentIndex = React.useMemo(
     () => (selectedScanId != null ? scans.findIndex((s) => s.id === selectedScanId) : -1),
@@ -276,12 +291,12 @@ export default function Page() {
   );
   const onPrev = () => {
     if (currentIndex < 0) return;
-    const nextIdx = currentIndex + 1; // newer → older list, so +1 goes older
+    const nextIdx = currentIndex + 1;
     if (nextIdx < scans.length) setSelectedScanId(scans[nextIdx].id);
   };
   const onNext = () => {
     if (currentIndex <= 0) return;
-    const nextIdx = currentIndex - 1; // -1 goes newer
+    const nextIdx = currentIndex - 1;
     if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id);
   };
   const onLoadLatest = () => {
@@ -397,7 +412,6 @@ export default function Page() {
               {busy ? 'Scanning…' : 'Start Scan'}
             </button>
 
-            {/* Scan picker */}
             <div className="d-flex align-items-center gap-2">
               <select
                 className="form-select"
@@ -435,7 +449,6 @@ export default function Page() {
             </div>
           </div>
 
-          {/* Progress */}
           {progress?.scanId ? (
             <div className="mb-3">
               <div className="d-flex justify-content-between small">
@@ -466,16 +479,40 @@ export default function Page() {
           {dates.length > 0 && hotelCodes.length > 0 ? (
             <div className="table-responsive border rounded">
               <table className="table table-sm mb-0">
-                <thead className="table-light">
+                <thead className="table-light sticky-top">
                   <tr>
-                    <th style={{ position: 'sticky', left: 0, background: 'var(--bs-table-bg)', zIndex: 1 }}>
+                    <th style={{ position: 'sticky', left: 0, background: 'var(--bs-table-bg)', zIndex: 3 }}>
                       Hotel (Name • Code)
+                    </th>
+
+                    {/* NEW: Counter row (greens/total) above the date header cell */}
+                    {dates.map((d) => {
+                      const counter = columnCounters.find((c) => c.date === d);
+                      const greens = counter?.greens ?? 0;
+                      const total = counter?.total ?? 0;
+                      const pct = total > 0 ? Math.round((greens / total) * 100) : 0;
+                      return (
+                        <th key={'counter-' + d} className="text-center" style={{ verticalAlign: 'bottom', whiteSpace: 'nowrap' }}>
+                          <div className="small text-muted" style={{ lineHeight: '1' }}>
+                            <div>{greens} / {total}</div>
+                            <div>{total > 0 ? `${pct}%` : ''}</div>
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+
+                  {/* Actual date header row */}
+                  <tr>
+                    <th style={{ position: 'sticky', left: 0, background: 'var(--bs-table-bg)', zIndex: 2 }}>
+                      {/* spacer for hotel column */}
                     </th>
                     {dates.map((d) => (
                       <th key={d} className="text-nowrap">{d}</th>
                     ))}
                   </tr>
                 </thead>
+
                 <tbody>
                   {hotelCodes.map((code) => {
                     const h = hotelsByCode.get(code);
