@@ -22,10 +22,9 @@ function berlinTodayYMD(): string {
 }
 
 export async function GET() {
-  // list scans (unchanged)
   const { rows } = await sql`
-    SELECT id, scanned_at, start_offset, end_offset, stay_nights, timezone, total_cells, done_cells, status,
-           base_checkin, days
+    SELECT id, scanned_at, start_offset, end_offset, stay_nights, timezone,
+           total_cells, done_cells, status, base_checkin, days, fixed_checkout
     FROM scans
     ORDER BY scanned_at DESC
     LIMIT 200
@@ -39,11 +38,19 @@ export async function POST(req: NextRequest) {
     const isCron = url.searchParams.get('cron') === '1' || url.searchParams.has('key');
 
     const body = await req.json().catch(() => ({}));
-    // NEW configurable params
-    const baseCheckIn: string | null =
+
+    // baseCheckIn (YYYY-MM-DD). Default: Berlin today + 5 days.
+    let baseCheckIn: string | null =
       typeof body?.baseCheckIn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.baseCheckIn)
         ? body.baseCheckIn
         : null;
+
+    const berlinToday = berlinTodayYMD();
+    if (!baseCheckIn) {
+      const dt = ymdToUTC(berlinToday);
+      dt.setUTCDate(dt.getUTCDate() + 5);
+      baseCheckIn = toYMDUTC(dt);
+    }
 
     const days: number =
       Number.isFinite(body?.days) && body.days >= 1 && body.days <= 365 ? Number(body.days) : 86;
@@ -53,49 +60,57 @@ export async function POST(req: NextRequest) {
         ? Number(body.stayNights)
         : 7;
 
-    // Backward-compat defaults if no baseCheckIn provided:
-    const berlinToday = berlinTodayYMD();
-    const effectiveBase = baseCheckIn ?? berlinToday; // you can change default to today+5 by computing here
-    // If you want "default today+5":
-    // const dt = ymdToUTC(berlinToday); dt.setUTCDate(dt.getUTCDate() + 5);
-    // const effectiveBase = baseCheckIn ?? toYMDUTC(dt);
+    // compute fixed_checkout to satisfy NOT NULL constraint
+    const checkoutDt = ymdToUTC(baseCheckIn);
+    checkoutDt.setUTCDate(checkoutDt.getUTCDate() + stayNights);
+    const fixedCheckout = toYMDUTC(checkoutDt);
 
-    // CRON idempotency (optional – as before)
+    // Cron idempotency (optional)
     if (isCron) {
-      const existing = await sql<{ id:number }>`
-        SELECT id FROM scans
+      const already = await sql<{ id: number }>`
+        SELECT id
+        FROM scans
         WHERE (scanned_at AT TIME ZONE 'Europe/Berlin')::date = ${berlinToday}::date
           AND status IN ('queued','running','done')
         ORDER BY id DESC
         LIMIT 1
       `;
-      if (existing.rows.length > 0) {
-        return NextResponse.json({ ok: true, message: 'already ran today', scanId: existing.rows[0].id });
+      if (already.rows.length > 0) {
+        return NextResponse.json({ ok: true, message: 'already ran today', scanId: already.rows[0].id });
       }
     }
 
-    const hotelsCount = Number((await sql`SELECT COUNT(*)::int AS c FROM hotels`).rows[0].c);
+    // Hotels count
+    const countQ = await sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels`;
+    const hotelsCount = countQ.rows[0]?.c ?? 0;
     const totalCells = hotelsCount * days;
 
-    // Insert scan header
+    // Insert scan row (note fixed_checkout now provided)
     const ins = await sql`
-      INSERT INTO scans (fixed_checkout, start_offset, end_offset, stay_nights, timezone,
-                         total_cells, done_cells, status, base_checkin, days)
-      VALUES (NULL, NULL, NULL, ${stayNights}, 'Europe/Berlin',
-              ${totalCells}, 0, 'running', ${effectiveBase}, ${days})
+      INSERT INTO scans (
+        fixed_checkout, start_offset, end_offset, stay_nights, timezone,
+        total_cells, done_cells, status, base_checkin, days
+      )
+      VALUES (
+        ${fixedCheckout}, NULL, NULL, ${stayNights}, 'Europe/Berlin',
+        ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}
+      )
       RETURNING id, scanned_at
     `;
+
     const scanId = ins.rows[0].id as number;
 
     return NextResponse.json({
       scanId,
       totalCells,
-      baseCheckIn: effectiveBase,
+      baseCheckIn,
       days,
       stayNights,
+      fixedCheckout,
     });
-  } catch (e:any) {
+  } catch (e: any) {
+    const msg = typeof e?.message === 'string' ? e.message : 'failed to create scan';
     console.error('[POST /api/scans] error', e);
-    return NextResponse.json({ error: 'failed to create scan' }, { status: 500 });
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
