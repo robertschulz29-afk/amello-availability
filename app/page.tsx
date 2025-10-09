@@ -4,13 +4,18 @@ import * as React from 'react';
 
 type Hotel = { id: number; name: string; code: string; brand?: string; region?: string; country?: string };
 type ScanRow = {
-  id: number; scanned_at: string; base_checkin?: string|null; days?: number|null;
+  id: number; scanned_at: string;
   stay_nights: number; total_cells: number; done_cells: number;
   status: 'queued'|'running'|'done'|'error';
 };
 type ResultsMatrix = {
   scanId: number;
   scannedAt: string;
+  baseCheckIn: string | null;
+  fixedCheckout: string | null;
+  days: number | null;
+  stayNights: number | null;
+  timezone: string | null;
   dates: string[];
   results: Record<string, Record<string, 'green' | 'red'>>;
 };
@@ -68,13 +73,13 @@ export default function Page() {
   const [progress, setProgress] = React.useState<{ scanId?:number; total?:number; done?:number; status?:'queued'|'running'|'done'|'error'; }>({});
   const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
 
-  // NEW: scan parameter controls (defaults: base=today+5, days=86, stay=7)
+  // Scan parameter controls (defaults: base = today+5, days=86, stay=7)
   const defaultBase = addDays(todayYMD(), 5);
   const [baseCheckIn, setBaseCheckIn] = React.useState<string>(defaultBase);
   const [days, setDays] = React.useState<number>(86);
   const [stayNights, setStayNights] = React.useState<number>(7);
 
-  // NEW: grouping
+  // Grouping
   type GroupBy = 'none'|'brand'|'region'|'country';
   const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
 
@@ -101,7 +106,7 @@ export default function Page() {
     }
   }, [selectedScanId]);
 
-  // Load matrix by id
+  // Load one scan by id
   const loadScanById = React.useCallback(async (scanId: number) => {
     setError(null); setMatrix(null); setProgress({});
     try {
@@ -111,7 +116,17 @@ export default function Page() {
       const safeDates: string[] = Array.isArray(data?.dates) ? data.dates : [];
       const safeResults: Record<string, Record<string, 'green'|'red'>> =
         data && typeof data.results === 'object' && data.results !== null ? data.results : {};
-      setMatrix({ scanId, scannedAt: String(data?.scannedAt ?? ''), dates: safeDates, results: safeResults });
+      setMatrix({
+        scanId,
+        scannedAt: String(data?.scannedAt ?? ''),
+        baseCheckIn: data?.baseCheckIn ?? null,
+        fixedCheckout: data?.fixedCheckout ?? null,
+        days: data?.days ?? null,
+        stayNights: data?.stayNights ?? null,
+        timezone: data?.timezone ?? null,
+        dates: safeDates,
+        results: safeResults
+      });
     } catch (e:any) {
       setError(e.message || 'Failed to load scan');
     }
@@ -124,22 +139,28 @@ export default function Page() {
   const onAddHotel = async (e: React.FormEvent) => {
     e.preventDefault();
     setHError(null);
-    if (!hName.trim() || !hCode.trim()) { setHError('Name und Code sind erforderlich'); return; }
+    if (!hName.trim() || !hCode.trim()) { setHError('Name and Code are required'); return; }
     setHBusy(true);
     try {
       const next = await fetchJSON('/api/hotels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: hName.trim(), code: hCode.trim(), brand: hBrand.trim() || null, region: hRegion.trim() || null, country: hCountry.trim() || null }),
+        body: JSON.stringify({
+          name: hName.trim(),
+          code: hCode.trim(),
+          brand: hBrand.trim() || null,
+          region: hRegion.trim() || null,
+          country: hCountry.trim() || null
+        }),
       });
       setHotels(Array.isArray(next) ? next : hotels);
       setHName(''); setHCode(''); setHBrand(''); setHRegion(''); setHCountry('');
     } catch (e:any) {
-      setHError(e.message || 'Fehler beim Speichern');
+      setHError(e.message || 'Saving failed');
     } finally { setHBusy(false); }
   };
 
-  // Start new scan with parameters
+  // Start new scan
   const startScan = React.useCallback(async () => {
     setBusy(true); setError(null); setMatrix(null); setProgress({});
     try {
@@ -148,8 +169,8 @@ export default function Page() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           baseCheckIn,    // 'YYYY-MM-DD'
-          days,           // Anzahl der Tage (Spalten)
-          stayNights,     // Dauer (Nächte)
+          days,           // number of columns
+          stayNights,     // stay length
         }),
       });
       const scanId = Number(kick?.scanId);
@@ -176,7 +197,7 @@ export default function Page() {
       setSelectedScanId(scanId);
       setActiveTab('scan');
     } catch (e:any) {
-      setError(e?.message || 'Scan fehlgeschlagen');
+      setError(e?.message || 'Scan failed');
       setProgress(p => ({ ...p, status: 'error' }));
     } finally { setBusy(false); }
   }, [baseCheckIn, days, stayNights, loadScans]);
@@ -204,7 +225,7 @@ export default function Page() {
       await loadScans();
       await loadScanById(s.id);
     } catch (e:any) {
-      setError(e?.message || 'Fortsetzen fehlgeschlagen');
+      setError(e?.message || 'Continue failed');
     } finally { setBusy(false); }
   }, [selectedScanId, scans, loadScans, loadScanById]);
 
@@ -237,21 +258,20 @@ export default function Page() {
     const universe = allCodes.length ? allCodes : hotels.map(h => h.code);
 
     function keyFor(h: Hotel): string {
-      if (groupBy === 'brand')   return (h.brand   && h.brand.trim())   || '(ohne Marke)';
-      if (groupBy === 'region')  return (h.region  && h.region.trim())  || '(ohne Region)';
-      if (groupBy === 'country') return (h.country && h.country.trim()) || '(ohne Land)';
-      return 'Alle Hotels';
+      if (groupBy === 'brand')   return (h.brand   && h.brand.trim())   || '(no brand)';
+      if (groupBy === 'region')  return (h.region  && h.region.trim())  || '(no region)';
+      if (groupBy === 'country') return (h.country && h.country.trim()) || '(no country)';
+      return 'All Hotels';
     }
 
     for (const code of universe) {
       const h = byCode.get(code);
-      const label = h ? keyFor(h) : 'Alle Hotels';
+      const label = h ? keyFor(h) : 'All Hotels';
       const arr = gmap.get(label) || [];
       arr.push(code);
       gmap.set(label, arr);
     }
 
-    // Sort groups by label; inside each, sort by hotel name then code
     const out = Array.from(gmap.entries()).map(([label, codes]) => {
       codes.sort((a,b) => {
         const ha = byCode.get(a), hb = byCode.get(b);
@@ -293,7 +313,7 @@ export default function Page() {
           <div className="row g-3">
             <div className="col-lg-5">
               <div className="card">
-                <div className="card-header">Hotel anlegen</div>
+                <div className="card-header">Add Hotel</div>
                 <div className="card-body">
                   <form onSubmit={onAddHotel} className="row g-3">
                     <div className="col-12">
@@ -305,21 +325,21 @@ export default function Page() {
                       <input className="form-control" value={hCode} onChange={e => setHCode(e.target.value)} placeholder="ALPHA123" />
                     </div>
                     <div className="col-12">
-                      <label className="form-label">Marke</label>
-                      <input className="form-control" value={hBrand} onChange={e => setHBrand(e.target.value)} placeholder="z.B. Amello" />
+                      <label className="form-label">Brand</label>
+                      <input className="form-control" value={hBrand} onChange={e => setHBrand(e.target.value)} placeholder="e.g., Amello" />
                     </div>
                     <div className="col-12">
                       <label className="form-label">Region</label>
-                      <input className="form-control" value={hRegion} onChange={e => setHRegion(e.target.value)} placeholder="z.B. Algarve" />
+                      <input className="form-control" value={hRegion} onChange={e => setHRegion(e.target.value)} placeholder="e.g., Algarve" />
                     </div>
                     <div className="col-12">
-                      <label className="form-label">Land</label>
-                      <input className="form-control" value={hCountry} onChange={e => setHCountry(e.target.value)} placeholder="z.B. Portugal" />
+                      <label className="form-label">Country</label>
+                      <input className="form-control" value={hCountry} onChange={e => setHCountry(e.target.value)} placeholder="e.g., Portugal" />
                     </div>
 
                     {hError ? <div className="col-12 text-danger small">{hError}</div> : null}
                     <div className="col-12">
-                      <button className="btn btn-primary" disabled={hBusy}>{hBusy ? 'Speichere…' : 'Hotel hinzufügen'}</button>
+                      <button className="btn btn-primary" disabled={hBusy}>{hBusy ? 'Saving…' : 'Add hotel'}</button>
                     </div>
                   </form>
                 </div>
@@ -328,9 +348,9 @@ export default function Page() {
 
             <div className="col-lg-7">
               <div className="card">
-                <div className="card-header">Aktuelle Hotels</div>
+                <div className="card-header">Current Hotels</div>
                 <div className="card-body">
-                  {hotels.length === 0 ? <p className="text-muted mb-0">Noch keine Hotels.</p> : (
+                  {hotels.length === 0 ? <p className="text-muted mb-0">No hotels yet.</p> : (
                     <div className="table-responsive">
                       <table className="table table-sm align-middle">
                         <thead>
@@ -338,9 +358,9 @@ export default function Page() {
                             <th style={{ width: 60 }}>#</th>
                             <th>Name</th>
                             <th>Code</th>
-                            <th>Marke</th>
+                            <th>Brand</th>
                             <th>Region</th>
-                            <th>Land</th>
+                            <th>Country</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -368,23 +388,23 @@ export default function Page() {
         <div className={`tab-pane fade ${activeTab === 'scan' ? 'show active' : ''}`}>
           {/* Scan parameter controls */}
           <div className="card mb-3">
-            <div className="card-header">Scan-Parameter</div>
+            <div className="card-header">Scan Parameters</div>
             <div className="card-body row g-3">
               <div className="col-sm-4 col-md-3">
-                <label className="form-label">Check-in Datum</label>
+                <label className="form-label">Check-in date</label>
                 <input type="date" className="form-control" value={baseCheckIn} onChange={e => setBaseCheckIn(e.target.value)} />
               </div>
               <div className="col-sm-4 col-md-3">
-                <label className="form-label">Dauer (Nächte)</label>
+                <label className="form-label">Stay (nights)</label>
                 <input type="number" min={1} max={30} className="form-control" value={stayNights} onChange={e => setStayNights(Number(e.target.value || 1))} />
               </div>
               <div className="col-sm-4 col-md-3">
-                <label className="form-label">Anzahl der Tage (Spalten)</label>
+                <label className="form-label">Days to scan (columns)</label>
                 <input type="number" min={1} max={365} className="form-control" value={days} onChange={e => setDays(Number(e.target.value || 1))} />
               </div>
               <div className="col-sm-12 col-md-3 d-flex align-items-end">
                 <button className="btn btn-success w-100" onClick={startScan} disabled={busy || hotels.length === 0}>
-                  {busy ? 'Scanne…' : 'Scan starten'}
+                  {busy ? 'Scanning…' : 'Start scan'}
                 </button>
               </div>
             </div>
@@ -394,28 +414,28 @@ export default function Page() {
           <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
             <div className="d-flex align-items-center gap-2">
               <select className="form-select" style={{ minWidth: 300 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
-                {scans.length === 0 ? <option value="">Keine Scans</option> : scans.map(s => (
+                {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
                   <option key={s.id} value={s.id}>
                     #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
                   </option>
                 ))}
               </select>
-              <button className="btn btn-outline-secondary" onClick={() => scans.length && setSelectedScanId(scans[0].id)} disabled={scans.length === 0}>Neuester</button>
+              <button className="btn btn-outline-secondary" onClick={() => scans.length && setSelectedScanId(scans[0].id)} disabled={scans.length === 0}>Newest</button>
               <button className="btn btn-outline-secondary" onClick={() => { const i = scans.findIndex(s => s.id===selectedScanId); if (i>=0 && i+1<scans.length) setSelectedScanId(scans[i+1].id);} } disabled={!scans.length}>Prev</button>
               <button className="btn btn-outline-secondary" onClick={() => { const i = scans.findIndex(s => s.id===selectedScanId); if (i>0) setSelectedScanId(scans[i-1].id);} } disabled={!scans.length}>Next</button>
               <button className="btn btn-outline-secondary" onClick={async()=>{ await loadScans(); if (selectedScanId!=null) await loadScanById(selectedScanId); }} disabled={selectedScanId==null}>Refresh</button>
               {progress.status === 'running' ? (
-                <button className="btn btn-outline-primary" onClick={continueProcessing} disabled={busy}>Fortsetzen</button>
+                <button className="btn btn-outline-primary" onClick={continueProcessing} disabled={busy}>Continue</button>
               ) : null}
             </div>
 
             <div className="ms-auto d-flex align-items-center gap-2">
-              <label className="form-label mb-0">Gruppieren nach:</label>
+              <label className="form-label mb-0">Group by:</label>
               <select className="form-select" value={groupBy} onChange={e => setGroupBy(e.target.value as any)}>
-                <option value="none">Keine</option>
-                <option value="brand">Marke</option>
+                <option value="none">None</option>
+                <option value="brand">Brand</option>
                 <option value="region">Region</option>
-                <option value="country">Land</option>
+                <option value="country">Country</option>
               </select>
             </div>
           </div>
@@ -434,6 +454,25 @@ export default function Page() {
           ) : null}
 
           {error ? <div className="alert alert-danger">{error}</div> : null}
+
+          {/* Scan details (new) */}
+          {matrix ? (
+            <div className="card mb-3">
+              <div className="card-header">Scan details</div>
+              <div className="card-body small">
+                <div className="row g-2">
+                  <div className="col-sm-6 col-md-4"><strong>Scan ID:</strong> {matrix.scanId}</div>
+                  <div className="col-sm-6 col-md-4"><strong>Scanned at:</strong> {fmtDateTime(matrix.scannedAt)}</div>
+                  <div className="col-sm-6 col-md-4"><strong>Timezone:</strong> {matrix.timezone ?? '—'}</div>
+                  <div className="col-sm-6 col-md-4"><strong>Base check-in:</strong> {matrix.baseCheckIn ?? '—'}</div>
+                  <div className="col-sm-6 col-md-4"><strong>Fixed checkout (first column):</strong> {matrix.fixedCheckout ?? '—'}</div>
+                  <div className="col-sm-6 col-md-4"><strong>Days scanned (columns):</strong> {matrix.days ?? '—'}</div>
+                  <div className="col-sm-6 col-md-4"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
+                  <div className="col-sm-6 col-md-4"><strong>Unique dates returned:</strong> {matrix.dates.length}</div>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {/* Results */}
           {dates.length > 0 && groups.length > 0 ? (
@@ -500,7 +539,7 @@ export default function Page() {
               ))}
             </>
           ) : (
-            <p className="text-muted">Keine Ergebnisse.</p>
+            <p className="text-muted">No results.</p>
           )}
         </div>
       </div>
