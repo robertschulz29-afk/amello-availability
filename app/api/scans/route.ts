@@ -1,16 +1,12 @@
-// app/api/scans/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function berlinTodayYMD(): string {
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Berlin',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  });
-  return fmt.format(new Date()); // 'YYYY-MM-DD'
+function ymdToUTC(ymd: string): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
 }
 function toYMDUTC(d: Date) {
   const y = d.getUTCFullYear();
@@ -18,68 +14,88 @@ function toYMDUTC(d: Date) {
   const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
 }
-function addDaysYMD(ymd: string, days: number): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return toYMDUTC(dt);
+function berlinTodayYMD(): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return fmt.format(new Date()); // YYYY-MM-DD
 }
 
 export async function GET() {
-  try {
-    const { rows } = await sql`
-      SELECT id, scanned_at, start_offset, end_offset, stay_nights,
-             total_cells, done_cells, status
-      FROM scans
-      ORDER BY scanned_at DESC
-    `;
-    return NextResponse.json(rows);
-  } catch (e:any) {
-    console.error('[GET /api/scans] error', e);
-    return NextResponse.json({ error: 'DB error' }, { status: 500 });
-  }
+  // list scans (unchanged)
+  const { rows } = await sql`
+    SELECT id, scanned_at, start_offset, end_offset, stay_nights, timezone, total_cells, done_cells, status,
+           base_checkin, days
+    FROM scans
+    ORDER BY scanned_at DESC
+    LIMIT 200
+  `;
+  return NextResponse.json(rows);
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const txt = await req.text();
-    let body: any = {};
-    if (txt) { try { body = JSON.parse(txt); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); } }
-    const startOffset = Number.isFinite(body?.startOffset) ? body.startOffset : 5;
-    const endOffset   = Number.isFinite(body?.endOffset)   ? body.endOffset   : 90;
-    const stayNights  = Number.isFinite(body?.stayNights)  ? body.stayNights  : 7;
+    const url = new URL(req.url);
+    const isCron = url.searchParams.get('cron') === '1' || url.searchParams.has('key');
 
-    if (endOffset < startOffset) return NextResponse.json({ error: 'endOffset must be >= startOffset' }, { status: 400 });
-    if (stayNights <= 0) return NextResponse.json({ error: 'stayNights must be > 0' }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    // NEW configurable params
+    const baseCheckIn: string | null =
+      typeof body?.baseCheckIn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.baseCheckIn)
+        ? body.baseCheckIn
+        : null;
 
-    // Count hotels now to compute total_cells
+    const days: number =
+      Number.isFinite(body?.days) && body.days >= 1 && body.days <= 365 ? Number(body.days) : 86;
+
+    const stayNights: number =
+      Number.isFinite(body?.stayNights) && body.stayNights >= 1 && body.stayNights <= 30
+        ? Number(body.stayNights)
+        : 7;
+
+    // Backward-compat defaults if no baseCheckIn provided:
+    const berlinToday = berlinTodayYMD();
+    const effectiveBase = baseCheckIn ?? berlinToday; // you can change default to today+5 by computing here
+    // If you want "default today+5":
+    // const dt = ymdToUTC(berlinToday); dt.setUTCDate(dt.getUTCDate() + 5);
+    // const effectiveBase = baseCheckIn ?? toYMDUTC(dt);
+
+    // CRON idempotency (optional – as before)
+    if (isCron) {
+      const existing = await sql<{ id:number }>`
+        SELECT id FROM scans
+        WHERE (scanned_at AT TIME ZONE 'Europe/Berlin')::date = ${berlinToday}::date
+          AND status IN ('queued','running','done')
+        ORDER BY id DESC
+        LIMIT 1
+      `;
+      if (existing.rows.length > 0) {
+        return NextResponse.json({ ok: true, message: 'already ran today', scanId: existing.rows[0].id });
+      }
+    }
+
     const hotelsCount = Number((await sql`SELECT COUNT(*)::int AS c FROM hotels`).rows[0].c);
-    const numDates = (endOffset - startOffset + 1);
-    const totalCells = hotelsCount * numDates;
+    const totalCells = hotelsCount * days;
 
-    // Store a placeholder fixed_checkout (first col’s checkout) to satisfy NOT NULL
-    const firstCheckIn = addDaysYMD(berlinTodayYMD(), startOffset);
-    const fixedCheckout = addDaysYMD(firstCheckIn, stayNights);
-
+    // Insert scan header
     const ins = await sql`
-      INSERT INTO scans (fixed_checkout, start_offset, end_offset, stay_nights,
-                         timezone, total_cells, done_cells, status)
-      VALUES (${fixedCheckout}, ${startOffset}, ${endOffset}, ${stayNights},
-              'Europe/Berlin', ${totalCells}, 0, 'running')
-      RETURNING id, scanned_at, total_cells, done_cells, status
+      INSERT INTO scans (fixed_checkout, start_offset, end_offset, stay_nights, timezone,
+                         total_cells, done_cells, status, base_checkin, days)
+      VALUES (NULL, NULL, NULL, ${stayNights}, 'Europe/Berlin',
+              ${totalCells}, 0, 'running', ${effectiveBase}, ${days})
+      RETURNING id, scanned_at
     `;
-    const scan = ins.rows[0];
+    const scanId = ins.rows[0].id as number;
 
     return NextResponse.json({
-      scanId: scan.id,
-      scannedAt: scan.scanned_at,
-      totalCells: scan.total_cells,
-      doneCells: scan.done_cells,
-      status: scan.status,
-      startOffset, endOffset, stayNights,
+      scanId,
+      totalCells,
+      baseCheckIn: effectiveBase,
+      days,
+      stayNights,
     });
   } catch (e:any) {
     console.error('[POST /api/scans] error', e);
-    return NextResponse.json({ error: 'Failed to create scan' }, { status: 500 });
+    return NextResponse.json({ error: 'failed to create scan' }, { status: 500 });
   }
 }
