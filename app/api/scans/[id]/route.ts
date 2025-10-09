@@ -24,14 +24,31 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   try {
     const scanQ = await sql`
-      SELECT id, scanned_at, base_checkin, days, stay_nights, timezone, total_cells, done_cells, status
-      FROM scans WHERE id=${scanId}
+      SELECT
+        id,
+        scanned_at,
+        base_checkin,
+        days,
+        stay_nights,
+        timezone,
+        total_cells,
+        done_cells,
+        status,
+        fixed_checkout
+      FROM scans
+      WHERE id=${scanId}
     `;
     if (scanQ.rows.length === 0) return NextResponse.json({ error: 'scan not found' }, { status: 404 });
     const scan = scanQ.rows[0];
 
-    const hotelsQ = await sql`SELECT id, name, code, brand, region, country FROM hotels ORDER BY id ASC`;
-    const hotels = hotelsQ.rows as Array<{ id:number; name:string; code:string; brand?:string|null; region?:string|null; country?:string|null }>;
+    const hotelsQ = await sql`
+      SELECT id, name, code, brand, region, country
+      FROM hotels
+      ORDER BY id ASC
+    `;
+    const hotels = hotelsQ.rows as Array<{
+      id:number; name:string; code:string; brand?:string|null; region?:string|null; country?:string|null
+    }>;
     const hotelById = new Map<number, (typeof hotels)[number]>();
     for (const h of hotels) hotelById.set(h.id, h);
 
@@ -56,15 +73,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     for (const h of hotels) if (!results[h.code]) results[h.code] = {};
 
     return NextResponse.json({
+      // identity
       scanId: scan.id,
       scannedAt: scan.scanned_at,
-      baseCheckIn: scan.base_checkin,
-      days: scan.days,
-      stayNights: scan.stay_nights,
-      timezone: scan.timezone,
+
+      // parameters (what you asked to show)
+      baseCheckIn: scan.base_checkin ? normalizeDateToYMD(scan.base_checkin) : null,
+      fixedCheckout: scan.fixed_checkout ? normalizeDateToYMD(scan.fixed_checkout) : null,
+      days: scan.days ?? null,
+      stayNights: scan.stay_nights ?? null,
+      timezone: scan.timezone ?? null,
+
+      // progress
       totalCells: scan.total_cells ?? null,
       doneCells: scan.done_cells ?? null,
       status: scan.status ?? null,
+
+      // matrix
       dates,
       results,
     });
