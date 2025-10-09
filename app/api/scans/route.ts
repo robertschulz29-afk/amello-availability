@@ -60,10 +60,14 @@ export async function POST(req: NextRequest) {
         ? Number(body.stayNights)
         : 7;
 
-    // compute fixed_checkout to satisfy NOT NULL constraint
+    // Compute fixed_checkout (checkout for the first column)
     const checkoutDt = ymdToUTC(baseCheckIn);
     checkoutDt.setUTCDate(checkoutDt.getUTCDate() + stayNights);
     const fixedCheckout = toYMDUTC(checkoutDt);
+
+    // Satisfy legacy NOT NULL constraints
+    const startOffset = 0;
+    const endOffset = days - 1;
 
     // Cron idempotency (optional)
     if (isCron) {
@@ -85,14 +89,14 @@ export async function POST(req: NextRequest) {
     const hotelsCount = countQ.rows[0]?.c ?? 0;
     const totalCells = hotelsCount * days;
 
-    // Insert scan row (note fixed_checkout now provided)
+    // Insert scan (now providing non-null start/end offsets + fixed_checkout)
     const ins = await sql`
       INSERT INTO scans (
         fixed_checkout, start_offset, end_offset, stay_nights, timezone,
         total_cells, done_cells, status, base_checkin, days
       )
       VALUES (
-        ${fixedCheckout}, NULL, NULL, ${stayNights}, 'Europe/Berlin',
+        ${fixedCheckout}, ${startOffset}, ${endOffset}, ${stayNights}, 'Europe/Berlin',
         ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}
       )
       RETURNING id, scanned_at
@@ -107,6 +111,8 @@ export async function POST(req: NextRequest) {
       days,
       stayNights,
       fixedCheckout,
+      startOffset,
+      endOffset,
     });
   } catch (e: any) {
     const msg = typeof e?.message === 'string' ? e.message : 'failed to create scan';
