@@ -473,6 +473,19 @@ export default function Page() {
               </div>
             </div>
           ) : null}
+          {/* ...existing buttons... */}
+<button
+  className="btn btn-outline-success"
+  onClick={() => {
+    if (!selectedScanId) return;
+    // default to 'long'; change to 'wide' if you prefer
+    window.open(`/api/scans/${selectedScanId}/export?format=long`, '_blank');
+  }}
+  disabled={selectedScanId == null}
+>
+  Export CSV
+</button>
+
 
           {/* Results */}
           {dates.length > 0 && groups.length > 0 ? (
