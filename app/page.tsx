@@ -1,3 +1,4 @@
+// app/page.tsx (DROP-IN)
 'use client';
 
 import * as React from 'react';
@@ -64,21 +65,18 @@ function GroupBarChart({
   barWidth?: number;
   gap?: number;
 }) {
-  // SVG dimensions
   const innerPadTop = 16;
-  const innerPadBottom = 36; // space for x labels
+  const innerPadBottom = 36;
   const maxBarArea = height - innerPadTop - innerPadBottom;
 
   const width = Math.max(300, series.length * (barWidth + gap) + 40);
   const xStart = 20;
 
-  // Helper: y coordinate for a given percent (0-100)
   const yFor = (pct: number) => {
     const clamped = Math.max(0, Math.min(100, pct));
     return innerPadTop + (100 - clamped) / 100 * maxBarArea;
-  };
+    };
 
-  // Determine label throttling so dates don’t overlap
   const labelEvery = series.length > 120 ? 10
                      : series.length > 80 ? 6
                      : series.length > 50 ? 4
@@ -93,15 +91,12 @@ function GroupBarChart({
       </div>
       <div className="card-body" style={{ overflowX: 'auto' }}>
         <svg width={width} height={height} role="img" aria-label={`${title} green percentage chart`}>
-          {/* Y-axis reference lines at 25/50/75 */}
           {[25,50,75].map((p) => (
             <g key={`grid-${p}`}>
               <line x1={0} y1={yFor(p)} x2={width} y2={yFor(p)} stroke="currentColor" strokeOpacity="0.1" />
               <text x={4} y={yFor(p) - 2} fontSize="10" fill="currentColor" fillOpacity="0.6">{p}%</text>
             </g>
           ))}
-
-          {/* Bars */}
           {series.map((pt, idx) => {
             const x = xStart + idx * (barWidth + gap);
             const y = yFor(pt.pct);
@@ -110,13 +105,11 @@ function GroupBarChart({
               <g key={pt.date}>
                 <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
                 <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill="currentColor" fillOpacity="0.25" />
-                {/* numeric label if tall enough */}
                 {h >= 18 && (
                   <text x={x + barWidth/2} y={y - 4} textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.7">
                     {isFinite(pt.pct) ? Math.round(pt.pct) : 0}%
                   </text>
                 )}
-                {/* x-axis date labels */}
                 {idx % labelEvery === 0 && (
                   <text x={x + barWidth/2} y={height - 8} textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.7">
                     {pt.date}
@@ -242,7 +235,7 @@ export default function Page() {
     } finally { setHBusy(false); }
   };
 
-  // Start new scan (adultCount sent to backend if you have wired it there; UI stores it in scan params if needed later)
+  // Start new scan
   const startScan = React.useCallback(async () => {
     setBusy(true); setError(null); setMatrix(null); setProgress({});
     try {
@@ -250,10 +243,10 @@ export default function Page() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          baseCheckIn,    // 'YYYY-MM-DD'
-          days,           // number of columns
-          stayNights,     // stay length
-          adultCount,     // <--- optional: if your POST /api/scans persists it
+          baseCheckIn,
+          days,
+          stayNights,
+          adultCount, // optional: persist if backend supports it
         }),
       });
       const scanId = Number(kick?.scanId);
@@ -262,7 +255,7 @@ export default function Page() {
       setProgress({ scanId, total, done: 0, status: 'running' });
 
       // Process in batches
-      let idx = 0; const size = 30; // conservative batch for timeouts
+      let idx = 0; const size = 30;
       while (true) {
         const r = await fetchJSON('/api/scans/process', {
           method: 'POST',
@@ -367,27 +360,6 @@ export default function Page() {
     out.sort((a,b) => a.label.localeCompare(b.label));
     return out;
   }, [groupBy, hotels, hotelsByCode, matrix]);
-
-  // --- NEW: Per-group daily % green series for charts ---
-  const groupSeries = React.useMemo(() => {
-    if (!matrix) return [] as Array<{ label: string; series: Array<{ date: string; pct: number; greens:number; total:number }> }>;
-    const out: Array<{ label: string; series: Array<{ date: string; pct: number; greens:number; total:number }> }> = [];
-    for (const g of groups) {
-      const s: Array<{ date: string; pct: number; greens:number; total:number }> = [];
-      for (const d of matrix.dates) {
-        let greens = 0, total = 0;
-        for (const code of g.codes) {
-          const v = matrix.results?.[code]?.[d];
-          if (v === 'green') { greens++; total++; }
-          else if (v === 'red') { total++; }
-        }
-        const pct = total > 0 ? (greens / total) * 100 : 0;
-        s.push({ date: d, pct, greens, total });
-      }
-      out.push({ label: g.label, series: s });
-    }
-    return out;
-  }, [groups, matrix]);
 
   // Scan navigation
   const currentIndex = React.useMemo(
@@ -591,86 +563,90 @@ export default function Page() {
             </div>
           ) : null}
 
-          {/* --- NEW: Per-group charts --- */}
-          {groupSeries.length > 0 && (
-            <div className="mb-4">
-              <h4 className="mb-3">Group Charts</h4>
-              {groupSeries.map(g => (
-                <GroupBarChart
-                  key={g.label}
-                  title={g.label}
-                  series={g.series}
-                  height={180}
-                  barWidth={12}
-                  gap={5}
-                />
-              ))}
+          {/* Global column counters header */}
+          {dates.length > 0 && (
+            <div className="table-responsive border rounded mb-3">
+              <table className="table table-sm mb-0">
+                <thead className="table-light sticky-top">
+                  <tr>
+                    <th style={{ position:'sticky', left:0, background:'var(--bs-table-bg)', zIndex:3 }}>Hotel (Name • Code)</th>
+                    {dates.map(d => {
+                      const c = columnCounters.find(x => x.date === d);
+                      const greens = c?.greens ?? 0, total = c?.total ?? 0;
+                      const pct = total > 0 ? Math.round((greens/total)*100) : 0;
+                      return (
+                        <th key={'c-'+d} className="text-center" style={{ whiteSpace:'nowrap' }}>
+                          <div className="small text-muted" style={{ lineHeight:1 }}>
+                            <div>{greens} / {total}</div>
+                            <div>{total>0 ? `${pct}%` : ''}</div>
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                  <tr>
+                    <th style={{ position:'sticky', left:0, background:'var(--bs-table-bg)', zIndex:2 }} />
+                    {dates.map(d => <th key={d} className="text-nowrap">{d}</th>)}
+                  </tr>
+                </thead>
+              </table>
             </div>
           )}
 
-          {/* Results tables */}
+          {/* Grouped chart + table per group */}
           {dates.length > 0 && groups.length > 0 ? (
             <>
-              {/* Global column counters header */}
-              <div className="table-responsive border rounded mb-3">
-                <table className="table table-sm mb-0">
-                  <thead className="table-light sticky-top">
-                    <tr>
-                      <th style={{ position:'sticky', left:0, background:'var(--bs-table-bg)', zIndex:3 }}>Hotel (Name • Code)</th>
-                      {dates.map(d => {
-                        const c = columnCounters.find(x => x.date === d);
-                        const greens = c?.greens ?? 0, total = c?.total ?? 0;
-                        const pct = total > 0 ? Math.round((greens/total)*100) : 0;
-                        return (
-                          <th key={'c-'+d} className="text-center" style={{ whiteSpace:'nowrap' }}>
-                            <div className="small text-muted" style={{ lineHeight:1 }}>
-                              <div>{greens} / {total}</div>
-                              <div>{total>0 ? `${pct}%` : ''}</div>
-                            </div>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                    <tr>
-                      <th style={{ position:'sticky', left:0, background:'var(--bs-table-bg)', zIndex:2 }} />
-                      {dates.map(d => <th key={d} className="text-nowrap">{d}</th>)}
-                    </tr>
-                  </thead>
-                </table>
-              </div>
+              {groups.map(g => {
+                const series = (matrix?.dates ?? []).map(d => {
+                  let greens = 0, total = 0;
+                  for (const code of g.codes) {
+                    const v = matrix?.results?.[code]?.[d];
+                    if (v === 'green') { greens++; total++; }
+                    else if (v === 'red') { total++; }
+                  }
+                  const pct = total > 0 ? (greens / total) * 100 : 0;
+                  return { date: d, pct, greens, total };
+                });
 
-              {/* Grouped tables */}
-              {groups.map(g => (
-                <div key={g.label} className="mb-4">
-                  <h5 className="mb-2">{g.label}</h5>
-                  <div className="table-responsive border rounded">
-                    <table className="table table-sm mb-0">
-                      <thead className="table-light">
-                        <tr>
-                          <th style={{ position:'sticky', left:0, background:'var(--bs-table-bg)', zIndex:1 }}>Hotel (Name • Code)</th>
-                          {dates.map(d => <th key={g.label + d} className="text-nowrap">{d}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {g.codes.map(code => {
-                          const h = hotelsByCode.get(code);
-                          const label = h ? `${h.name} • ${h.code}` : code;
-                          return (
-                            <tr key={code}>
-                              <td style={{ position:'sticky', left:0, background:'var(--bs-body-bg)', zIndex:1 }}>{label}</td>
-                              {dates.map(d => {
-                                const v = cell(code, d);
-                                const cls = v === 'green' ? 'table-success' : v === 'red' ? 'table-danger' : '';
-                                return <td key={code + d} className={`${cls} text-center small`}>{v ?? ''}</td>;
-                              })}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                return (
+                  <div key={g.label} className="mb-4">
+                    <GroupBarChart
+                      title={g.label}
+                      series={series}
+                      height={180}
+                      barWidth={12}
+                      gap={5}
+                    />
+
+                    <div className="table-responsive border rounded">
+                      <table className="table table-sm mb-0">
+                        <thead className="table-light">
+                          <tr>
+                            <th style={{ position:'sticky', left:0, background:'var(--bs-table-bg)', zIndex:1 }}>Hotel (Name • Code)</th>
+                            {dates.map(d => <th key={g.label + d} className="text-nowrap">{d}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.codes.map(code => {
+                            const h = hotelsByCode.get(code);
+                            const label = h ? `${h.name} • ${h.code}` : code;
+                            return (
+                              <tr key={code}>
+                                <td style={{ position:'sticky', left:0, background:'var(--bs-body-bg)', zIndex:1 }}>{label}</td>
+                                {dates.map(d => {
+                                  const v = matrix?.results?.[code]?.[d];
+                                  const cls = v === 'green' ? 'table-success' : v === 'red' ? 'table-danger' : '';
+                                  return <td key={code + d} className={`${cls} text-center small`}>{v ?? ''}</td>;
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </>
           ) : (
             <p className="text-muted">No results.</p>
