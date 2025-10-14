@@ -50,6 +50,87 @@ function addDays(ymd: string, n: number): string {
   return `${yy}-${mm}-${dd2}`;
 }
 
+/** --- Small SVG bar chart (no external deps) --- */
+function GroupBarChart({
+  title,
+  series,       // [{ date, pct, greens, total }]
+  height = 180, // px
+  barWidth = 14,
+  gap = 6,
+}: {
+  title: string;
+  series: Array<{ date: string; pct: number; greens: number; total: number }>;
+  height?: number;
+  barWidth?: number;
+  gap?: number;
+}) {
+  // SVG dimensions
+  const innerPadTop = 16;
+  const innerPadBottom = 36; // space for x labels
+  const maxBarArea = height - innerPadTop - innerPadBottom;
+
+  const width = Math.max(300, series.length * (barWidth + gap) + 40);
+  const xStart = 20;
+
+  // Helper: y coordinate for a given percent (0-100)
+  const yFor = (pct: number) => {
+    const clamped = Math.max(0, Math.min(100, pct));
+    return innerPadTop + (100 - clamped) / 100 * maxBarArea;
+  };
+
+  // Determine label throttling so dates don’t overlap
+  const labelEvery = series.length > 120 ? 10
+                     : series.length > 80 ? 6
+                     : series.length > 50 ? 4
+                     : series.length > 25 ? 2
+                     : 1;
+
+  return (
+    <div className="card mb-3">
+      <div className="card-header d-flex justify-content-between align-items-center">
+        <span>{title}</span>
+        <span className="small text-muted">Green % by day</span>
+      </div>
+      <div className="card-body" style={{ overflowX: 'auto' }}>
+        <svg width={width} height={height} role="img" aria-label={`${title} green percentage chart`}>
+          {/* Y-axis reference lines at 25/50/75 */}
+          {[25,50,75].map((p) => (
+            <g key={`grid-${p}`}>
+              <line x1={0} y1={yFor(p)} x2={width} y2={yFor(p)} stroke="currentColor" strokeOpacity="0.1" />
+              <text x={4} y={yFor(p) - 2} fontSize="10" fill="currentColor" fillOpacity="0.6">{p}%</text>
+            </g>
+          ))}
+
+          {/* Bars */}
+          {series.map((pt, idx) => {
+            const x = xStart + idx * (barWidth + gap);
+            const y = yFor(pt.pct);
+            const h = (innerPadTop + maxBarArea) - y;
+            return (
+              <g key={pt.date}>
+                <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
+                <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill="currentColor" fillOpacity="0.25" />
+                {/* numeric label if tall enough */}
+                {h >= 18 && (
+                  <text x={x + barWidth/2} y={y - 4} textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.7">
+                    {isFinite(pt.pct) ? Math.round(pt.pct) : 0}%
+                  </text>
+                )}
+                {/* x-axis date labels */}
+                {idx % labelEvery === 0 && (
+                  <text x={x + barWidth/2} y={height - 8} textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.7">
+                    {pt.date}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 export default function Page() {
   const [activeTab, setActiveTab] = React.useState<'hotels' | 'scan'>('hotels');
 
@@ -78,6 +159,7 @@ export default function Page() {
   const [baseCheckIn, setBaseCheckIn] = React.useState<string>(defaultBase);
   const [days, setDays] = React.useState<number>(86);
   const [stayNights, setStayNights] = React.useState<number>(7);
+  const [adultCount, setAdultCount] = React.useState<number>(2); // configurable adults
 
   // Grouping
   type GroupBy = 'none'|'brand'|'region'|'country';
@@ -160,7 +242,7 @@ export default function Page() {
     } finally { setHBusy(false); }
   };
 
-  // Start new scan
+  // Start new scan (adultCount sent to backend if you have wired it there; UI stores it in scan params if needed later)
   const startScan = React.useCallback(async () => {
     setBusy(true); setError(null); setMatrix(null); setProgress({});
     try {
@@ -171,6 +253,7 @@ export default function Page() {
           baseCheckIn,    // 'YYYY-MM-DD'
           days,           // number of columns
           stayNights,     // stay length
+          adultCount,     // <--- optional: if your POST /api/scans persists it
         }),
       });
       const scanId = Number(kick?.scanId);
@@ -179,7 +262,7 @@ export default function Page() {
       setProgress({ scanId, total, done: 0, status: 'running' });
 
       // Process in batches
-      let idx = 0; const size = 50;
+      let idx = 0; const size = 30; // conservative batch for timeouts
       while (true) {
         const r = await fetchJSON('/api/scans/process', {
           method: 'POST',
@@ -200,7 +283,7 @@ export default function Page() {
       setError(e?.message || 'Scan failed');
       setProgress(p => ({ ...p, status: 'error' }));
     } finally { setBusy(false); }
-  }, [baseCheckIn, days, stayNights, loadScans]);
+  }, [baseCheckIn, days, stayNights, adultCount, loadScans]);
 
   // Continue processing existing scan
   const continueProcessing = React.useCallback(async () => {
@@ -208,7 +291,7 @@ export default function Page() {
     const s = scans.find(x => x.id === selectedScanId); if (!s) return;
     setBusy(true); setError(null);
     try {
-      let idx = s.done_cells ?? 0; const total = s.total_cells ?? 0; const size = 50;
+      let idx = s.done_cells ?? 0; const total = s.total_cells ?? 0; const size = 30;
       setProgress({ scanId: s.id, total, done: idx, status: 'running' });
       while (true) {
         const r = await fetchJSON('/api/scans/process', {
@@ -251,6 +334,7 @@ export default function Page() {
   }, [matrix]);
 
   // Grouping
+  type Group = { label: string; codes: string[] };
   const groups = React.useMemo(() => {
     const gmap = new Map<string, string[]>(); // groupLabel -> hotelCodes[]
     const byCode = hotelsByCode;
@@ -284,6 +368,27 @@ export default function Page() {
     return out;
   }, [groupBy, hotels, hotelsByCode, matrix]);
 
+  // --- NEW: Per-group daily % green series for charts ---
+  const groupSeries = React.useMemo(() => {
+    if (!matrix) return [] as Array<{ label: string; series: Array<{ date: string; pct: number; greens:number; total:number }> }>;
+    const out: Array<{ label: string; series: Array<{ date: string; pct: number; greens:number; total:number }> }> = [];
+    for (const g of groups) {
+      const s: Array<{ date: string; pct: number; greens:number; total:number }> = [];
+      for (const d of matrix.dates) {
+        let greens = 0, total = 0;
+        for (const code of g.codes) {
+          const v = matrix.results?.[code]?.[d];
+          if (v === 'green') { greens++; total++; }
+          else if (v === 'red') { total++; }
+        }
+        const pct = total > 0 ? (greens / total) * 100 : 0;
+        s.push({ date: d, pct, greens, total });
+      }
+      out.push({ label: g.label, series: s });
+    }
+    return out;
+  }, [groups, matrix]);
+
   // Scan navigation
   const currentIndex = React.useMemo(
     () => (selectedScanId != null ? scans.findIndex(s => s.id === selectedScanId) : -1),
@@ -291,8 +396,6 @@ export default function Page() {
   );
   const onPrev = () => { if (currentIndex < 0) return; const nextIdx = currentIndex + 1; if (nextIdx < scans.length) setSelectedScanId(scans[nextIdx].id); };
   const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
-  const onLoadLatest = () => { if (scans.length > 0) setSelectedScanId(scans[0].id); };
-  const onRefreshSelected = async () => { await loadScans(); if (selectedScanId != null) await loadScanById(selectedScanId); };
 
   return (
     <main>
@@ -390,21 +493,35 @@ export default function Page() {
           <div className="card mb-3">
             <div className="card-header">Scan Parameters</div>
             <div className="card-body row g-3">
-              <div className="col-sm-4 col-md-3">
+              <div className="col-sm-3">
                 <label className="form-label">Check-in date</label>
                 <input type="date" className="form-control" value={baseCheckIn} onChange={e => setBaseCheckIn(e.target.value)} />
               </div>
-              <div className="col-sm-4 col-md-3">
+              <div className="col-sm-3">
                 <label className="form-label">Stay (nights)</label>
                 <input type="number" min={1} max={30} className="form-control" value={stayNights} onChange={e => setStayNights(Number(e.target.value || 1))} />
               </div>
-              <div className="col-sm-4 col-md-3">
+              <div className="col-sm-3">
                 <label className="form-label">Days to scan (columns)</label>
                 <input type="number" min={1} max={365} className="form-control" value={days} onChange={e => setDays(Number(e.target.value || 1))} />
               </div>
-              <div className="col-sm-12 col-md-3 d-flex align-items-end">
-                <button className="btn btn-success w-100" onClick={startScan} disabled={busy || hotels.length === 0}>
+              <div className="col-sm-3">
+                <label className="form-label">Adults</label>
+                <input type="number" min={1} max={6} className="form-control" value={adultCount} onChange={e => setAdultCount(Number(e.target.value || 1))} />
+              </div>
+              <div className="col-12 d-flex gap-2">
+                <button className="btn btn-success" onClick={startScan} disabled={busy || hotels.length === 0}>
                   {busy ? 'Scanning…' : 'Start scan'}
+                </button>
+                <button
+                  className="btn btn-outline-success"
+                  onClick={() => {
+                    if (!selectedScanId) return;
+                    window.open(`/api/scans/${selectedScanId}/export?format=long`, '_blank');
+                  }}
+                  disabled={selectedScanId == null}
+                >
+                  Export CSV
                 </button>
               </div>
             </div>
@@ -421,8 +538,8 @@ export default function Page() {
                 ))}
               </select>
               <button className="btn btn-outline-secondary" onClick={() => scans.length && setSelectedScanId(scans[0].id)} disabled={scans.length === 0}>Newest</button>
-              <button className="btn btn-outline-secondary" onClick={() => { const i = scans.findIndex(s => s.id===selectedScanId); if (i>=0 && i+1<scans.length) setSelectedScanId(scans[i+1].id);} } disabled={!scans.length}>Prev</button>
-              <button className="btn btn-outline-secondary" onClick={() => { const i = scans.findIndex(s => s.id===selectedScanId); if (i>0) setSelectedScanId(scans[i-1].id);} } disabled={!scans.length}>Next</button>
+              <button className="btn btn-outline-secondary" onClick={onPrev} disabled={!scans.length}>Prev</button>
+              <button className="btn btn-outline-secondary" onClick={onNext} disabled={!scans.length}>Next</button>
               <button className="btn btn-outline-secondary" onClick={async()=>{ await loadScans(); if (selectedScanId!=null) await loadScanById(selectedScanId); }} disabled={selectedScanId==null}>Refresh</button>
               {progress.status === 'running' ? (
                 <button className="btn btn-outline-primary" onClick={continueProcessing} disabled={busy}>Continue</button>
@@ -455,7 +572,7 @@ export default function Page() {
 
           {error ? <div className="alert alert-danger">{error}</div> : null}
 
-          {/* Scan details (new) */}
+          {/* Scan details */}
           {matrix ? (
             <div className="card mb-3">
               <div className="card-header">Scan details</div>
@@ -473,21 +590,25 @@ export default function Page() {
               </div>
             </div>
           ) : null}
-          {/* ...existing buttons... */}
-<button
-  className="btn btn-outline-success"
-  onClick={() => {
-    if (!selectedScanId) return;
-    // default to 'long'; change to 'wide' if you prefer
-    window.open(`/api/scans/${selectedScanId}/export?format=long`, '_blank');
-  }}
-  disabled={selectedScanId == null}
->
-  Export CSV
-</button>
 
+          {/* --- NEW: Per-group charts --- */}
+          {groupSeries.length > 0 && (
+            <div className="mb-4">
+              <h4 className="mb-3">Group Charts</h4>
+              {groupSeries.map(g => (
+                <GroupBarChart
+                  key={g.label}
+                  title={g.label}
+                  series={g.series}
+                  height={180}
+                  barWidth={12}
+                  gap={5}
+                />
+              ))}
+            </div>
+          )}
 
-          {/* Results */}
+          {/* Results tables */}
           {dates.length > 0 && groups.length > 0 ? (
             <>
               {/* Global column counters header */}
