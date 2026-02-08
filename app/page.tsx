@@ -59,7 +59,7 @@ function GroupBarChart({
   const yFor = (pct: number) => {
     const clamped = Math.max(0, Math.min(100, pct));
     return innerPadTop + (100 - clamped) / 100 * maxBarArea;
-    };
+  };
 
   const labelEvery = series.length > 120 ? 10
                      : series.length > 80 ? 6
