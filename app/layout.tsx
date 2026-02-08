@@ -30,8 +30,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Left-hand side navigation */}
           <nav style={{
             width: '250px',
-            backgroundColor: '#d3d3d3',
-            padding: '20px',
+            backgroundColor: '#eeeeee',
+            padding: '0px',
             display: 'flex',
             flexDirection: 'column',
             gap: '10px',
@@ -44,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 padding: '12px 16px', 
                 textDecoration: 'none',
                 color: pathname === '/' ? '#000' : '#555',
-                backgroundColor: pathname === '/' ? '#b8b8b8' : 'transparent',
+                backgroundColor: pathname === '/' ? '#fffffe' : 'transparent',
                 borderRadius: '4px',
                 fontWeight: pathname === '/' ? '600' : '400'
               }}
