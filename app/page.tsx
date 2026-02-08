@@ -371,7 +371,7 @@ export default function Page() {
   const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
 
   return (
-    <div className="d-flex" style={{ minHeight: '100vh', marginLeft: '-1rem', marginRight: '-1rem', marginTop: '-1rem' }}>
+    <div className="d-flex" style={{ minHeight: '100vh', margin: 0, padding: 0 }}>
       {/* Sidebar */}
       <div 
         className="bg-dark text-white d-flex flex-column"
@@ -388,7 +388,7 @@ export default function Page() {
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {sidebarCollapsed ? '☰' : '✕'}
+            {sidebarCollapsed ? <i className="fas fa-bars"></i> : <i className="fas fa-times"></i>}
           </button>
         </div>
         
@@ -400,7 +400,7 @@ export default function Page() {
                 onClick={() => setActiveTab('dashboard')}
                 title="Dashboard"
               >
-                <span className="me-2">📊</span>
+                <i className="fas fa-chart-bar me-2"></i>
                 {!sidebarCollapsed && 'Dashboard'}
               </button>
             </li>
@@ -410,7 +410,7 @@ export default function Page() {
                 onClick={() => setActiveTab('scan')}
                 title="Scan Results"
               >
-                <span className="me-2">📈</span>
+                <i className="fas fa-chart-line me-2"></i>
                 {!sidebarCollapsed && 'Scan Results'}
               </button>
             </li>
@@ -420,7 +420,7 @@ export default function Page() {
                 onClick={() => setActiveTab('hotels')}
                 title="Hotels"
               >
-                <span className="me-2">🏨</span>
+                <i className="fas fa-hotel me-2"></i>
                 {!sidebarCollapsed && 'Hotels'}
               </button>
             </li>
