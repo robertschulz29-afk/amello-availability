@@ -125,7 +125,8 @@ function GroupBarChart({
 }
 
 export default function Page() {
-  const [activeTab, setActiveTab] = React.useState<'hotels' | 'scan'>('hotels');
+  const [activeTab, setActiveTab] = React.useState<'dashboard' | 'scan' | 'hotels'>('dashboard');
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
 
   // Hotels
   const [hotels, setHotels] = React.useState<Hotel[]>([]);
@@ -370,21 +371,78 @@ export default function Page() {
   const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
 
   return (
-    <main>
-      <h1 className="mb-4">Amello Availability</h1>
+    <div className="d-flex" style={{ minHeight: '100vh', marginLeft: '-1rem', marginRight: '-1rem', marginTop: '-1rem' }}>
+      {/* Sidebar */}
+      <div 
+        className="bg-dark text-white d-flex flex-column"
+        style={{ 
+          width: sidebarCollapsed ? '60px' : '250px',
+          transition: 'width 0.3s ease',
+          position: 'relative'
+        }}
+      >
+        <div className="p-3 border-bottom border-secondary d-flex justify-content-between align-items-center">
+          {!sidebarCollapsed && <h5 className="mb-0">Menu</h5>}
+          <button 
+            className="btn btn-sm btn-outline-light"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? '☰' : '✕'}
+          </button>
+        </div>
+        
+        <nav className="flex-grow-1">
+          <ul className="nav flex-column">
+            <li className="nav-item">
+              <button
+                className={`nav-link text-white w-100 text-start ${activeTab === 'dashboard' ? 'bg-primary' : ''}`}
+                onClick={() => setActiveTab('dashboard')}
+                title="Dashboard"
+              >
+                <span className="me-2">📊</span>
+                {!sidebarCollapsed && 'Dashboard'}
+              </button>
+            </li>
+            <li className="nav-item">
+              <button
+                className={`nav-link text-white w-100 text-start ${activeTab === 'scan' ? 'bg-primary' : ''}`}
+                onClick={() => setActiveTab('scan')}
+                title="Scan Results"
+              >
+                <span className="me-2">📈</span>
+                {!sidebarCollapsed && 'Scan Results'}
+              </button>
+            </li>
+            <li className="nav-item">
+              <button
+                className={`nav-link text-white w-100 text-start ${activeTab === 'hotels' ? 'bg-primary' : ''}`}
+                onClick={() => setActiveTab('hotels')}
+                title="Hotels"
+              >
+                <span className="me-2">🏨</span>
+                {!sidebarCollapsed && 'Hotels'}
+              </button>
+            </li>
+          </ul>
+        </nav>
+      </div>
 
-      <ul className="nav nav-tabs">
-        <li className="nav-item">
-          <button className={`nav-link ${activeTab === 'hotels' ? 'active' : ''}`} onClick={() => setActiveTab('hotels')} type="button">Hotels</button>
-        </li>
-        <li className="nav-item">
-          <button className={`nav-link ${activeTab === 'scan' ? 'active' : ''}`} onClick={() => setActiveTab('scan')} type="button">Scan Results</button>
-        </li>
-      </ul>
+      {/* Main content */}
+      <div className="flex-grow-1 p-4" style={{ overflowX: 'auto' }}>
+        <h1 className="mb-4">Amello Availability</h1>
 
-      <div className="tab-content pt-3">
+        {/* Dashboard tab */}
+        {activeTab === 'dashboard' && (
+          <div>
+            <h2>Dashboard</h2>
+            <p className="text-muted">Dashboard content coming soon...</p>
+          </div>
+        )}
+
         {/* Hotels tab */}
-        <div className={`tab-pane fade ${activeTab === 'hotels' ? 'show active' : ''}`}>
+        {activeTab === 'hotels' && (
+          <div>
           <div className="row g-3">
             <div className="col-lg-5">
               <div className="card">
@@ -457,10 +515,12 @@ export default function Page() {
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* Scan Results tab */}
-        <div className={`tab-pane fade ${activeTab === 'scan' ? 'show active' : ''}`}>
+        {activeTab === 'scan' && (
+          <div>
           {/* Scan parameter controls */}
           <div className="card mb-3">
             <div className="card-header">Scan Parameters</div>
@@ -652,7 +712,8 @@ export default function Page() {
             <p className="text-muted">No results.</p>
           )}
         </div>
+        )}
       </div>
-    </main>
+    </div>
   );
 }
