@@ -80,7 +80,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </nav>
 
           {/* Main content area */}
-          <div style={{ witdh:80%, flex: 1, padding: '20px', backgroundColor: '#ffffff' }}>
+          <div style={{ width:'80%', flex: 1, padding: '20px', backgroundColor: '#ffffff' }}>
             {children}
           </div>
         </div>
