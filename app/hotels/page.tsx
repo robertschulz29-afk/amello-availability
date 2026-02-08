@@ -64,7 +64,7 @@ export default function Page() {
 
   return (
     <main>
-      <h1 className="mb-4">Hotels</h1>
+    
 
       <div className="row g-3">
         <div className="col-lg-5">
