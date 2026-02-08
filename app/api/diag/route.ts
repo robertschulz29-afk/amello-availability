@@ -16,7 +16,7 @@ export async function GET() {
       SELECT table_name
       FROM information_schema.tables
       WHERE table_schema='public'
-        AND table_name IN ('hotels','scans','scan_results','meta')
+        AND table_name IN ('hotels','scans','scan_results','meta','scan_sources','scan_results_extended')
       ORDER BY table_name
     `;
 
