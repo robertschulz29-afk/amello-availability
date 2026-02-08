@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div style={{ display: 'flex', minHeight: '100vh' }}>
           {/* Left-hand side navigation */}
           <nav style={{
-            width: '250px',
+            width: '10rem',
             backgroundColor: '#eeeeee',
             padding: '0px',
             display: 'flex',
@@ -80,7 +80,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </nav>
 
           {/* Main content area */}
-          <div style={{ flex: 1, padding: '20px', backgroundColor: '#ffffff' }}>
+          <div style={{ witdh:80%, flex: 1, padding: '20px', backgroundColor: '#ffffff' }}>
             {children}
           </div>
         </div>
