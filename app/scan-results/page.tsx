@@ -336,7 +336,7 @@ export default function Page() {
 
   return (
     <main>
-      <h1 className="mb-4">Scan Results</h1>
+
 
       {/* Scan parameter controls */}
       <div className="card mb-3">
