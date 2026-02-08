@@ -225,7 +225,7 @@ export default function Page() {
 
   return (
     <main>
-      <h1 className="mb-4">Dashboard</h1>
+      
 
       {/* History + grouping controls */}
       <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
