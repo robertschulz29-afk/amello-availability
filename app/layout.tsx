@@ -1,12 +1,11 @@
 // app/layout.tsx
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Amello Availability',
-  description: 'Hotel availability scanner',
-};
+'use client';
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
   return (
     <html lang="en">
       <head>
@@ -26,8 +25,65 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           referrerPolicy="no-referrer"
         />
       </head>
-      <body style={{ margin: 0, padding: 0, backgroundColor: '#E5E0DA', fontFamily: 'Helvetica, Arial, sans-serif' }}>
-        <div style={{ margin: 0, padding: 0, width: '100%', height: '100%' }}>{children}</div>
+      <body style={{ margin: 0, padding: 0, backgroundColor: '#ffffff', fontFamily: 'Helvetica, Arial, sans-serif' }}>
+        <div style={{ display: 'flex', minHeight: '100vh' }}>
+          {/* Left-hand side navigation */}
+          <nav style={{
+            width: '250px',
+            backgroundColor: '#d3d3d3',
+            padding: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            flexShrink: 0
+          }}>
+            <h4 style={{ marginBottom: '20px', color: '#333' }}>Amello Availability</h4>
+            <Link 
+              href="/" 
+              style={{ 
+                padding: '12px 16px', 
+                textDecoration: 'none',
+                color: pathname === '/' ? '#000' : '#555',
+                backgroundColor: pathname === '/' ? '#b8b8b8' : 'transparent',
+                borderRadius: '4px',
+                fontWeight: pathname === '/' ? '600' : '400'
+              }}
+            >
+              Dashboard
+            </Link>
+            <Link 
+              href="/scan-results" 
+              style={{ 
+                padding: '12px 16px', 
+                textDecoration: 'none',
+                color: pathname === '/scan-results' ? '#000' : '#555',
+                backgroundColor: pathname === '/scan-results' ? '#b8b8b8' : 'transparent',
+                borderRadius: '4px',
+                fontWeight: pathname === '/scan-results' ? '600' : '400'
+              }}
+            >
+              Scan Results
+            </Link>
+            <Link 
+              href="/hotels" 
+              style={{ 
+                padding: '12px 16px', 
+                textDecoration: 'none',
+                color: pathname === '/hotels' ? '#000' : '#555',
+                backgroundColor: pathname === '/hotels' ? '#b8b8b8' : 'transparent',
+                borderRadius: '4px',
+                fontWeight: pathname === '/hotels' ? '600' : '400'
+              }}
+            >
+              Hotels
+            </Link>
+          </nav>
+
+          {/* Main content area */}
+          <div style={{ flex: 1, padding: '20px', backgroundColor: '#ffffff' }}>
+            {children}
+          </div>
+        </div>
       </body>
     </html>
   );
