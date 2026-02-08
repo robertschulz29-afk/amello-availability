@@ -81,15 +81,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Load enabled sources
-    const sourceIdsStr = sourceIds.join(',');
-    const sourcesQuery = await sql<ScanSource>`
+    // Fetch all enabled sources first, then filter in JavaScript
+    const allSourcesQuery = await sql<ScanSource>`
       SELECT * FROM scan_sources
-      WHERE id = ANY(ARRAY[${sourceIdsStr}]::int[])
-        AND enabled = true
+      WHERE enabled = true
       ORDER BY id ASC
     `;
-
-    const sources = sourcesQuery.rows;
+    
+    const sources = allSourcesQuery.rows.filter(s => sourceIds.includes(s.id));
     if (sources.length === 0) {
       return NextResponse.json(
         { error: 'No enabled sources found with provided IDs' },
@@ -98,24 +97,23 @@ export async function POST(req: NextRequest) {
     }
 
     // Load hotels
-    let hotelsQuery;
+    let hotels;
     if (hotelIds.length > 0) {
-      const hotelIdsStr = hotelIds.join(',');
-      hotelsQuery = await sql`
+      // Fetch all hotels and filter in JavaScript
+      const allHotelsQuery = await sql`
         SELECT id, code, name 
         FROM hotels 
-        WHERE id = ANY(ARRAY[${hotelIdsStr}]::int[])
         ORDER BY id ASC
       `;
+      hotels = allHotelsQuery.rows.filter((h: any) => hotelIds.includes(h.id));
     } else {
-      hotelsQuery = await sql`
+      const hotelsQuery = await sql`
         SELECT id, code, name 
         FROM hotels 
         ORDER BY id ASC
       `;
+      hotels = hotelsQuery.rows;
     }
-
-    const hotels = hotelsQuery.rows as Array<{ id: number; code: string; name: string }>;
 
     if (hotels.length === 0) {
       return NextResponse.json(
@@ -216,7 +214,7 @@ export async function POST(req: NextRequest) {
             ${result.hotel_id},
             ${result.source_id},
             ${result.check_in_date},
-            ${result.check_out_date ?? ''},
+            ${result.check_out_date || null},
             ${result.status},
             ${result.scraped_data}
           )
