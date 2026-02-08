@@ -37,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             gap: '10px',
             flexShrink: 0
           }}>
-            <h4 style={{ marginBottom: '20px', color: '#333' }}>Amello Availability</h4>
+       
             <Link 
               href="/" 
               style={{ 
