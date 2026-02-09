@@ -335,8 +335,7 @@ export default function Page() {
   const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
 
   return (
-    <main>
-      <div style={{ maxWidth: '90%', margin: '0 auto' }}>
+    <main style={{ maxWidth: '90%', margin: '0 auto' }}>
 
       {/* Scan parameter controls */}
       <div className="card mb-3">
@@ -528,7 +527,6 @@ export default function Page() {
           ) : (
             <p className="text-muted">No results.</p>
           )}
-      </div>
     </main>
   );
 }

@@ -107,8 +107,7 @@ export default function Page() {
   const goToLastPage = () => setPage(totalPages);
 
   return (
-    <main>
-      <div style={{ maxWidth: '90%', margin: '0 auto' }}>
+    <main style={{ maxWidth: '90%', margin: '0 auto' }}>
         <h1 className="h3 mb-3">Scan Results</h1>
 
         {/* Scan selector */}
@@ -264,7 +263,6 @@ export default function Page() {
         ) : (
           <p className="text-muted">No results found{selectedScanId ? ' for this scan' : ''}.</p>
         )}
-      </div>
     </main>
   );
 }
