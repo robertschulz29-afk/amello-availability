@@ -203,8 +203,13 @@ export default function Page() {
                       <td>
                         <button 
                           className="btn btn-sm btn-outline-primary"
-                          onClick={() => {
-                            navigator.clipboard.writeText(JSON.stringify(result.response_json, null, 2));
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(JSON.stringify(result.response_json, null, 2));
+                              alert('JSON copied to clipboard!');
+                            } catch (err) {
+                              alert('Failed to copy JSON to clipboard');
+                            }
                           }}
                         >
                           Copy JSON
@@ -242,14 +247,14 @@ export default function Page() {
                 <button 
                   className="btn btn-outline-secondary btn-sm" 
                   onClick={goToNextPage}
-                  disabled={page === totalPages}
+                  disabled={page === totalPages || totalPages === 0}
                 >
                   Next
                 </button>
                 <button 
                   className="btn btn-outline-secondary btn-sm" 
                   onClick={goToLastPage}
-                  disabled={page === totalPages}
+                  disabled={page === totalPages || totalPages === 0}
                 >
                   Last
                 </button>
