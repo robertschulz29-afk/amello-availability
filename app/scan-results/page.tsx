@@ -3,22 +3,30 @@
 
 import * as React from 'react';
 
-type Hotel = { id: number; name: string; code: string; brand?: string; region?: string; country?: string };
 type ScanRow = {
-  id: number; scanned_at: string;
-  stay_nights: number; total_cells: number; done_cells: number;
+  id: number; 
+  scanned_at: string;
+  stay_nights: number; 
+  total_cells: number; 
+  done_cells: number;
   status: 'queued'|'running'|'done'|'error';
 };
-type ResultsMatrix = {
-  scanId: number;
-  scannedAt: string;
-  baseCheckIn: string | null;
-  fixedCheckout: string | null;
-  days: number | null;
-  stayNights: number | null;
-  timezone: string | null;
-  dates: string[];
-  results: Record<string, Record<string, 'green' | 'red'>>;
+
+type ScanResult = {
+  id: number;
+  scan_id: number;
+  hotel_id: string;
+  check_in_date: string;
+  status: 'green' | 'red';
+  response_json: any;
+};
+
+type PaginatedResponse = {
+  data: ScanResult[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 };
 
 async function fetchJSON(input: RequestInfo, init?: RequestInit) {
@@ -36,138 +44,227 @@ function fmtDateTime(dt: string) {
 }
 
 export default function Page() {
-  // Hotels
-  const [hotels, setHotels] = React.useState<Hotel[]>([]);
-
-  // Scans
+  // Scans list for the dropdown
   const [scans, setScans] = React.useState<ScanRow[]>([]);
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
 
-  // Progress/results
+  // Results and pagination
+  const [results, setResults] = React.useState<ScanResult[]>([]);
+  const [page, setPage] = React.useState(1);
+  const [limit, setLimit] = React.useState(100);
+  const [total, setTotal] = React.useState(0);
+  const [totalPages, setTotalPages] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
-  const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
+  const [loading, setLoading] = React.useState(false);
 
-  // Load hotels
-  const loadHotels = React.useCallback(async () => {
-    try {
-      const data = await fetchJSON('/api/hotels', { cache: 'no-store' });
-      setHotels(Array.isArray(data) ? data : []);
-    } catch (e:any) {
-      // Silently fail for scan results page
-    }
-  }, []);
-
-  // Load scans list
+  // Load scans list for dropdown
   const loadScans = React.useCallback(async () => {
     try {
       const list = await fetchJSON('/api/scans', { cache: 'no-store' });
       const arr: ScanRow[] = Array.isArray(list) ? list : [];
       arr.sort((a,b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
       setScans(arr);
-      if (arr.length > 0 && selectedScanId == null) setSelectedScanId(arr[0].id);
+      if (arr.length > 0 && selectedScanId == null) {
+        setSelectedScanId(arr[0].id);
+      }
     } catch (e:any) {
       setError(e.message || 'Failed to load scans');
     }
   }, [selectedScanId]);
 
-  // Load one scan by id
-  const loadScanById = React.useCallback(async (scanId: number) => {
-    setError(null); setMatrix(null);
-    try {
-      const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
-      const safeDates: string[] = Array.isArray(data?.dates) ? data.dates : [];
-      const safeResults: Record<string, Record<string, 'green'|'red'>> =
-        data && typeof data.results === 'object' && data.results !== null ? data.results : {};
-      setMatrix({
-        scanId,
-        scannedAt: String(data?.scannedAt ?? ''),
-        baseCheckIn: data?.baseCheckIn ?? null,
-        fixedCheckout: data?.fixedCheckout ?? null,
-        days: data?.days ?? null,
-        stayNights: data?.stayNights ?? null,
-        timezone: data?.timezone ?? null,
-        dates: safeDates,
-        results: safeResults
-      });
-    } catch (e:any) {
-      setError(e.message || 'Failed to load scan');
+  // Load scan results with pagination
+  const loadResults = React.useCallback(async () => {
+    if (selectedScanId == null) {
+      setResults([]);
+      setTotal(0);
+      setTotalPages(0);
+      return;
     }
-  }, []);
 
-  React.useEffect(() => { loadHotels(); loadScans(); }, [loadHotels, loadScans]);
-  React.useEffect(() => { if (selectedScanId != null) loadScanById(selectedScanId); }, [selectedScanId, loadScanById]);
+    setLoading(true);
+    setError(null);
+    try {
+      const url = `/api/scan-results?scanId=${selectedScanId}&page=${page}&limit=${limit}`;
+      const data: PaginatedResponse = await fetchJSON(url, { cache: 'no-store' });
+      setResults(data.data || []);
+      setTotal(data.total || 0);
+      setTotalPages(data.totalPages || 0);
+    } catch (e:any) {
+      setError(e.message || 'Failed to load results');
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedScanId, page, limit]);
 
-  // Derived
-  const dates = matrix?.dates ?? [];
-  const hotelsByCode = React.useMemo(() => {
-    const map = new Map<string, Hotel>(); for (const h of hotels) map.set(h.code, h); return map;
-  }, [hotels]);
+  React.useEffect(() => { loadScans(); }, [loadScans]);
+  React.useEffect(() => { loadResults(); }, [loadResults]);
 
-  // Scan navigation
-  const currentIndex = React.useMemo(
-    () => (selectedScanId != null ? scans.findIndex(s => s.id === selectedScanId) : -1),
-    [scans, selectedScanId]
-  );
-  const onPrev = () => { if (currentIndex < 0) return; const nextIdx = currentIndex + 1; if (nextIdx < scans.length) setSelectedScanId(scans[nextIdx].id); };
-  const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
+  // Pagination handlers
+  const goToFirstPage = () => setPage(1);
+  const goToPrevPage = () => setPage(p => Math.max(1, p - 1));
+  const goToNextPage = () => setPage(p => Math.min(totalPages, p + 1));
+  const goToLastPage = () => setPage(totalPages);
 
   return (
-    <main style={{ maxWidth: '90%', margin: '0 auto' }}>
+    <main>
+      <div style={{ maxWidth: '90%', margin: '0 auto' }}>
+        <h1 className="h3 mb-3">Scan Results</h1>
 
-      {/* Scan selector */}
-      <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
-        <div className="d-flex align-items-center gap-2">
-          <select className="form-select" style={{ minWidth: 300 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
-            {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
-              <option key={s.id} value={s.id}>
-                #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
-              </option>
-            ))}
-          </select>
-          <button className="btn btn-outline-secondary" onClick={() => scans.length && setSelectedScanId(scans[0].id)} disabled={scans.length === 0}>Newest</button>
-          <button className="btn btn-outline-secondary" onClick={onPrev} disabled={!scans.length}>Prev</button>
-          <button className="btn btn-outline-secondary" onClick={onNext} disabled={!scans.length}>Next</button>
-          <button className="btn btn-outline-secondary" onClick={async()=>{ await loadScans(); if (selectedScanId!=null) await loadScanById(selectedScanId); }} disabled={selectedScanId==null}>Refresh</button>
+        {/* Scan selector */}
+        <div className="d-flex flex-wrap gap-3 align-items-center mb-3">
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0">Scan ID:</label>
+            <select 
+              className="form-select" 
+              style={{ minWidth: 300 }} 
+              value={selectedScanId ?? ''} 
+              onChange={e => {
+                setSelectedScanId(Number(e.target.value));
+                setPage(1); // Reset to first page when changing scan
+              }}
+            >
+              {scans.length === 0 ? (
+                <option value="">No scans</option>
+              ) : (
+                scans.map(s => (
+                  <option key={s.id} value={s.id}>
+                    #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0">Results per page:</label>
+            <select 
+              className="form-select" 
+              style={{ width: 'auto' }}
+              value={limit} 
+              onChange={e => {
+                setLimit(Number(e.target.value));
+                setPage(1); // Reset to first page when changing limit
+              }}
+            >
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+            </select>
+          </div>
         </div>
-      </div>
 
-      {error ? <div className="alert alert-danger">{error}</div> : null}
+        {error && <div className="alert alert-danger">{error}</div>}
 
-      {/* Results table */}
-      {dates.length > 0 ? (
-        <div className="table-responsive border rounded">
-          <table className="table table-sm mb-0">
-            <thead className="table-light">
-              <tr>
-                <th style={{ position:'sticky', left:0, background:'var(--bs-table-bg)', zIndex:1 }}>Hotel (Name • Code)</th>
-                {dates.map(d => <th key={d} className="text-nowrap">{d}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {Object.keys(matrix?.results ?? {}).sort((a, b) => {
-                const ha = hotelsByCode.get(a), hb = hotelsByCode.get(b);
-                const na = ha?.name || a, nb = hb?.name || b;
-                return na.localeCompare(nb);
-              }).map(code => {
-                const h = hotelsByCode.get(code);
-                const label = h ? `${h.name} • ${h.code}` : code;
-                return (
-                  <tr key={code}>
-                    <td style={{ position:'sticky', left:0, background:'var(--bs-body-bg)', zIndex:1 }}>{label}</td>
-                    {dates.map(d => {
-                      const v = matrix?.results?.[code]?.[d];
-                      const cls = v === 'green' ? 'table-success' : v === 'red' ? 'table-danger' : '';
-                      return <td key={code + d} className={`${cls} text-center small`}>{v ?? ''}</td>;
-                    })}
+        {/* Results table */}
+        {loading ? (
+          <div className="text-center py-4">
+            <div className="spinner-border" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+          </div>
+        ) : results.length > 0 ? (
+          <>
+            <div className="table-responsive border rounded mb-3">
+              <table className="table table-sm table-striped mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th>ID</th>
+                    <th>Scan ID</th>
+                    <th>Hotel ID</th>
+                    <th>Check-in Date</th>
+                    <th>Status</th>
+                    <th>Response JSON</th>
+                    <th>Actions</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="text-muted">No results.</p>
-      )}
+                </thead>
+                <tbody>
+                  {results.map(result => (
+                    <tr key={result.id}>
+                      <td>{result.id}</td>
+                      <td>{result.scan_id}</td>
+                      <td>{result.hotel_id}</td>
+                      <td>{result.check_in_date}</td>
+                      <td>
+                        <span className={`badge ${result.status === 'green' ? 'bg-success' : 'bg-danger'}`}>
+                          {result.status}
+                        </span>
+                      </td>
+                      <td>
+                        <details>
+                          <summary className="btn btn-sm btn-outline-secondary">View JSON</summary>
+                          <pre className="small mt-2" style={{ maxHeight: '200px', overflow: 'auto' }}>
+                            {JSON.stringify(result.response_json, null, 2)}
+                          </pre>
+                        </details>
+                      </td>
+                      <td>
+                        <button 
+                          className="btn btn-sm btn-outline-primary"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(JSON.stringify(result.response_json, null, 2));
+                              alert('JSON copied to clipboard!');
+                            } catch (err) {
+                              alert('Failed to copy JSON to clipboard');
+                            }
+                          }}
+                        >
+                          Copy JSON
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination controls */}
+            <div className="d-flex justify-content-between align-items-center">
+              <div className="text-muted">
+                Showing {results.length} of {total} results
+              </div>
+              <div className="d-flex gap-2">
+                <button 
+                  className="btn btn-outline-secondary btn-sm" 
+                  onClick={goToFirstPage}
+                  disabled={page === 1}
+                >
+                  First
+                </button>
+                <button 
+                  className="btn btn-outline-secondary btn-sm" 
+                  onClick={goToPrevPage}
+                  disabled={page === 1}
+                >
+                  Previous
+                </button>
+                <span className="align-self-center px-3">
+                  Page {page} of {totalPages}
+                </span>
+                <button 
+                  className="btn btn-outline-secondary btn-sm" 
+                  onClick={goToNextPage}
+                  disabled={page === totalPages || totalPages === 0}
+                >
+                  Next
+                </button>
+                <button 
+                  className="btn btn-outline-secondary btn-sm" 
+                  onClick={goToLastPage}
+                  disabled={page === totalPages || totalPages === 0}
+                >
+                  Last
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="text-muted">No results found{selectedScanId ? ' for this scan' : ''}.</p>
+        )}
+      </div>
     </main>
   );
 }
