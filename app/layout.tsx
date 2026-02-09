@@ -49,6 +49,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Dashboard
               </Link>
               <Link 
+                href="/status-overview" 
+                style={getNavLinkStyle(pathname === '/status-overview')}
+              >
+                Status Overview
+              </Link>
+              <Link 
                 href="/scan-results" 
                 style={getNavLinkStyle(pathname === '/scan-results')}
               >
