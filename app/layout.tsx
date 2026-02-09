@@ -2,13 +2,15 @@
 'use client';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { Header } from './components/Header';
 import {
   bodyStyle,
   layoutContainerStyle,
   navStyle,
   getDashboardLinkStyle,
   getNavLinkStyle,
-  mainContentStyle
+  mainContentStyle,
+  contentWrapperStyle
 } from './styles/layoutStyles';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -34,33 +36,36 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body style={bodyStyle}>
-        <div style={layoutContainerStyle}>
-          {/* Left-hand side navigation */}
-          <nav style={navStyle}>
-       
-            <Link 
-              href="/" 
-              style={getDashboardLinkStyle(pathname === '/')}
-            >
-              Dashboard
-            </Link>
-            <Link 
-              href="/scan-results" 
-              style={getNavLinkStyle(pathname === '/scan-results')}
-            >
-              Scan Results
-            </Link>
-            <Link 
-              href="/hotels" 
-              style={getNavLinkStyle(pathname === '/hotels')}
-            >
-              Hotels
-            </Link>
-          </nav>
+        <Header />
+        <div style={contentWrapperStyle}>
+          <div style={layoutContainerStyle}>
+            {/* Left-hand side navigation */}
+            <nav style={navStyle}>
+         
+              <Link 
+                href="/" 
+                style={getDashboardLinkStyle(pathname === '/')}
+              >
+                Dashboard
+              </Link>
+              <Link 
+                href="/scan-results" 
+                style={getNavLinkStyle(pathname === '/scan-results')}
+              >
+                Scan Results
+              </Link>
+              <Link 
+                href="/hotels" 
+                style={getNavLinkStyle(pathname === '/hotels')}
+              >
+                Hotels
+              </Link>
+            </nav>
 
-          {/* Main content area */}
-          <div style={mainContentStyle}>
-            {children}
+            {/* Main content area */}
+            <div style={mainContentStyle}>
+              {children}
+            </div>
           </div>
         </div>
       </body>
