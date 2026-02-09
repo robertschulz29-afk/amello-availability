@@ -19,8 +19,7 @@ export const bodyStyle: CSSProperties = {
 
 // Content wrapper - constrains the entire layout (nav + content) to 90% width centered
 export const contentWrapperStyle: CSSProperties = {
-  maxWidth: '90%',
-  margin: '0 auto',
+
   flex: 1,
   display: 'flex',
   flexDirection: 'column'
