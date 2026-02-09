@@ -300,9 +300,9 @@ export default function Page() {
     const universe = allCodes.length ? allCodes : hotels.map(h => h.code);
 
     function keyFor(h: Hotel): string {
-      if (groupBy === 'brand')   return (h.brand   && h.brand.trim())   || '(no brand)';
-      if (groupBy === 'region')  return (h.region  && h.region.trim())  || '(no region)';
-      if (groupBy === 'country') return (h.country && h.country.trim()) || '(no country)';
+      if (groupBy === 'brand')   return h.brand?.trim()   || '(no brand)';
+      if (groupBy === 'region')  return h.region?.trim()  || '(no region)';
+      if (groupBy === 'country') return h.country?.trim() || '(no country)';
       return 'All Hotels';
     }
 
@@ -335,7 +335,7 @@ export default function Page() {
   const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
 
   return (
-    <main>
+    <main style={{ maxWidth: '90%' }}>
 
 
       {/* Scan parameter controls */}
