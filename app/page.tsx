@@ -35,6 +35,58 @@ function fmtDateTime(dt: string) {
   try { return new Date(dt).toLocaleString(); } catch { return dt; }
 }
 
+/** --- Availability Overview Tile --- */
+/**
+ * Displays the overall availability score for a scan.
+ * Score represents the percentage of green (available) results across all hotels and dates.
+ * Calculation: (count of green cells / total cells with results) * 100
+ */
+function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) {
+  const score = React.useMemo(() => {
+    if (!matrix || !matrix.results) return null;
+    
+    let availableCells = 0;  // Count of green (available) results
+    let totalCells = 0;      // Total cells with scan results
+    
+    // Count all green results across all hotels and dates
+    // Only 'green' and 'red' are valid result types in the system
+    for (const hotelResults of Object.values(matrix.results)) {
+      for (const result of Object.values(hotelResults)) {
+        if (result === 'green') availableCells++;
+        if (result === 'green' || result === 'red') totalCells++;
+      }
+    }
+    
+    if (totalCells === 0) return null;
+    return (availableCells / totalCells) * 100;
+  }, [matrix]);
+  
+  if (score === null) return null;
+  
+  // Determine color based on score
+  let bgColor = '#ffc107'; // amber/yellow (60-80%)
+  let textColor = '#000';
+  
+  if (score > 80) {
+    bgColor = '#28a745'; // green
+    textColor = '#fff';
+  } else if (score < 60) {
+    bgColor = '#dc3545'; // red
+    textColor = '#fff';
+  }
+  
+  return (
+    <div className="card mb-3" style={{ backgroundColor: bgColor, color: textColor }}>
+      <div className="card-body text-center">
+        <h5 className="card-title mb-2" style={{ color: textColor }}>Availability overview</h5>
+        <h2 className="mb-0" style={{ fontSize: '2.5rem', fontWeight: 'bold', color: textColor }}>
+          {score.toFixed(1)}%
+        </h2>
+      </div>
+    </div>
+  );
+}
+
 /** --- Small SVG bar chart (no external deps) --- */
 function GroupBarChart({
   title,
@@ -226,11 +278,13 @@ export default function Page() {
   return (
     <main>
       
+      {/* Availability Overview Tile */}
+      <AvailabilityOverviewTile matrix={matrix} />
 
       {/* History + grouping controls */}
       <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
-        <div className="d-flex align-items-center gap-2">
-          <select className="form-select" style={{ minWidth: 300 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
             {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
               <option key={s.id} value={s.id}>
                 #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})

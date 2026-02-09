@@ -193,6 +193,7 @@ export default function ScanResultsPage() {
           <i className="fas fa-download me-2"></i>Download CSV
         </button>
       </div>
+    <main style={{ maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
 
       {/* Filters */}
       <div className="card mb-3">
@@ -208,6 +209,47 @@ export default function ScanResultsPage() {
               >
                 <option value="">All Scans</option>
                 {scans.map((s) => (
+        <div className="card-header">Scan Parameters</div>
+        <div className="card-body row g-3">
+              <div className="col-sm-6 col-md-3">
+                <label className="form-label">Check-in date</label>
+                <input type="date" className="form-control" value={baseCheckIn} onChange={e => setBaseCheckIn(e.target.value)} />
+              </div>
+              <div className="col-sm-6 col-md-3">
+                <label className="form-label">Stay (nights)</label>
+                <input type="number" min={1} max={30} className="form-control" value={stayNights} onChange={e => setStayNights(Number(e.target.value || 1))} />
+              </div>
+              <div className="col-sm-6 col-md-3">
+                <label className="form-label">Days to scan (columns)</label>
+                <input type="number" min={1} max={365} className="form-control" value={days} onChange={e => setDays(Number(e.target.value || 1))} />
+              </div>
+              <div className="col-sm-6 col-md-3">
+                <label className="form-label">Adults</label>
+                <input type="number" min={1} max={6} className="form-control" value={adultCount} onChange={e => setAdultCount(Number(e.target.value || 1))} />
+              </div>
+              <div className="col-12 d-flex flex-wrap gap-2">
+                <button className="btn btn-success" onClick={startScan} disabled={busy || hotels.length === 0}>
+                  {busy ? 'Scanning…' : 'Start scan'}
+                </button>
+                <button
+                  className="btn btn-outline-success"
+                  onClick={() => {
+                    if (!selectedScanId) return;
+                    window.open(`/api/scans/${selectedScanId}/export?format=long`, '_blank');
+                  }}
+                  disabled={selectedScanId == null}
+                >
+                  Export CSV
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* History + grouping controls */}
+          <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
+            <div className="d-flex flex-wrap align-items-center gap-2">
+              <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
+                {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
                   <option key={s.id} value={s.id}>
                     #{s.id} - {fmtDateTime(s.scanned_at)} ({s.status})
                   </option>
