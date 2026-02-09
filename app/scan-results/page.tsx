@@ -83,7 +83,7 @@ export default function Page() {
     setLoading(true);
     setError(null);
     try {
-      const url = `/api/scan-results?scanId=${selectedScanId}&page=${page}&limit=${limit}`;
+      const url = `/api/scan-results?scanID=${selectedScanId}&page=${page}&limit=${limit}`;
       const data: PaginatedResponse = await fetchJSON(url, { cache: 'no-store' });
       setResults(data.data || []);
       setTotal(data.total || 0);
