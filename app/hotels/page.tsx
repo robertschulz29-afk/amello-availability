@@ -62,6 +62,10 @@ export default function Page() {
   const [editBusy, setEditBusy] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
 
+  // Delete confirmation state
+  const [deleteHotel, setDeleteHotel] = React.useState<Hotel | null>(null);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+
   // Load hotels
   const loadHotels = React.useCallback(async () => {
     try {
@@ -170,6 +174,35 @@ export default function Page() {
     } catch (e:any) {
       setEditError(e.message || 'Update failed');
     } finally { setEditBusy(false); }
+  };
+
+  // Confirm delete
+  const confirmDelete = async () => {
+    if (!deleteHotel) return;
+    
+    setDeleteBusy(true);
+    setHError(null);
+    setSuccessMsg(null);
+    
+    try {
+      await fetchJSON(`/api/hotels/${deleteHotel.id}`, {
+        method: 'DELETE',
+      });
+      
+      // Remove hotel from list
+      setHotels(prev => prev.filter(h => h.id !== deleteHotel.id));
+      setSuccessMsg(`Hotel "${deleteHotel.name}" deleted successfully!`);
+      setDeleteHotel(null);
+    } catch (e:any) {
+      setHError(e.message || 'Failed to delete hotel');
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  // Cancel delete
+  const cancelDelete = () => {
+    setDeleteHotel(null);
   };
 
   return (
@@ -372,13 +405,22 @@ export default function Page() {
                               </button>
                             </div>
                           ) : (
-                            <button 
-                              className="btn btn-sm btn-primary" 
-                              onClick={() => startEdit(h)}
-                              disabled={editingId !== null}
-                            >
-                              <i className="fa fa-edit"></i> Edit
-                            </button>
+                            <div className="btn-group btn-group-sm" role="group">
+                              <button 
+                                className="btn btn-primary" 
+                                onClick={() => startEdit(h)}
+                                disabled={editingId !== null}
+                              >
+                                <i className="fa fa-edit"></i> Edit
+                              </button>
+                              <button 
+                                className="btn btn-danger" 
+                                onClick={() => setDeleteHotel(h)}
+                                disabled={editingId !== null}
+                              >
+                                <i className="fa fa-trash"></i> Delete
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -395,6 +437,64 @@ export default function Page() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteHotel && (
+        <div 
+          className="modal show d-block" 
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) cancelDelete();
+          }}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">
+                  <i className="fa fa-exclamation-triangle text-warning me-2"></i>
+                  Confirm Deletion
+                </h5>
+                <button 
+                  type="button" 
+                  className="btn-close" 
+                  onClick={cancelDelete}
+                  disabled={deleteBusy}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <p className="mb-2">Are you sure you want to delete this hotel?</p>
+                <div className="alert alert-warning mb-3">
+                  <strong>Hotel Name:</strong> {deleteHotel.name}<br/>
+                  <strong>Hotel Code:</strong> {deleteHotel.code}
+                </div>
+                <p className="text-danger mb-0">
+                  <strong>Warning:</strong> This action cannot be undone. The hotel will be permanently deleted.
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={cancelDelete}
+                  disabled={deleteBusy}
+                >
+                  <i className="fa fa-times me-1"></i>
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-danger" 
+                  onClick={confirmDelete}
+                  disabled={deleteBusy}
+                >
+                  <i className="fa fa-trash me-1"></i>
+                  {deleteBusy ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </main>
   );
