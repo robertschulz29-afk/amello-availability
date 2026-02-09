@@ -179,7 +179,7 @@ export default function Page() {
                 </thead>
                 <tbody>
                   {results.map(result => (
-                    <tr key={result.scan_id}>
+                    <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}`}>
                       <td>{result.scan_id}</td>
                       <td>{result.hotel_id}</td>
                       <td>{result.check_in_date}</td>
