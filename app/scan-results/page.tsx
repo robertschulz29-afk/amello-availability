@@ -193,7 +193,6 @@ export default function ScanResultsPage() {
           <i className="fas fa-download me-2"></i>Download CSV
         </button>
       </div>
-    <main style={{ maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
 
       {/* Filters */}
       <div className="card mb-3">
