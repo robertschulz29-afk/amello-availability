@@ -52,7 +52,7 @@ export async function PATCH(
 
     // Build dynamic update query
     const updates: string[] = [];
-    const values: (string | null)[] = [];
+    const values: (string | number | null)[] = [];
     let paramIndex = 1;
 
     const fields: Array<keyof UpdateHotelPayload> = [
