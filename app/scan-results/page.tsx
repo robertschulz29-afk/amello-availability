@@ -13,7 +13,6 @@ type ScanRow = {
 };
 
 type ScanResult = {
-  id: number;
   scan_id: number;
   hotel_id: number;
   check_in_date: string;
@@ -170,7 +169,6 @@ export default function Page() {
               <table className="table table-sm table-striped mb-0">
                 <thead className="table-light">
                   <tr>
-                    <th>ID</th>
                     <th>Scan ID</th>
                     <th>Hotel ID</th>
                     <th>Check-in Date</th>
@@ -181,8 +179,7 @@ export default function Page() {
                 </thead>
                 <tbody>
                   {results.map(result => (
-                    <tr key={result.id}>
-                      <td>{result.id}</td>
+                    <tr key={result.scan_id}>
                       <td>{result.scan_id}</td>
                       <td>{result.hotel_id}</td>
                       <td>{result.check_in_date}</td>
