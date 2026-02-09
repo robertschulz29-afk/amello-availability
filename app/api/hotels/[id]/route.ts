@@ -82,7 +82,7 @@ export async function PATCH(
     }
 
     // Add ID as the last parameter
-    values.push(String(id));
+    values.push(id);
 
     const queryText = `
       UPDATE hotels

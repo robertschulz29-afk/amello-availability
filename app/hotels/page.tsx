@@ -35,6 +35,8 @@ function isValidUrl(urlString: string): boolean {
   }
 }
 
+const SUCCESS_MESSAGE_TIMEOUT_MS = 5000;
+
 export default function Page() {
   const [hotels, setHotels] = React.useState<Hotel[]>([]);
   const [hName, setHName] = React.useState('');
@@ -72,10 +74,10 @@ export default function Page() {
 
   React.useEffect(() => { loadHotels(); }, [loadHotels]);
 
-  // Auto-clear success message after 5 seconds
+  // Auto-clear success message after timeout
   React.useEffect(() => {
     if (successMsg) {
-      const timer = setTimeout(() => setSuccessMsg(null), 5000);
+      const timer = setTimeout(() => setSuccessMsg(null), SUCCESS_MESSAGE_TIMEOUT_MS);
       return () => clearTimeout(timer);
     }
   }, [successMsg]);
