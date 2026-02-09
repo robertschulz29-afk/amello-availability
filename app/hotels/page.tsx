@@ -66,76 +66,73 @@ export default function Page() {
     <main>
     
 
-      <div className="row g-3">
-        <div className="col-lg-5">
-          <div className="card">
-            <div className="card-header">Add Hotel</div>
-            <div className="card-body">
-              <form onSubmit={onAddHotel} className="row g-3">
-                <div className="col-12">
-                  <label className="form-label">Name</label>
-                  <input className="form-control" value={hName} onChange={e => setHName(e.target.value)} placeholder="Hotel Alpha" />
-                </div>
-                <div className="col-12">
-                  <label className="form-label">Code</label>
-                  <input className="form-control" value={hCode} onChange={e => setHCode(e.target.value)} placeholder="ALPHA123" />
-                </div>
-                <div className="col-12">
-                  <label className="form-label">Brand</label>
-                  <input className="form-control" value={hBrand} onChange={e => setHBrand(e.target.value)} placeholder="e.g., Amello" />
-                </div>
-                <div className="col-12">
-                  <label className="form-label">Region</label>
-                  <input className="form-control" value={hRegion} onChange={e => setHRegion(e.target.value)} placeholder="e.g., Algarve" />
-                </div>
-                <div className="col-12">
-                  <label className="form-label">Country</label>
-                  <input className="form-control" value={hCountry} onChange={e => setHCountry(e.target.value)} placeholder="e.g., Portugal" />
-                </div>
-
-                {hError ? <div className="col-12 text-danger small">{hError}</div> : null}
-                <div className="col-12">
-                  <button className="btn btn-primary" disabled={hBusy}>{hBusy ? 'Saving…' : 'Add hotel'}</button>
-                </div>
-              </form>
+      <div className="card mb-3">
+        <div className="card-header">Add Hotel</div>
+        <div className="card-body">
+          <form onSubmit={onAddHotel}>
+            <div className="row g-3">
+              <div className="col-md-4">
+                <label className="form-label">Name</label>
+                <input className="form-control" value={hName} onChange={e => setHName(e.target.value)} placeholder="Hotel Alpha" />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label">Code</label>
+                <input className="form-control" value={hCode} onChange={e => setHCode(e.target.value)} placeholder="ALPHA123" />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label">Brand</label>
+                <input className="form-control" value={hBrand} onChange={e => setHBrand(e.target.value)} placeholder="e.g., Amello" />
+              </div>
             </div>
-          </div>
+            <div className="row g-3 mt-2">
+              <div className="col-md-4">
+                <label className="form-label">Region</label>
+                <input className="form-control" value={hRegion} onChange={e => setHRegion(e.target.value)} placeholder="e.g., Algarve" />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label">Country</label>
+                <input className="form-control" value={hCountry} onChange={e => setHCountry(e.target.value)} placeholder="e.g., Portugal" />
+              </div>
+              <div className="col-md-4 d-flex align-items-end">
+                <button className="btn btn-primary" disabled={hBusy}>{hBusy ? 'Saving…' : 'Add hotel'}</button>
+              </div>
+            </div>
+            {hError ? <div className="mt-3 text-danger small">{hError}</div> : null}
+          </form>
         </div>
+      </div>
 
-        <div className="col-lg-7">
-          <div className="card">
-            <div className="card-header">Current Hotels</div>
-            <div className="card-body">
-              {hotels.length === 0 ? <p className="text-muted mb-0">No hotels yet.</p> : (
-                <div className="table-responsive">
-                  <table className="table table-sm align-middle">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 60 }}>#</th>
-                        <th>Name</th>
-                        <th>Code</th>
-                        <th>Brand</th>
-                        <th>Region</th>
-                        <th>Country</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {hotels.map((h,i) => (
-                        <tr key={h.id}>
-                          <td>{i+1}</td>
-                          <td>{h.name}</td>
-                          <td><code>{h.code}</code></td>
-                          <td>{h.brand || ''}</td>
-                          <td>{h.region || ''}</td>
-                          <td>{h.country || ''}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+      <div className="card">
+        <div className="card-header">Current Hotels</div>
+        <div className="card-body">
+          {hotels.length === 0 ? <p className="text-muted mb-0">No hotels yet.</p> : (
+            <div className="table-responsive">
+              <table className="table table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th style={{ width: 60 }}>#</th>
+                    <th>Name</th>
+                    <th>Code</th>
+                    <th>Brand</th>
+                    <th>Region</th>
+                    <th>Country</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hotels.map((h,i) => (
+                    <tr key={h.id}>
+                      <td>{i+1}</td>
+                      <td>{h.name}</td>
+                      <td><code>{h.code}</code></td>
+                      <td>{h.brand || ''}</td>
+                      <td>{h.region || ''}</td>
+                      <td>{h.country || ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </main>

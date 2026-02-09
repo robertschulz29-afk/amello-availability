@@ -12,13 +12,24 @@ export const bodyStyle: CSSProperties = {
   padding: 0,
   backgroundColor: '#ffffff',
   fontFamily: 'Helvetica, Arial, sans-serif',
+  boxSizing: 'border-box',
+  display: 'flex',
+  flexDirection: 'column',
+  minHeight: '100vh'
+};
+
+// Wrapper for content below header
+export const contentWrapperStyle: CSSProperties = {
+  display: 'flex',
+  flex: 1,
+  width: '100%',
   boxSizing: 'border-box'
 };
 
 // Main layout container styles
 export const layoutContainerStyle: CSSProperties = {
   display: 'flex',
-  minHeight: '100vh',
+  flex: 1,
   width: '100%',
   boxSizing: 'border-box'
 };
