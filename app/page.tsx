@@ -36,23 +36,29 @@ function fmtDateTime(dt: string) {
 }
 
 /** --- Availability Overview Tile --- */
+/**
+ * Displays the overall availability score for a scan.
+ * Score represents the percentage of green (available) results across all hotels and dates.
+ * Calculation: (count of green cells / total cells with results) * 100
+ */
 function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) {
   const score = React.useMemo(() => {
     if (!matrix || !matrix.results) return null;
     
-    let greens = 0;
-    let totalCells = 0;
+    let availableCells = 0;  // Count of green (available) results
+    let totalCells = 0;      // Total cells with scan results
     
     // Count all green results across all hotels and dates
+    // Only 'green' and 'red' are valid result types in the system
     for (const hotelResults of Object.values(matrix.results)) {
       for (const result of Object.values(hotelResults)) {
-        if (result === 'green') greens++;
+        if (result === 'green') availableCells++;
         if (result === 'green' || result === 'red') totalCells++;
       }
     }
     
     if (totalCells === 0) return null;
-    return (greens / totalCells) * 100;
+    return (availableCells / totalCells) * 100;
   }, [matrix]);
   
   if (score === null) return null;
