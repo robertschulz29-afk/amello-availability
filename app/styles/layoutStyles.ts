@@ -1,1 +1,11 @@
-export const contentWrapperStyle = { maxWidth: '90%', margin: '0 auto' }; // Updated to set max-width to 90% and center the content
+// Original content of app/styles/layoutStyles.ts
+
+const layoutStyles = {
+    contentWrapperStyle: {
+        maxWidth: '90%',
+        margin: '0 auto'
+    },
+    // Other styles go here
+};
+
+export default layoutStyles;
