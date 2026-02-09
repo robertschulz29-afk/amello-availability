@@ -80,11 +80,11 @@ const getActiveNavLinkStyle = (isDark: boolean): CSSProperties => ({
 });
 
 // Dashboard link style function
-export function getDashboardLinkStyle(isActive: boolean, isDark: boolean = false): CSSProperties {
+export function getDashboardLinkStyle(isActive: boolean, isDark: boolean): CSSProperties {
   return isActive ? getActiveNavLinkStyle(isDark) : getBaseNavLinkStyle(isDark);
 }
 
 // Nav link style function
-export function getNavLinkStyle(isActive: boolean, isDark: boolean = false): CSSProperties {
+export function getNavLinkStyle(isActive: boolean, isDark: boolean): CSSProperties {
   return isActive ? getActiveNavLinkStyle(isDark) : getBaseNavLinkStyle(isDark);
 }
