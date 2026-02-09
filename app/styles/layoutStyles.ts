@@ -47,6 +47,7 @@ export const getNavLinkStyle = (isActive: boolean): CSSProperties => ({
 });
 
 // Special case for dashboard link (different active background)
+// Note: #fffffe is slightly off-white, preserved from original design
 export const getDashboardLinkStyle = (isActive: boolean): CSSProperties => ({
   ...navLinkBaseStyle,
   color: isActive ? '#000' : '#555',
@@ -55,6 +56,7 @@ export const getDashboardLinkStyle = (isActive: boolean): CSSProperties => ({
 });
 
 // Main content area styles
+// Note: width:'80%' preserved from original, though flex:1 typically handles sizing
 export const mainContentStyle: CSSProperties = {
   width: '80%',
   flex: 1,
