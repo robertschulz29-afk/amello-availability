@@ -65,9 +65,11 @@ BEGIN
         );
         
         -- Restore data (id will be auto-generated)
+        -- Order by existing columns to ensure deterministic id assignment
         INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json)
         SELECT scan_id, hotel_id, check_in_date, status, response_json 
-        FROM scan_results_backup;
+        FROM scan_results_backup
+        ORDER BY scan_id, hotel_id, check_in_date;
         
         -- Drop backup table
         DROP TABLE scan_results_backup;
@@ -86,13 +88,26 @@ BEGIN
     END IF;
     
     -- Ensure unique constraint exists (only check if id column exists)
+    -- Check by columns rather than constraint name for robustness
     IF EXISTS (
       SELECT 1 FROM information_schema.columns 
       WHERE table_name = 'scan_results' AND column_name = 'id'
     ) AND NOT EXISTS (
-      SELECT 1 FROM pg_constraint 
-      WHERE conname = 'scan_results_scan_id_hotel_id_check_in_date_key'
-      AND contype = 'u'
+      SELECT 1 
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.constraint_column_usage ccu 
+        ON tc.constraint_name = ccu.constraint_name
+        AND tc.table_schema = ccu.table_schema
+      WHERE tc.table_name = 'scan_results' 
+        AND tc.constraint_type = 'UNIQUE'
+        AND EXISTS (
+          SELECT 1 FROM information_schema.constraint_column_usage
+          WHERE constraint_name = tc.constraint_name
+            AND table_name = 'scan_results'
+            AND column_name IN ('scan_id', 'hotel_id', 'check_in_date')
+          GROUP BY constraint_name
+          HAVING COUNT(*) = 3
+        )
     ) THEN
       BEGIN
         ALTER TABLE scan_results ADD CONSTRAINT scan_results_scan_id_hotel_id_check_in_date_key 
