@@ -1,4 +1,4 @@
-// app/scan-results/page.tsx
+// app/status-overview/page.tsx
 'use client';
 
 import * as React from 'react';

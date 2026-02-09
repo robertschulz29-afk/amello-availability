@@ -16,100 +16,38 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(500, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
     const offset = (page - 1) * limit;
 
-    // Get total count with filters
+    const scanId = scanIdParam ? parseInt(scanIdParam, 10) : null;
+    const status = statusParam && (statusParam === 'green' || statusParam === 'red') ? statusParam : null;
+
+    // Build and execute count query
     let total = 0;
-    if (scanIdParam && statusParam) {
-      const scanId = parseInt(scanIdParam, 10);
-      const { rows: countRows } = await sql<{ total: number }>`
-        SELECT COUNT(*)::int AS total 
-        FROM scan_results 
-        WHERE scan_id = ${scanId} AND status = ${statusParam}
-      `;
-      total = countRows[0]?.total || 0;
-    } else if (scanIdParam) {
-      const scanId = parseInt(scanIdParam, 10);
-      const { rows: countRows } = await sql<{ total: number }>`
-        SELECT COUNT(*)::int AS total 
-        FROM scan_results 
-        WHERE scan_id = ${scanId}
-      `;
-      total = countRows[0]?.total || 0;
-    } else if (statusParam) {
-      const { rows: countRows } = await sql<{ total: number }>`
-        SELECT COUNT(*)::int AS total 
-        FROM scan_results 
-        WHERE status = ${statusParam}
-      `;
-      total = countRows[0]?.total || 0;
+    if (scanId !== null && status !== null) {
+      const { rows } = await sql<{ total: number }>`SELECT COUNT(*)::int AS total FROM scan_results WHERE scan_id = ${scanId} AND status = ${status}`;
+      total = rows[0]?.total || 0;
+    } else if (scanId !== null) {
+      const { rows } = await sql<{ total: number }>`SELECT COUNT(*)::int AS total FROM scan_results WHERE scan_id = ${scanId}`;
+      total = rows[0]?.total || 0;
+    } else if (status !== null) {
+      const { rows } = await sql<{ total: number }>`SELECT COUNT(*)::int AS total FROM scan_results WHERE status = ${status}`;
+      total = rows[0]?.total || 0;
     } else {
-      const { rows: countRows } = await sql<{ total: number }>`
-        SELECT COUNT(*)::int AS total FROM scan_results
-      `;
-      total = countRows[0]?.total || 0;
+      const { rows } = await sql<{ total: number }>`SELECT COUNT(*)::int AS total FROM scan_results`;
+      total = rows[0]?.total || 0;
     }
 
-    // Get paginated data with filters
+    // Build and execute data query
     let dataRows: any[] = [];
-    if (scanIdParam && statusParam) {
-      const scanId = parseInt(scanIdParam, 10);
-      const { rows } = await sql`
-        SELECT 
-          id,
-          scan_id,
-          hotel_id,
-          check_in_date,
-          status,
-          response_json
-        FROM scan_results
-        WHERE scan_id = ${scanId} AND status = ${statusParam}
-        ORDER BY id DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
+    if (scanId !== null && status !== null) {
+      const { rows } = await sql`SELECT id, scan_id, hotel_id, check_in_date, status, response_json FROM scan_results WHERE scan_id = ${scanId} AND status = ${status} ORDER BY id DESC LIMIT ${limit} OFFSET ${offset}`;
       dataRows = rows;
-    } else if (scanIdParam) {
-      const scanId = parseInt(scanIdParam, 10);
-      const { rows } = await sql`
-        SELECT 
-          id,
-          scan_id,
-          hotel_id,
-          check_in_date,
-          status,
-          response_json
-        FROM scan_results
-        WHERE scan_id = ${scanId}
-        ORDER BY id DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
+    } else if (scanId !== null) {
+      const { rows } = await sql`SELECT id, scan_id, hotel_id, check_in_date, status, response_json FROM scan_results WHERE scan_id = ${scanId} ORDER BY id DESC LIMIT ${limit} OFFSET ${offset}`;
       dataRows = rows;
-    } else if (statusParam) {
-      const { rows } = await sql`
-        SELECT 
-          id,
-          scan_id,
-          hotel_id,
-          check_in_date,
-          status,
-          response_json
-        FROM scan_results
-        WHERE status = ${statusParam}
-        ORDER BY id DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
+    } else if (status !== null) {
+      const { rows } = await sql`SELECT id, scan_id, hotel_id, check_in_date, status, response_json FROM scan_results WHERE status = ${status} ORDER BY id DESC LIMIT ${limit} OFFSET ${offset}`;
       dataRows = rows;
     } else {
-      const { rows } = await sql`
-        SELECT 
-          id,
-          scan_id,
-          hotel_id,
-          check_in_date,
-          status,
-          response_json
-        FROM scan_results
-        ORDER BY id DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
+      const { rows } = await sql`SELECT id, scan_id, hotel_id, check_in_date, status, response_json FROM scan_results ORDER BY id DESC LIMIT ${limit} OFFSET ${offset}`;
       dataRows = rows;
     }
 
