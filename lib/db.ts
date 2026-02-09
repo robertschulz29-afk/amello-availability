@@ -41,3 +41,12 @@ export async function sql<T = any>(
   const res = await pool.query({ text, values });
   return { rows: res.rows as T[], rowCount: res.rowCount ?? 0 };
 }
+
+// Export a query function for dynamic queries
+export async function query<T = any>(
+  text: string,
+  values: any[]
+): Promise<{ rows: T[]; rowCount: number }> {
+  const res = await pool.query({ text, values });
+  return { rows: res.rows as T[], rowCount: res.rowCount ?? 0 };
+}
