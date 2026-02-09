@@ -106,3 +106,35 @@ export async function PATCH(
     );
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: idString } = await params;
+  try {
+    const id = parseInt(idString, 10);
+    if (isNaN(id)) {
+      return NextResponse.json({ error: 'Invalid hotel ID' }, { status: 400 });
+    }
+
+    const queryText = 'DELETE FROM hotels WHERE id = $1 RETURNING id, name, code';
+    const result = await query(queryText, [id]);
+
+    if (result.rowCount === 0) {
+      return NextResponse.json({ error: 'Hotel not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Hotel deleted successfully',
+      hotel: result.rows[0]
+    });
+  } catch (e: any) {
+    console.error('[DELETE /api/hotels/:id] error', e);
+    return NextResponse.json(
+      { error: 'Failed to delete hotel' },
+      { status: 500 }
+    );
+  }
+}
