@@ -112,7 +112,7 @@ export default function Page() {
   const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
 
   return (
-    <main style={{ maxWidth: '90%' }}>
+    <main style={{ maxWidth: '90%', margin: '0 auto' }}>
 
       {/* Scan selector */}
       <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
@@ -132,25 +132,6 @@ export default function Page() {
       </div>
 
       {error ? <div className="alert alert-danger">{error}</div> : null}
-
-      {/* Scan details */}
-      {matrix ? (
-        <div className="card mb-3">
-          <div className="card-header">Scan details</div>
-          <div className="card-body small">
-            <div className="row g-2">
-              <div className="col-sm-6 col-md-4"><strong>Scan ID:</strong> {matrix.scanId}</div>
-              <div className="col-sm-6 col-md-4"><strong>Scanned at:</strong> {fmtDateTime(matrix.scannedAt)}</div>
-              <div className="col-sm-6 col-md-4"><strong>Timezone:</strong> {matrix.timezone ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Base check-in:</strong> {matrix.baseCheckIn ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Fixed checkout (first column):</strong> {matrix.fixedCheckout ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Days scanned (columns):</strong> {matrix.days ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Unique dates returned:</strong> {matrix.dates.length}</div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {/* Results table */}
       {dates.length > 0 ? (
