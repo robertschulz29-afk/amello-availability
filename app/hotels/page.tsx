@@ -174,6 +174,7 @@ export default function Page() {
 
   return (
     <main>
+      <div style={{ maxWidth: '90%', margin: '0 auto' }}>
       {/* Success message */}
       {successMsg && (
         <div className="alert alert-success alert-dismissible fade show" role="alert">
@@ -393,6 +394,7 @@ export default function Page() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </main>
   );

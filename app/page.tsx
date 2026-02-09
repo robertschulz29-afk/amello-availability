@@ -277,6 +277,7 @@ export default function Page() {
 
   return (
     <main>
+      <div style={{ maxWidth: '90%', margin: '0 auto' }}>
       
       {/* Availability Overview Tile */}
       <AvailabilityOverviewTile matrix={matrix} />
@@ -360,6 +361,7 @@ export default function Page() {
       ) : (
         <p className="text-muted">No results.</p>
       )}
+      </div>
     </main>
   );
 }
