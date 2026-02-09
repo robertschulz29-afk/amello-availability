@@ -3,19 +3,66 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Header } from './components/Header';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 import {
-  bodyStyle,
+  getBodyStyle,
   layoutContainerStyle,
-  navStyle,
+  getNavStyle,
   getDashboardLinkStyle,
   getNavLinkStyle,
-  mainContentStyle,
+  getMainContentStyle,
   contentWrapperStyle
 } from './styles/layoutStyles';
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+function LayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
+  return (
+    <body style={getBodyStyle(isDark)}>
+      <Header />
+      <div style={contentWrapperStyle}>
+        <div style={layoutContainerStyle}>
+          {/* Left-hand side navigation */}
+          <nav style={getNavStyle(isDark)}>
+            <Link 
+              href="/" 
+              style={getDashboardLinkStyle(pathname === '/', isDark)}
+            >
+              Dashboard
+            </Link>
+            <Link 
+              href="/status-overview" 
+              style={getNavLinkStyle(pathname === '/status-overview', isDark)}
+            >
+              Status Overview
+            </Link>
+            <Link 
+              href="/scan-results" 
+              style={getNavLinkStyle(pathname === '/scan-results', isDark)}
+            >
+              Scan Results
+            </Link>
+            <Link 
+              href="/hotels" 
+              style={getNavLinkStyle(pathname === '/hotels', isDark)}
+            >
+              Hotels
+            </Link>
+          </nav>
+
+          {/* Main content area */}
+          <div style={getMainContentStyle(isDark)}>
+            {children}
+          </div>
+        </div>
+      </div>
+    </body>
+  );
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
@@ -35,46 +82,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           referrerPolicy="no-referrer"
         />
       </head>
-      <body style={bodyStyle}>
-        <Header />
-        <div style={contentWrapperStyle}>
-          <div style={layoutContainerStyle}>
-            {/* Left-hand side navigation */}
-            <nav style={navStyle}>
-         
-              <Link 
-                href="/" 
-                style={getDashboardLinkStyle(pathname === '/')}
-              >
-                Dashboard
-              </Link>
-              <Link 
-                href="/status-overview" 
-                style={getNavLinkStyle(pathname === '/status-overview')}
-              >
-                Status Overview
-              </Link>
-              <Link 
-                href="/scan-results" 
-                style={getNavLinkStyle(pathname === '/scan-results')}
-              >
-                Scan Results
-              </Link>
-              <Link 
-                href="/hotels" 
-                style={getNavLinkStyle(pathname === '/hotels')}
-              >
-                Hotels
-              </Link>
-            </nav>
-
-            {/* Main content area */}
-            <div style={mainContentStyle}>
-              {children}
-            </div>
-          </div>
-        </div>
-      </body>
+      <ThemeProvider>
+        <LayoutContent>{children}</LayoutContent>
+      </ThemeProvider>
     </html>
   );
 }
