@@ -25,10 +25,11 @@ function isValidUrl(urlString: string): boolean {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: idString } = await params;
   try {
-    const id = parseInt(params.id, 10);
+    const id = parseInt(idString, 10);
     if (isNaN(id)) {
       return NextResponse.json({ error: 'Invalid hotel ID' }, { status: 400 });
     }
