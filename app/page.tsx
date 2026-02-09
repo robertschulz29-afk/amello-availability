@@ -299,7 +299,7 @@ export default function Page() {
               <div className="col-sm-6 col-md-3"><strong>Scan Date:</strong> {fmtDateTime(matrix.scannedAt)}</div>
               <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong> {matrix.baseCheckIn ?? '—'}</div>
               <div className="col-sm-6 col-md-3"><strong>Days Scanned:</strong> {matrix.days ?? '—'}</div>
-              <div className="col-sm-6 col-md-3"><strong>Group Size:</strong> {matrix.stayNights ?? '—'}</div>
+              <div className="col-sm-6 col-md-3"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
             </div>
           </div>
         </div>
