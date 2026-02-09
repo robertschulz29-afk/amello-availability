@@ -15,7 +15,7 @@ type ScanRow = {
 type ScanResult = {
   id: number;
   scan_id: number;
-  hotel_id: string;
+  hotel_id: number;
   check_in_date: string;
   status: 'green' | 'red';
   response_json: any;
