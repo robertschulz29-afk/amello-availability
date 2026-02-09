@@ -335,30 +335,30 @@ export default function Page() {
   const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
 
   return (
-    <main>
+    <main style={{ maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
 
 
       {/* Scan parameter controls */}
       <div className="card mb-3">
         <div className="card-header">Scan Parameters</div>
         <div className="card-body row g-3">
-              <div className="col-sm-3">
+              <div className="col-sm-6 col-md-3">
                 <label className="form-label">Check-in date</label>
                 <input type="date" className="form-control" value={baseCheckIn} onChange={e => setBaseCheckIn(e.target.value)} />
               </div>
-              <div className="col-sm-3">
+              <div className="col-sm-6 col-md-3">
                 <label className="form-label">Stay (nights)</label>
                 <input type="number" min={1} max={30} className="form-control" value={stayNights} onChange={e => setStayNights(Number(e.target.value || 1))} />
               </div>
-              <div className="col-sm-3">
+              <div className="col-sm-6 col-md-3">
                 <label className="form-label">Days to scan (columns)</label>
                 <input type="number" min={1} max={365} className="form-control" value={days} onChange={e => setDays(Number(e.target.value || 1))} />
               </div>
-              <div className="col-sm-3">
+              <div className="col-sm-6 col-md-3">
                 <label className="form-label">Adults</label>
                 <input type="number" min={1} max={6} className="form-control" value={adultCount} onChange={e => setAdultCount(Number(e.target.value || 1))} />
               </div>
-              <div className="col-12 d-flex gap-2">
+              <div className="col-12 d-flex flex-wrap gap-2">
                 <button className="btn btn-success" onClick={startScan} disabled={busy || hotels.length === 0}>
                   {busy ? 'Scanning…' : 'Start scan'}
                 </button>
@@ -378,8 +378,8 @@ export default function Page() {
 
           {/* History + grouping controls */}
           <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
-            <div className="d-flex align-items-center gap-2">
-              <select className="form-select" style={{ minWidth: 300 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
+            <div className="d-flex flex-wrap align-items-center gap-2">
+              <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
                 {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
                   <option key={s.id} value={s.id}>
                     #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
