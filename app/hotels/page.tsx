@@ -193,7 +193,7 @@ export default function Page() {
       setHotels(prev => prev.filter(h => h.id !== deleteHotel.id));
       setSuccessMsg(`Hotel "${deleteHotel.name}" deleted successfully!`);
       setDeleteHotel(null);
-    } catch (e:any) {
+    } catch (e: any) {
       setHError(e.message || 'Failed to delete hotel');
     } finally {
       setDeleteBusy(false);
