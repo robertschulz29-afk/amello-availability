@@ -279,19 +279,38 @@ export default function Page() {
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
       
+      {/* Scan Selection */}
+      <div className="mb-3">
+        <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
+          {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
+            <option key={s.id} value={s.id}>
+              #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Scan Parameters */}
+      {matrix ? (
+        <div className="card mb-3">
+          <div className="card-header">Scan Parameters</div>
+          <div className="card-body small">
+            <div className="row g-2">
+              <div className="col-sm-6 col-md-3"><strong>Scan Date:</strong> {fmtDateTime(matrix.scannedAt)}</div>
+              <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong> {matrix.baseCheckIn ?? '—'}</div>
+              <div className="col-sm-6 col-md-3"><strong>Days Scanned:</strong> {matrix.days ?? '—'}</div>
+              <div className="col-sm-6 col-md-3"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      
       {/* Availability Overview Tile */}
       <AvailabilityOverviewTile matrix={matrix} />
 
-      {/* History + grouping controls */}
+      {/* History navigation + grouping controls */}
       <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
         <div className="d-flex flex-wrap align-items-center gap-2">
-          <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
-            {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
-              <option key={s.id} value={s.id}>
-                #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
-              </option>
-            ))}
-          </select>
           <button className="btn btn-outline-secondary" onClick={() => scans.length && setSelectedScanId(scans[0].id)} disabled={scans.length === 0}>Newest</button>
           <button className="btn btn-outline-secondary" onClick={onPrev} disabled={!scans.length}>Prev</button>
           <button className="btn btn-outline-secondary" onClick={onNext} disabled={!scans.length}>Next</button>
@@ -310,25 +329,6 @@ export default function Page() {
       </div>
 
       {error ? <div className="alert alert-danger">{error}</div> : null}
-
-      {/* Scan details */}
-      {matrix ? (
-        <div className="card mb-3">
-          <div className="card-header">Scan details</div>
-          <div className="card-body small">
-            <div className="row g-2">
-              <div className="col-sm-6 col-md-4"><strong>Scan ID:</strong> {matrix.scanId}</div>
-              <div className="col-sm-6 col-md-4"><strong>Scanned at:</strong> {fmtDateTime(matrix.scannedAt)}</div>
-              <div className="col-sm-6 col-md-4"><strong>Timezone:</strong> {matrix.timezone ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Base check-in:</strong> {matrix.baseCheckIn ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Fixed checkout (first column):</strong> {matrix.fixedCheckout ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Days scanned (columns):</strong> {matrix.days ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
-              <div className="col-sm-6 col-md-4"><strong>Unique dates returned:</strong> {matrix.dates.length}</div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {/* Grouped chart per group (no tables) */}
       {dates.length > 0 && groups.length > 0 ? (
