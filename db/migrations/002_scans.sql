@@ -42,76 +42,54 @@ BEGIN
     ) THEN
       -- Recreate the table with the id column
       -- First, create a backup of existing data
-      CREATE TABLE scan_results_backup AS SELECT * FROM scan_results;
-      
-      -- Drop the old table
-      DROP TABLE scan_results CASCADE;
-      
-      -- Recreate with id column
-      CREATE TABLE scan_results (
-        id SERIAL PRIMARY KEY,
-        scan_id INTEGER REFERENCES scans(id) ON DELETE CASCADE,
-        hotel_id INTEGER REFERENCES hotels(id) ON DELETE CASCADE,
-        check_in_date DATE NOT NULL,
-        status VARCHAR(10) NOT NULL,
-        response_json JSONB,
-        UNIQUE(scan_id, hotel_id, check_in_date)
-      );
-      
-      -- Restore data (id will be auto-generated)
-      INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json)
-      SELECT scan_id, hotel_id, check_in_date, status, response_json 
-      FROM scan_results_backup;
-      
-      -- Drop backup table
-      DROP TABLE scan_results_backup;
-      
-      RAISE NOTICE 'Added id column to scan_results table and migrated data';
+      BEGIN
+        CREATE TABLE scan_results_backup AS SELECT * FROM scan_results;
+        
+        -- Verify backup was created successfully
+        IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'scan_results_backup') THEN
+          RAISE EXCEPTION 'Failed to create backup table';
+        END IF;
+        
+        -- Drop the old table
+        DROP TABLE scan_results CASCADE;
+        
+        -- Recreate with id column
+        CREATE TABLE scan_results (
+          id SERIAL PRIMARY KEY,
+          scan_id INTEGER REFERENCES scans(id) ON DELETE CASCADE,
+          hotel_id INTEGER REFERENCES hotels(id) ON DELETE CASCADE,
+          check_in_date DATE NOT NULL,
+          status VARCHAR(10) NOT NULL,
+          response_json JSONB,
+          UNIQUE(scan_id, hotel_id, check_in_date)
+        );
+        
+        -- Restore data (id will be auto-generated)
+        INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json)
+        SELECT scan_id, hotel_id, check_in_date, status, response_json 
+        FROM scan_results_backup;
+        
+        -- Drop backup table
+        DROP TABLE scan_results_backup;
+        
+        RAISE NOTICE 'Added id column to scan_results table and migrated data';
+      EXCEPTION
+        WHEN others THEN
+          -- If anything fails, restore from backup if it exists
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'scan_results_backup') THEN
+            DROP TABLE IF EXISTS scan_results;
+            ALTER TABLE scan_results_backup RENAME TO scan_results;
+            RAISE NOTICE 'Migration failed, restored from backup. Error: %', SQLERRM;
+          END IF;
+          RAISE;
+      END;
     END IF;
     
-    -- Ensure other required columns exist
-    IF NOT EXISTS (
+    -- Ensure unique constraint exists (only check if id column exists)
+    IF EXISTS (
       SELECT 1 FROM information_schema.columns 
-      WHERE table_name = 'scan_results' AND column_name = 'scan_id'
-    ) THEN
-      ALTER TABLE scan_results ADD COLUMN scan_id INTEGER REFERENCES scans(id) ON DELETE CASCADE;
-      RAISE NOTICE 'Added scan_id column to scan_results table';
-    END IF;
-    
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns 
-      WHERE table_name = 'scan_results' AND column_name = 'hotel_id'
-    ) THEN
-      ALTER TABLE scan_results ADD COLUMN hotel_id INTEGER REFERENCES hotels(id) ON DELETE CASCADE;
-      RAISE NOTICE 'Added hotel_id column to scan_results table';
-    END IF;
-    
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns 
-      WHERE table_name = 'scan_results' AND column_name = 'check_in_date'
-    ) THEN
-      ALTER TABLE scan_results ADD COLUMN check_in_date DATE NOT NULL;
-      RAISE NOTICE 'Added check_in_date column to scan_results table';
-    END IF;
-    
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns 
-      WHERE table_name = 'scan_results' AND column_name = 'status'
-    ) THEN
-      ALTER TABLE scan_results ADD COLUMN status VARCHAR(10) NOT NULL;
-      RAISE NOTICE 'Added status column to scan_results table';
-    END IF;
-    
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns 
-      WHERE table_name = 'scan_results' AND column_name = 'response_json'
-    ) THEN
-      ALTER TABLE scan_results ADD COLUMN response_json JSONB;
-      RAISE NOTICE 'Added response_json column to scan_results table';
-    END IF;
-    
-    -- Ensure unique constraint exists
-    IF NOT EXISTS (
+      WHERE table_name = 'scan_results' AND column_name = 'id'
+    ) AND NOT EXISTS (
       SELECT 1 FROM pg_constraint 
       WHERE conname = 'scan_results_scan_id_hotel_id_check_in_date_key'
       AND contype = 'u'
@@ -121,7 +99,7 @@ BEGIN
           UNIQUE(scan_id, hotel_id, check_in_date);
         RAISE NOTICE 'Added unique constraint to scan_results table';
       EXCEPTION
-        WHEN duplicate_table THEN
+        WHEN duplicate_object THEN
           RAISE NOTICE 'Unique constraint already exists';
         WHEN others THEN
           RAISE NOTICE 'Could not add unique constraint: %', SQLERRM;
