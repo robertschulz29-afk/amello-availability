@@ -93,7 +93,7 @@ function GroupBarChart({
   }, []);
 
   const innerPadTop = 16;
-  const innerPadBottom = 65;
+  const innerPadBottom = 75;
   const labelYOffset = 60; // Distance from bottom for rotated labels
   const maxBarArea = height - innerPadTop - innerPadBottom;
 
