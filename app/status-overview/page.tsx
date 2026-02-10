@@ -57,7 +57,7 @@ function addDays(ymd: string, n: number): string {
 function GroupBarChart({
   title,
   series,       // [{ date, pct, greens, total }]
-  height = 180, // px
+  height = 220, // px
   barWidth = 14,
   gap = 6,
 }: {
@@ -530,7 +530,7 @@ export default function Page() {
                     <GroupBarChart
                       title={g.label}
                       series={series}
-                      height={180}
+                      height={220}
                       barWidth={12}
                       gap={5}
                     />
