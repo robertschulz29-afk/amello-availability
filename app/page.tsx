@@ -111,8 +111,19 @@ function GroupBarChart({
       }
     };
     updateWidth();
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
+    
+    // Debounce resize events for better performance
+    let timeoutId: NodeJS.Timeout;
+    const debouncedUpdate = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(updateWidth, 100);
+    };
+    
+    window.addEventListener('resize', debouncedUpdate);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', debouncedUpdate);
+    };
   }, []);
 
   const innerPadTop = 16;
