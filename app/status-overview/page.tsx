@@ -2,6 +2,7 @@
 'use client';
 
 import * as React from 'react';
+import { extractLowestPrice, formatPrice } from '@/lib/price-utils';
 
 type Hotel = { id: number; name: string; code: string; brand?: string; region?: string; country?: string };
 type ScanRow = {
@@ -19,6 +20,7 @@ type ResultsMatrix = {
   timezone: string | null;
   dates: string[];
   results: Record<string, Record<string, 'green' | 'red'>>;
+  prices?: Record<string, Record<string, number | null>>; // hotelCode -> date -> price
 };
 
 async function fetchJSON(input: RequestInfo, init?: RequestInit) {
@@ -182,6 +184,8 @@ export default function Page() {
       const safeDates: string[] = Array.isArray(data?.dates) ? data.dates : [];
       const safeResults: Record<string, Record<string, 'green'|'red'>> =
         data && typeof data.results === 'object' && data.results !== null ? data.results : {};
+      const safePrices: Record<string, Record<string, number | null>> =
+        data && typeof data.prices === 'object' && data.prices !== null ? data.prices : {};
       setMatrix({
         scanId,
         scannedAt: String(data?.scannedAt ?? ''),
@@ -191,7 +195,8 @@ export default function Page() {
         stayNights: data?.stayNights ?? null,
         timezone: data?.timezone ?? null,
         dates: safeDates,
-        results: safeResults
+        results: safeResults,
+        prices: safePrices,
       });
     } catch (e:any) {
       setError(e.message || 'Failed to load scan');
@@ -511,8 +516,16 @@ export default function Page() {
                                 <td style={{ position:'sticky', left:0, background:'var(--bs-body-bg)', zIndex:1 }}>{label}</td>
                                 {dates.map(d => {
                                   const v = matrix?.results?.[code]?.[d];
+                                  const price = matrix?.prices?.[code]?.[d];
                                   const cls = v === 'green' ? 'table-success' : v === 'red' ? 'table-danger' : '';
-                                  return <td key={code + d} className={`${cls} text-center small`}>{v ?? ''}</td>;
+                                  // For green cells, show the price or "—" if unavailable; for red cells, show 'red'; for empty cells, show nothing
+                                  let content = '';
+                                  if (v === 'green') {
+                                    content = price != null ? formatPrice(price, null) : '—';
+                                  } else if (v === 'red') {
+                                    content = 'red';
+                                  }
+                                  return <td key={code + d} className={`${cls} text-center small`}>{content}</td>;
                                 })}
                               </tr>
                             );
