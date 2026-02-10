@@ -25,6 +25,18 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
     return result;
   }
 
+  // Detect if this is Amello API format (data.rooms with offers containing rate objects)
+  // Amello API always returns prices in cents that need to be divided by 100
+  const isAmelloFormat = !!(
+    responseJson.data &&
+    Array.isArray(responseJson.data.rooms) &&
+    responseJson.data.rooms.length > 0 &&
+    responseJson.data.rooms.some((room: any) => 
+      Array.isArray(room.offers) && 
+      room.offers.some((offer: any) => offer.rate && offer.totalPrice)
+    )
+  );
+
   // Try to extract currency from response
   let currency = extractCurrency(responseJson);
 
@@ -89,7 +101,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
 
     if (!rates || rates.length === 0) {
       // Maybe the room object itself contains a direct price
-      const directPrice = extractPriceValue(room);
+      const directPrice = extractPriceValue(room, isAmelloFormat);
       if (directPrice !== null && directPrice < lowestPrice) {
         lowestPrice = directPrice;
         result.roomName = roomName;
@@ -106,12 +118,13 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
     for (const rate of rates) {
       if (!rate || typeof rate !== 'object') continue;
 
-      const price = extractPriceValue(rate);
+      const price = extractPriceValue(rate, isAmelloFormat);
       
       if (price !== null && price < lowestPrice) {
         lowestPrice = price;
         result.roomName = roomName;
-        result.rateName = rate.name || rate.rateName || rate.planName || rate.title || rate.type || null;
+        // For Amello API, rate name is in rate.rate.name, otherwise try common fields
+        result.rateName = (rate.rate && rate.rate.name) || rate.name || rate.rateName || rate.planName || rate.title || rate.type || null;
         result.price = price;
         if (!currency) {
           currency = extractCurrency(rate);
@@ -160,9 +173,9 @@ function extractCurrency(obj: any): string | null {
 /**
  * Extracts a numeric price value from various possible price fields
  * Automatically converts prices from cents to decimal (divides by 100)
- * when the value is >= 1000 and is a whole number (likely in cents)
+ * for APIs that return prices in cents (e.g., Amello API)
  */
-function extractPriceValue(obj: any): number | null {
+function extractPriceValue(obj: any, pricesInCents: boolean = false): number | null {
   if (!obj || typeof obj !== 'object') return null;
 
   // Try various common field names for price
@@ -184,9 +197,9 @@ function extractPriceValue(obj: any): number | null {
     
     // Direct numeric value
     if (typeof value === 'number' && isFinite(value) && value >= 0) {
-      // Convert from cents to decimal if value is >= 1000 and is a whole number
-      // This heuristic assumes prices >= 1000 without decimals are in cents
-      if (value >= 1000 && Number.isInteger(value)) {
+      // Convert from cents to decimal if explicitly indicated
+      // or if value is >= 1000 and is a whole number (heuristic for backwards compatibility)
+      if (pricesInCents || (value >= 1000 && Number.isInteger(value))) {
         return value / 100;
       }
       return value;
@@ -199,8 +212,9 @@ function extractPriceValue(obj: any): number | null {
       if (match) {
         const parsed = parseFloat(match[0]);
         if (isFinite(parsed) && parsed >= 0) {
-          // Convert from cents to decimal if applicable
-          if (parsed >= 1000 && Number.isInteger(parsed)) {
+          // Convert from cents to decimal if explicitly indicated
+          // or if applicable via heuristic
+          if (pricesInCents || (parsed >= 1000 && Number.isInteger(parsed))) {
             return parsed / 100;
           }
           return parsed;
@@ -210,7 +224,7 @@ function extractPriceValue(obj: any): number | null {
 
     // Nested price object
     if (value && typeof value === 'object') {
-      const nestedPrice = extractPriceValue(value);
+      const nestedPrice = extractPriceValue(value, pricesInCents);
       if (nestedPrice !== null) {
         return nestedPrice;
       }
