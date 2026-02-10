@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
+import { extractLowestPrice } from '@/lib/price-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,11 @@ function normalizeDateToYMD(d: any): string {
   const s = String(d ?? '');
   const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : s;
+}
+
+function extractLowestPriceValue(responseJson: any): number | null {
+  const priceInfo = extractLowestPrice(responseJson);
+  return priceInfo.price;
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -53,14 +59,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     for (const h of hotels) hotelById.set(h.id, h);
 
     const rowsQ = await sql`
-      SELECT hotel_id, check_in_date, status
+      SELECT hotel_id, check_in_date, status, response_json
       FROM scan_results
       WHERE scan_id = ${scanId}
     `;
-    const rows = rowsQ.rows as Array<{ hotel_id:number; check_in_date:any; status:string }>;
+    const rows = rowsQ.rows as Array<{ hotel_id:number; check_in_date:any; status:string; response_json:any }>;
 
     const datesSet = new Set<string>();
     const results: Record<string, Record<string, 'green'|'red'>> = {};
+    const prices: Record<string, Record<string, number | null>> = {};
     for (const row of rows) {
       const hotel = hotelById.get(row.hotel_id);
       if (!hotel) continue;
@@ -68,6 +75,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       const checkIn = normalizeDateToYMD(row.check_in_date);
       datesSet.add(checkIn);
       (results[code] ||= {})[checkIn] = row.status === 'green' ? 'green' : 'red';
+      
+      // Extract price for green status
+      if (row.status === 'green' && row.response_json) {
+        (prices[code] ||= {})[checkIn] = extractLowestPriceValue(row.response_json);
+      }
     }
     const dates = Array.from(datesSet).sort();
     for (const h of hotels) if (!results[h.code]) results[h.code] = {};
@@ -92,6 +104,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       // matrix
       dates,
       results,
+      prices,
     });
   } catch (err:any) {
     console.error('[GET /api/scans/[id]] error', err);

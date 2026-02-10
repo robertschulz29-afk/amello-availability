@@ -2,6 +2,7 @@
 'use client';
 
 import * as React from 'react';
+import { extractLowestPrice, formatPrice } from '@/lib/price-utils';
 
 type ScanRow = {
   id: number; 
@@ -173,46 +174,58 @@ export default function Page() {
                     <th>Hotel ID</th>
                     <th>Check-in Date</th>
                     <th>Status</th>
+                    <th>Room Name</th>
+                    <th>Rate Name</th>
+                    <th>Price</th>
                     <th>Response JSON</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {results.map(result => (
-                    <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}`}>
-                      <td>{result.scan_id}</td>
-                      <td>{result.hotel_id}</td>
-                      <td>{result.check_in_date}</td>
-                      <td>
-                        <span className={`badge ${result.status === 'green' ? 'bg-success' : 'bg-danger'}`}>
-                          {result.status}
-                        </span>
-                      </td>
-                      <td>
-                        <details>
-                          <summary className="btn btn-sm btn-outline-secondary">View JSON</summary>
-                          <pre className="small mt-2" style={{ maxHeight: '200px', overflow: 'auto' }}>
-                            {JSON.stringify(result.response_json, null, 2)}
-                          </pre>
-                        </details>
-                      </td>
-                      <td>
-                        <button 
-                          className="btn btn-sm btn-outline-primary"
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(JSON.stringify(result.response_json, null, 2));
-                              alert('JSON copied to clipboard!');
-                            } catch (err) {
-                              alert('Failed to copy JSON to clipboard');
-                            }
-                          }}
-                        >
-                          Copy JSON
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {results.map(result => {
+                    const priceInfo = result.status === 'green' 
+                      ? extractLowestPrice(result.response_json)
+                      : { roomName: null, rateName: null, price: null };
+                    
+                    return (
+                      <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}`}>
+                        <td>{result.scan_id}</td>
+                        <td>{result.hotel_id}</td>
+                        <td>{result.check_in_date}</td>
+                        <td>
+                          <span className={`badge ${result.status === 'green' ? 'bg-success' : 'bg-danger'}`}>
+                            {result.status}
+                          </span>
+                        </td>
+                        <td>{priceInfo.roomName ?? '—'}</td>
+                        <td>{priceInfo.rateName ?? '—'}</td>
+                        <td>{formatPrice(priceInfo.price)}</td>
+                        <td>
+                          <details>
+                            <summary className="btn btn-sm btn-outline-secondary">View JSON</summary>
+                            <pre className="small mt-2" style={{ maxHeight: '200px', overflow: 'auto' }}>
+                              {JSON.stringify(result.response_json, null, 2)}
+                            </pre>
+                          </details>
+                        </td>
+                        <td>
+                          <button 
+                            className="btn btn-sm btn-outline-primary"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(JSON.stringify(result.response_json, null, 2));
+                                alert('JSON copied to clipboard!');
+                              } catch (err) {
+                                alert('Failed to copy JSON to clipboard');
+                              }
+                            }}
+                          >
+                            Copy JSON
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
