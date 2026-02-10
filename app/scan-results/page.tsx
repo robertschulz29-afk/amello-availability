@@ -58,11 +58,11 @@ export default function Page() {
   const [loading, setLoading] = React.useState(false);
 
   // Helper function to extract price info from a result (no hooks)
-  const extractPriceInfo = React.useCallback((result: ScanResult) => {
+  const extractPriceInfo = (result: ScanResult) => {
     return result.status === 'green' 
       ? extractLowestPrice(result.response_json)
       : { roomName: null, rateName: null, price: null, currency: null };
-  }, []);
+  };
 
   // Load scans list for dropdown
   const loadScans = React.useCallback(async () => {
