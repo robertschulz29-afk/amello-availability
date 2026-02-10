@@ -127,7 +127,7 @@ function GroupBarChart({
   }, []);
 
   const innerPadTop = 16;
-  const innerPadBottom = 55;
+  const innerPadBottom = 65;
   const maxBarArea = height - innerPadTop - innerPadBottom;
 
   // Calculate width to fill container, but respect minimum based on series length
@@ -169,7 +169,7 @@ function GroupBarChart({
                 <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
                 <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill="currentColor" fillOpacity="0.25" />
                 {idx % labelEvery === 0 && (
-                  <text x={x + barWidth/2} y={height - 8} textAnchor="start" fontSize="10" fill="currentColor" fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - 8})`}>
+                  <text x={x + barWidth/2} y={height - 60} textAnchor="start" fontSize="10" fill="currentColor" fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - 60})`}>
                     {pt.date}
                   </text>
                 )}
