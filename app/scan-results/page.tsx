@@ -57,6 +57,13 @@ export default function Page() {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
+  // Helper function to extract price info from a result (no hooks)
+  const extractPriceInfo = (result: ScanResult) => {
+    return result.status === 'green' 
+      ? extractLowestPrice(result.response_json)
+      : { roomName: null, rateName: null, price: null, currency: null };
+  };
+
   // Load scans list for dropdown
   const loadScans = React.useCallback(async () => {
     try {
@@ -183,13 +190,8 @@ export default function Page() {
                 </thead>
                 <tbody>
                   {results.map(result => {
-                    // Extract price info once per result and reuse
-                    const priceInfo = React.useMemo(
-                      () => result.status === 'green' 
-                        ? extractLowestPrice(result.response_json)
-                        : { roomName: null, rateName: null, price: null, currency: null },
-                      [result.status, result.response_json]
-                    );
+                    // Extract price info directly without using hooks
+                    const priceInfo = extractPriceInfo(result);
                     
                     return (
                       <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}`}>
