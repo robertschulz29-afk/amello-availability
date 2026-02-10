@@ -6,6 +6,7 @@ export interface LowestPriceInfo {
   roomName: string | null;
   rateName: string | null;
   price: number | null;
+  currency: string | null;
 }
 
 /**
@@ -17,11 +18,15 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
     roomName: null,
     rateName: null,
     price: null,
+    currency: null,
   };
 
   if (!responseJson || typeof responseJson !== 'object') {
     return result;
   }
+
+  // Try to extract currency from response
+  let currency = extractCurrency(responseJson);
 
   // Find the rooms array - could be in various locations
   let rooms: any[] | null = null;
@@ -52,6 +57,11 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
 
     // Get room name
     const roomName = room.name || room.roomName || room.title || room.type || null;
+
+    // Try to get currency from room if not found at root level
+    if (!currency) {
+      currency = extractCurrency(room);
+    }
 
     // Find rates/prices array - could be in various locations
     let rates: any[] | null = null;
@@ -85,6 +95,9 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
         result.roomName = roomName;
         result.rateName = room.rateName || room.planName || null;
         result.price = directPrice;
+        if (!currency) {
+          currency = extractCurrency(room);
+        }
       }
       continue;
     }
@@ -100,12 +113,16 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
         result.roomName = roomName;
         result.rateName = rate.name || rate.rateName || rate.planName || rate.title || rate.type || null;
         result.price = price;
+        if (!currency) {
+          currency = extractCurrency(rate);
+        }
       }
     }
   }
 
-  // If we found a valid price, return it
+  // If we found a valid price, set currency and return
   if (result.price !== null && isFinite(result.price)) {
+    result.currency = currency || 'EUR'; // Default to EUR if not found
     return result;
   }
 
@@ -114,7 +131,30 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
     roomName: null,
     rateName: null,
     price: null,
+    currency: null,
   };
+}
+
+/**
+ * Extracts currency code from an object
+ */
+function extractCurrency(obj: any): string | null {
+  if (!obj || typeof obj !== 'object') return null;
+
+  const possibleCurrencyFields = [
+    'currency',
+    'currencyCode',
+    'currency_code',
+  ];
+
+  for (const field of possibleCurrencyFields) {
+    const value = obj[field];
+    if (typeof value === 'string' && value.length > 0) {
+      return value.toUpperCase();
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -147,8 +187,9 @@ function extractPriceValue(obj: any): number | null {
 
     // String that can be parsed to number
     if (typeof value === 'string') {
-      // Remove common currency symbols and whitespace
-      const cleaned = value.replace(/[€$£¥,\s]/g, '');
+      // Remove currency symbols, commas, and whitespace
+      // This regex removes common currency symbols and separators
+      const cleaned = value.replace(/[^\d.-]/g, '');
       const parsed = parseFloat(cleaned);
       if (isFinite(parsed) && parsed >= 0) {
         return parsed;
@@ -168,11 +209,22 @@ function extractPriceValue(obj: any): number | null {
 }
 
 /**
- * Formats a price for display
+ * Formats a price for display with currency symbol
  */
-export function formatPrice(price: number | null, currency: string = '€'): string {
+export function formatPrice(price: number | null, currency: string | null = null): string {
   if (price === null || !isFinite(price)) {
     return '—';
   }
-  return `${currency}${price.toFixed(2)}`;
+  
+  // Map common currency codes to symbols
+  const currencySymbols: Record<string, string> = {
+    'EUR': '€',
+    'USD': '$',
+    'GBP': '£',
+    'JPY': '¥',
+    'CHF': 'CHF',
+  };
+  
+  const symbol = currency ? (currencySymbols[currency.toUpperCase()] || currency) : '€';
+  return `${symbol}${price.toFixed(2)}`;
 }

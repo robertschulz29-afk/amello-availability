@@ -518,9 +518,13 @@ export default function Page() {
                                   const v = matrix?.results?.[code]?.[d];
                                   const price = matrix?.prices?.[code]?.[d];
                                   const cls = v === 'green' ? 'table-success' : v === 'red' ? 'table-danger' : '';
-                                  const content = v === 'green' 
-                                    ? `${v}${price != null ? ` ${formatPrice(price)}` : ''}`
-                                    : v ?? '';
+                                  // For green cells, show the price; for red cells, show 'red'; for empty cells, show nothing
+                                  let content = '';
+                                  if (v === 'green') {
+                                    content = price != null ? formatPrice(price, null) : 'green';
+                                  } else if (v === 'red') {
+                                    content = 'red';
+                                  }
                                   return <td key={code + d} className={`${cls} text-center small`}>{content}</td>;
                                 })}
                               </tr>

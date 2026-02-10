@@ -185,7 +185,7 @@ export default function Page() {
                   {results.map(result => {
                     const priceInfo = result.status === 'green' 
                       ? extractLowestPrice(result.response_json)
-                      : { roomName: null, rateName: null, price: null };
+                      : { roomName: null, rateName: null, price: null, currency: null };
                     
                     return (
                       <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}`}>
@@ -199,7 +199,7 @@ export default function Page() {
                         </td>
                         <td>{priceInfo.roomName ?? '—'}</td>
                         <td>{priceInfo.rateName ?? '—'}</td>
-                        <td>{formatPrice(priceInfo.price)}</td>
+                        <td>{formatPrice(priceInfo.price, priceInfo.currency)}</td>
                         <td>
                           <details>
                             <summary className="btn btn-sm btn-outline-secondary">View JSON</summary>
