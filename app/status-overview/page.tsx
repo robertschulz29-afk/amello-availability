@@ -135,7 +135,7 @@ function GroupBarChart({
                 <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
                 <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill="currentColor" fillOpacity="0.25" />
                 {idx % labelEvery === 0 && (
-                  <text x={x + barWidth/2} y={height - 8} textAnchor="end" fontSize="10" fill="currentColor" fillOpacity="0.7" transform={`rotate(-45 ${x + barWidth/2} ${height - 8})`}>
+                  <text x={x + barWidth/2} y={height - 8} textAnchor="end" fontSize="10" fill="currentColor" fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - 8})`}>
                     {pt.date}
                   </text>
                 )}
