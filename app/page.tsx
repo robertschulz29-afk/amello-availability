@@ -101,11 +101,27 @@ function GroupBarChart({
   barWidth?: number;
   gap?: number;
 }) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = React.useState(300);
+
+  React.useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+
   const innerPadTop = 16;
   const innerPadBottom = 36;
   const maxBarArea = height - innerPadTop - innerPadBottom;
 
-  const width = Math.max(300, series.length * (barWidth + gap) + 40);
+  // Calculate width to fill container, but respect minimum based on series length
+  const minWidthForSeries = series.length * (barWidth + gap) + 40;
+  const width = Math.max(containerWidth, minWidthForSeries);
   const xStart = 20;
 
   const yFor = (pct: number) => {
@@ -125,7 +141,7 @@ function GroupBarChart({
         <span>{title}</span>
         <span className="small text-muted">Green % by day</span>
       </div>
-      <div className="card-body" style={{ overflowX: 'auto' }}>
+      <div className="card-body" style={{ overflowX: 'auto' }} ref={containerRef}>
         <svg width={width} height={height} role="img" aria-label={`${title} green percentage chart`}>
           {[25,50,75].map((p) => (
             <g key={`grid-${p}`}>
@@ -141,11 +157,6 @@ function GroupBarChart({
               <g key={pt.date}>
                 <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
                 <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill="currentColor" fillOpacity="0.25" />
-                {h >= 18 && (
-                  <text x={x + barWidth/2} y={y - 4} textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.7">
-                    {isFinite(pt.pct) ? Math.round(pt.pct) : 0}%
-                  </text>
-                )}
                 {idx % labelEvery === 0 && (
                   <text x={x + barWidth/2} y={height - 8} textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.7">
                     {pt.date}
@@ -169,6 +180,7 @@ export default function Page() {
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
 
   // Progress/results
+  const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
 
@@ -201,6 +213,7 @@ export default function Page() {
 
   // Load one scan by id
   const loadScanById = React.useCallback(async (scanId: number) => {
+    setLoading(true);
     setError(null); setMatrix(null);
     try {
       const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
@@ -220,6 +233,8 @@ export default function Page() {
       });
     } catch (e:any) {
       setError(e.message || 'Failed to load scan');
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -330,8 +345,18 @@ export default function Page() {
 
       {error ? <div className="alert alert-danger">{error}</div> : null}
 
+      {/* Loading spinner */}
+      {loading ? (
+        <div className="text-center my-5">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+          <div className="mt-2 text-muted">Loading scan data...</div>
+        </div>
+      ) : null}
+
       {/* Grouped chart per group (no tables) */}
-      {dates.length > 0 && groups.length > 0 ? (
+      {!loading && dates.length > 0 && groups.length > 0 ? (
         <>
           {groups.map(g => {
             const series = (matrix?.dates ?? []).map(d => {
