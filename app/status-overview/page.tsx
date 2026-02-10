@@ -518,10 +518,10 @@ export default function Page() {
                                   const v = matrix?.results?.[code]?.[d];
                                   const price = matrix?.prices?.[code]?.[d];
                                   const cls = v === 'green' ? 'table-success' : v === 'red' ? 'table-danger' : '';
-                                  // For green cells, show the price; for red cells, show 'red'; for empty cells, show nothing
+                                  // For green cells, show the price or "—" if unavailable; for red cells, show 'red'; for empty cells, show nothing
                                   let content = '';
                                   if (v === 'green') {
-                                    content = price != null ? formatPrice(price, null) : 'green';
+                                    content = price != null ? formatPrice(price, null) : '—';
                                   } else if (v === 'red') {
                                     content = 'red';
                                   }

@@ -183,9 +183,13 @@ export default function Page() {
                 </thead>
                 <tbody>
                   {results.map(result => {
-                    const priceInfo = result.status === 'green' 
-                      ? extractLowestPrice(result.response_json)
-                      : { roomName: null, rateName: null, price: null, currency: null };
+                    // Extract price info once per result and reuse
+                    const priceInfo = React.useMemo(
+                      () => result.status === 'green' 
+                        ? extractLowestPrice(result.response_json)
+                        : { roomName: null, rateName: null, price: null, currency: null },
+                      [result.status, result.response_json]
+                    );
                     
                     return (
                       <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}`}>

@@ -187,12 +187,13 @@ function extractPriceValue(obj: any): number | null {
 
     // String that can be parsed to number
     if (typeof value === 'string') {
-      // Remove currency symbols, commas, and whitespace
-      // This regex removes common currency symbols and separators
-      const cleaned = value.replace(/[^\d.-]/g, '');
-      const parsed = parseFloat(cleaned);
-      if (isFinite(parsed) && parsed >= 0) {
-        return parsed;
+      // First, try to match a valid number format (with optional decimal point)
+      const match = value.match(/\d+(?:\.\d+)?/);
+      if (match) {
+        const parsed = parseFloat(match[0]);
+        if (isFinite(parsed) && parsed >= 0) {
+          return parsed;
+        }
       }
     }
 
