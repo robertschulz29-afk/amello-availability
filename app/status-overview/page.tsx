@@ -93,8 +93,9 @@ function GroupBarChart({
   }, []);
 
   const innerPadTop = 16;
-  const innerPadBottom = 75;
   const labelYOffset = 60; // Distance from bottom for rotated labels
+  const labelGap = 15; // Gap between bars and labels
+  const innerPadBottom = labelYOffset + labelGap;
   const maxBarArea = height - innerPadTop - innerPadBottom;
 
   // Calculate width to fill container, but respect minimum based on series length
