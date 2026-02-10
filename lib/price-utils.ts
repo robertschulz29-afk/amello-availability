@@ -159,6 +159,8 @@ function extractCurrency(obj: any): string | null {
 
 /**
  * Extracts a numeric price value from various possible price fields
+ * Automatically converts prices from cents to decimal (divides by 100)
+ * when the value is >= 1000 and is a whole number (likely in cents)
  */
 function extractPriceValue(obj: any): number | null {
   if (!obj || typeof obj !== 'object') return null;
@@ -182,6 +184,11 @@ function extractPriceValue(obj: any): number | null {
     
     // Direct numeric value
     if (typeof value === 'number' && isFinite(value) && value >= 0) {
+      // Convert from cents to decimal if value is >= 1000 and is a whole number
+      // This heuristic assumes prices >= 1000 without decimals are in cents
+      if (value >= 1000 && Number.isInteger(value)) {
+        return value / 100;
+      }
       return value;
     }
 
@@ -192,6 +199,10 @@ function extractPriceValue(obj: any): number | null {
       if (match) {
         const parsed = parseFloat(match[0]);
         if (isFinite(parsed) && parsed >= 0) {
+          // Convert from cents to decimal if applicable
+          if (parsed >= 1000 && Number.isInteger(parsed)) {
+            return parsed / 100;
+          }
           return parsed;
         }
       }
