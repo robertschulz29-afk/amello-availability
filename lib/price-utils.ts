@@ -25,6 +25,18 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
     return result;
   }
 
+  // Detect if this is Amello API format (data.rooms with offers containing rate objects)
+  // Amello API always returns prices in cents that need to be divided by 100
+  const isAmelloFormat = !!(
+    responseJson.data &&
+    Array.isArray(responseJson.data.rooms) &&
+    responseJson.data.rooms.length > 0 &&
+    responseJson.data.rooms.some((room: any) => 
+      Array.isArray(room.offers) && 
+      room.offers.some((offer: any) => offer.rate && offer.totalPrice)
+    )
+  );
+
   // Try to extract currency from response
   let currency = extractCurrency(responseJson);
 
@@ -89,7 +101,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
 
     if (!rates || rates.length === 0) {
       // Maybe the room object itself contains a direct price
-      const directPrice = extractPriceValue(room);
+      const directPrice = extractPriceValue(room, isAmelloFormat);
       if (directPrice !== null && directPrice < lowestPrice) {
         lowestPrice = directPrice;
         result.roomName = roomName;
@@ -106,12 +118,13 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
     for (const rate of rates) {
       if (!rate || typeof rate !== 'object') continue;
 
-      const price = extractPriceValue(rate);
+      const price = extractPriceValue(rate, isAmelloFormat);
       
       if (price !== null && price < lowestPrice) {
         lowestPrice = price;
         result.roomName = roomName;
-        result.rateName = rate.name || rate.rateName || rate.planName || rate.title || rate.type || null;
+        // For Amello API, rate name is in rate.rate.name, otherwise try common fields
+        result.rateName = (rate.rate && rate.rate.name) || rate.name || rate.rateName || rate.planName || rate.title || rate.type || null;
         result.price = price;
         if (!currency) {
           currency = extractCurrency(rate);
@@ -159,8 +172,10 @@ function extractCurrency(obj: any): string | null {
 
 /**
  * Extracts a numeric price value from various possible price fields
+ * Automatically converts prices from cents to decimal (divides by 100)
+ * when pricesInCents flag is true
  */
-function extractPriceValue(obj: any): number | null {
+function extractPriceValue(obj: any, pricesInCents: boolean = false): number | null {
   if (!obj || typeof obj !== 'object') return null;
 
   // Try various common field names for price
@@ -182,7 +197,8 @@ function extractPriceValue(obj: any): number | null {
     
     // Direct numeric value
     if (typeof value === 'number' && isFinite(value) && value >= 0) {
-      return value;
+      // Convert from cents to decimal if explicitly indicated
+      return pricesInCents ? value / 100 : value;
     }
 
     // String that can be parsed to number
@@ -192,14 +208,15 @@ function extractPriceValue(obj: any): number | null {
       if (match) {
         const parsed = parseFloat(match[0]);
         if (isFinite(parsed) && parsed >= 0) {
-          return parsed;
+          // Convert from cents to decimal if explicitly indicated
+          return pricesInCents ? parsed / 100 : parsed;
         }
       }
     }
 
     // Nested price object
     if (value && typeof value === 'object') {
-      const nestedPrice = extractPriceValue(value);
+      const nestedPrice = extractPriceValue(value, pricesInCents);
       if (nestedPrice !== null) {
         return nestedPrice;
       }
