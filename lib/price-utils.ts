@@ -45,7 +45,7 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
     responseJson.data.rooms.length > 0 &&
     responseJson.data.rooms.some((room: any) => 
       Array.isArray(room.offers) && 
-      room.offers.some((offer: any) => offer.rate && offer.totalPrice)
+      room.offers.some((offer: any) => offer?.rate && offer?.totalPrice)
     )
   );
 
@@ -109,7 +109,7 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
         
         if (price !== null && isFinite(price)) {
           // For Amello API, rate name is in rate.rate.name, otherwise try common fields
-          const rateName = (rate.rate && rate.rate.name) || 
+          const rateName = rate.rate?.name || 
                           rate.name || 
                           rate.rateName || 
                           rate.planName || 
@@ -217,7 +217,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
     responseJson.data.rooms.length > 0 &&
     responseJson.data.rooms.some((room: any) => 
       Array.isArray(room.offers) && 
-      room.offers.some((offer: any) => offer.rate && offer.totalPrice)
+      room.offers.some((offer: any) => offer?.rate && offer?.totalPrice)
     )
   );
 
@@ -308,7 +308,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
         lowestPrice = price;
         result.roomName = roomName;
         // For Amello API, rate name is in rate.rate.name, otherwise try common fields
-        result.rateName = (rate.rate && rate.rate.name) || rate.name || rate.rateName || rate.planName || rate.title || rate.type || null;
+        result.rateName = rate.rate?.name || rate.name || rate.rateName || rate.planName || rate.title || rate.type || null;
         result.price = price;
         if (!currency) {
           currency = extractCurrency(rate);
