@@ -127,7 +127,7 @@ function GroupBarChart({
   }, []);
 
   const innerPadTop = 16;
-  const innerPadBottom = 36;
+  const innerPadBottom = 55;
   const maxBarArea = height - innerPadTop - innerPadBottom;
 
   // Calculate width to fill container, but respect minimum based on series length
