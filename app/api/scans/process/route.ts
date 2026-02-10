@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
+import { extractRoomRateData } from '@/lib/price-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -187,8 +188,11 @@ export async function POST(req: NextRequest) {
             const ctype = res.headers.get('content-type') || '';
             if (ctype.includes('application/json')) {
               const j = await res.json();
-              responseJson = j;
-              status = hasNonEmptyRooms(j) ? 'green' : 'red';
+              // Extract compact room/rate data instead of storing full response
+              const compactData = extractRoomRateData(j);
+              responseJson = compactData;
+              // Check if we have any rooms with rates for status
+              status = (compactData.rooms && compactData.rooms.length > 0) ? 'green' : 'red';
             } else {
               status = 'red';
               responseJson = { httpStatus: res.status, text: await res.text().catch(()=>null) };
