@@ -173,7 +173,7 @@ function extractCurrency(obj: any): string | null {
 /**
  * Extracts a numeric price value from various possible price fields
  * Automatically converts prices from cents to decimal (divides by 100)
- * for APIs that return prices in cents (e.g., Amello API)
+ * when pricesInCents flag is true
  */
 function extractPriceValue(obj: any, pricesInCents: boolean = false): number | null {
   if (!obj || typeof obj !== 'object') return null;
@@ -198,11 +198,7 @@ function extractPriceValue(obj: any, pricesInCents: boolean = false): number | n
     // Direct numeric value
     if (typeof value === 'number' && isFinite(value) && value >= 0) {
       // Convert from cents to decimal if explicitly indicated
-      // or if value is >= 1000 and is a whole number (heuristic for backwards compatibility)
-      if (pricesInCents || (value >= 1000 && Number.isInteger(value))) {
-        return value / 100;
-      }
-      return value;
+      return pricesInCents ? value / 100 : value;
     }
 
     // String that can be parsed to number
@@ -213,11 +209,7 @@ function extractPriceValue(obj: any, pricesInCents: boolean = false): number | n
         const parsed = parseFloat(match[0]);
         if (isFinite(parsed) && parsed >= 0) {
           // Convert from cents to decimal if explicitly indicated
-          // or if applicable via heuristic
-          if (pricesInCents || (parsed >= 1000 && Number.isInteger(parsed))) {
-            return parsed / 100;
-          }
-          return parsed;
+          return pricesInCents ? parsed / 100 : parsed;
         }
       }
     }
