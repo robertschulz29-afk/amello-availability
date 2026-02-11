@@ -2,6 +2,7 @@
 'use client';
 
 import * as React from 'react';
+import { fetchJSON } from '@/lib/api-client';
 import { extractLowestPrice, formatPrice } from '@/lib/price-utils';
 
 type ScanRow = {
@@ -28,16 +29,6 @@ type PaginatedResponse = {
   limit: number;
   totalPages: number;
 };
-
-async function fetchJSON(input: RequestInfo, init?: RequestInit) {
-  const r = await fetch(input, init);
-  const text = await r.text();
-  if (!r.ok) {
-    try { const j = JSON.parse(text); throw new Error(j.error || r.statusText); }
-    catch { throw new Error(text || r.statusText); }
-  }
-  return text ? JSON.parse(text) : null;
-}
 
 function fmtDateTime(dt: string) {
   try { return new Date(dt).toLocaleString(); } catch { return dt; }
