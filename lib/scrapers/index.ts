@@ -2,6 +2,7 @@
 // Main exports for the scraping infrastructure
 
 export { BaseScraper } from './BaseScraper';
+export { BookingComScraper } from './BookingComScraper';
 export * from './types';
 export * from './utils/user-agents';
 export * from './utils/delays';
