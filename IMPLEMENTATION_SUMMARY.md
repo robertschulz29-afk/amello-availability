@@ -169,10 +169,15 @@ Test 2: HTML Parsing
 ## Deployment Notes
 
 ### Database Migration Required
-Before deploying, run migration `007_add_source_to_scan_results.sql`:
-- Adds `source` column to existing `scan_results` table
-- Updates unique constraint to include `source`
-- Creates performance indexes
+Before deploying, run the migration script to apply all pending migrations including `007_add_source_to_scan_results.sql`:
+```bash
+node scripts/migrate.mjs
+```
+
+Migration 007 will:
+- Add `source` column to existing `scan_results` table
+- Update unique constraint to include `source`
+- Create performance indexes
 
 ### Environment Variables
 No new environment variables required. Uses existing:
