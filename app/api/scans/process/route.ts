@@ -241,6 +241,7 @@ export async function POST(req: NextRequest) {
         if (idx >= slice.length) break;
         const cell = slice[idx];
 
+        // Scan result status (not HTTP status).
         let status: 'green' | 'red' = 'red';
         let responseJson: any = null;
 
@@ -285,7 +286,7 @@ export async function POST(req: NextRequest) {
             status = 'red';
             responseJson = {
               httpStatus: res.status,
-              error: `Unexpected content-type from Amello API. Expected JSON but received ${ctype || 'unknown'}. Verify AMELLO_BASE_URL points to the correct API endpoint.`,
+              error: `Unexpected Content-Type from Amello API. Expected JSON but received ${ctype || 'unknown'}. Verify AMELLO_BASE_URL points to the correct API endpoint.`,
               contentType: ctype,
             };
           } else {
