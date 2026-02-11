@@ -21,6 +21,9 @@ export interface BookingComData {
   source: 'booking';
 }
 
+// Default currency for Booking.com when not specified
+const DEFAULT_CURRENCY = 'EUR';
+
 /**
  * Scraper for Booking.com hotel availability and pricing
  * 
@@ -153,9 +156,9 @@ export class BookingComScraper extends BaseScraper {
           let rateRows = allNextRows;
           
           // Find the index of the next room type if it exists
-          const nextRoomIndex = allNextRows.toArray().findIndex((el) => {
-            return $(el).find('.hprt-roomtype-link').length > 0;
-          });
+          const nextRoomIndex = allNextRows.toArray().findIndex(
+            (el) => $(el).find('.hprt-roomtype-link').length > 0
+          );
           
           // If we found another room, only take rows before it
           if (nextRoomIndex >= 0) {
@@ -268,7 +271,7 @@ export class BookingComScraper extends BaseScraper {
       
       // Extract currency symbol or code
       // Common patterns: €150, $200, 150 EUR, EUR 150
-      let currency = 'EUR'; // Default to EUR
+      let currency = DEFAULT_CURRENCY;
       
       if (priceText.includes('€')) {
         currency = 'EUR';

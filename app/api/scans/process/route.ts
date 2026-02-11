@@ -167,11 +167,12 @@ export async function POST(req: NextRequest) {
 
     // Initialize Booking.com scraper if needed (lazy initialization)
     let bookingScraper: BookingComScraper | null = null;
+    const BOOKING_INTERNAL_SOURCE_ID = -1; // Negative ID to avoid conflicts with real DB records
     const initBookingScraper = () => {
       if (!bookingScraper) {
         // Create a minimal ScanSource config for Booking.com
         const bookingSource: ScanSource = {
-          id: 0, // Not using scan_sources table, just for internal use
+          id: BOOKING_INTERNAL_SOURCE_ID,
           name: 'Booking.com',
           enabled: true,
           base_url: 'https://www.booking.com',
@@ -315,9 +316,6 @@ export async function POST(req: NextRequest) {
     }
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
-
-    // Give Booking.com scans a bit more time to complete (but don't wait too long)
-    await new Promise(resolve => setTimeout(resolve, 1000));
 
     if (processed > 0) {
       await sql`UPDATE scans SET done_cells = LEAST(done_cells + ${processed}, ${total}) WHERE id = ${scanId}`;
