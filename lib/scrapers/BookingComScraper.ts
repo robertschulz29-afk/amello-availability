@@ -82,7 +82,7 @@ export class BookingComScraper extends BaseScraper {
     
     if (priceText) {
       // Booking.com typically shows prices like "€150" or "$200"
-      const priceMatch = priceText.match(/([€$£])?\s*([\d,]+(?:\.\d+)?)/);
+      const priceMatch = priceText.match(/([€$£])?\s*(\d[\d,]*(?:\.\d+)?)/);
       
       if (priceMatch && priceMatch[2]) {
         price = parseFloat(priceMatch[2].replace(/,/g, ''));
