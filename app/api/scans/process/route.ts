@@ -179,6 +179,13 @@ export async function POST(req: NextRequest) {
 
     const total = hotels.length * dates.length;
 
+    // Read Mandator ID once (required by Amello API)
+    // Note: We log a warning but don't fail fast to allow gradual configuration rollout
+    const amelloMandatorId = process.env.AMELLO_MANDATOR_ID;
+    if (!amelloMandatorId) {
+      console.warn('[process] WARNING: AMELLO_MANDATOR_ID not set - Amello API requests will likely fail with 400 error');
+    }
+
     // Clamp
     startIndex = Math.max(0, Math.min(startIndex, total));
     const endIndex = Math.min(total, startIndex + size);
@@ -242,9 +249,18 @@ export async function POST(req: NextRequest) {
             locale: 'de_DE',
           };
 
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          
+          // Add Bello-Mandator header if configured (required by Amello API)
+          if (amelloMandatorId) {
+            headers['Bello-Mandator'] = amelloMandatorId;
+          }
+
           const res = await fetch(`${BASE_URL}/hotel/offer`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(payload),
             cache: 'no-store',
           });
