@@ -1,24 +1,15 @@
 # Database Migration Guide: Booking.com Integration
 
 ## Overview
-This guide describes migrations 006 and 007, which extend the database schema to support Booking.com scraping alongside TUIAmello API data collection.
+This guide describes migration 006, which extends the database schema to support Booking.com scraping alongside TUIAmello API data collection.
 
-## Migrations
+## Important Note
+This migration **reuses the existing `booking_url` column** from the `hotels` table (added in migration 005). The `booking_url` column serves as a synonym for Booking.com URLs, so no new column is needed in the hotels table.
 
-### Migration 006: Add `booking_com_url` to `hotels` table
-**File:** `db/migrations/006_add_booking_com_url.sql`
+## Migration
 
-Adds a nullable `booking_com_url` column to store Booking.com hotel search URLs for each hotel.
-
-**Changes:**
-- Adds `booking_com_url` TEXT column (nullable)
-- Creates index `idx_hotels_booking_com_url` for query performance
-
-**Rollback:**
-Run `db/migrations/rollback_006_remove_booking_com_url.sql` to revert.
-
-### Migration 007: Add `booking_com_data` to `scan_results` table
-**File:** `db/migrations/007_add_booking_com_data.sql`
+### Migration 006: Add `booking_com_data` to `scan_results` table
+**File:** `db/migrations/006_add_booking_com_data.sql`
 
 Adds a nullable JSONB column to store extracted Booking.com data.
 
@@ -46,7 +37,7 @@ Adds a nullable JSONB column to store extracted Booking.com data.
 ```
 
 **Rollback:**
-Run `db/migrations/rollback_007_remove_booking_com_data.sql` to revert.
+Run `db/migrations/rollback_006_remove_booking_com_data.sql` to revert.
 
 ## Running Migrations
 
@@ -55,44 +46,32 @@ Run `db/migrations/rollback_007_remove_booking_com_data.sql` to revert.
 node scripts/migrate.mjs
 ```
 
-This will apply all migrations in order, including 006 and 007.
+This will apply all migrations in order, including 006.
 
-### Rollback Migrations
-If you need to rollback these changes:
+### Rollback Migration
+If you need to rollback this change:
 
 ```bash
 # Connect to your database and run:
-psql $DATABASE_URL -f db/migrations/rollback_007_remove_booking_com_data.sql
-psql $DATABASE_URL -f db/migrations/rollback_006_remove_booking_com_url.sql
+psql $DATABASE_URL -f db/migrations/rollback_006_remove_booking_com_data.sql
 ```
 
-Note: Rollback migrations must be run in reverse order (007 before 006).
+## Integration with Existing Schema
+
+### Using Existing `booking_url` Column
+The `hotels` table already has a `booking_url` column (added in migration 005):
+```sql
+ALTER TABLE hotels ADD COLUMN IF NOT EXISTS booking_url VARCHAR(500) DEFAULT NULL;
+```
+
+This column is used to store Booking.com hotel search URLs. No additional column is needed.
+
+### Storing Booking.com Data
+Scraped Booking.com data is stored in the `scan_results` table's new `booking_com_data` JSONB column, alongside the existing `response_json` column which stores TUIAmello API data.
 
 ## API Changes
 
 ### Updated Endpoints
-
-#### `GET /api/hotels`
-Now returns `booking_com_url` in the response:
-```json
-{
-  "id": 1,
-  "name": "Hotel Name",
-  "code": "ABC123",
-  "booking_com_url": "https://www.booking.com/...",
-  ...
-}
-```
-
-#### `POST /api/hotels`
-Now accepts `booking_com_url` in the request body:
-```json
-{
-  "name": "Hotel Name",
-  "code": "ABC123",
-  "booking_com_url": "https://www.booking.com/..."
-}
-```
 
 #### `GET /api/scan-results`
 Now returns `booking_com_data` in the response:
@@ -111,31 +90,41 @@ Now returns `booking_com_data` in the response:
 }
 ```
 
+#### Hotels API (No Changes Required)
+The hotels API (`GET/POST /api/hotels`) already handles `booking_url`:
+```json
+{
+  "id": 1,
+  "name": "Hotel Name",
+  "code": "ABC123",
+  "booking_url": "https://www.booking.com/...",
+  "tuiamello_url": "https://...",
+  "expedia_url": "https://..."
+}
+```
+
 ## Backward Compatibility
 
 All changes are backward compatible:
-- New columns are nullable (DEFAULT NULL)
+- New `booking_com_data` column is nullable (DEFAULT NULL)
 - Existing code continues to work without modification
-- Migrations use `IF NOT EXISTS` clauses for idempotency
+- Migration uses `IF NOT EXISTS` clauses for idempotency
 - API endpoints handle missing fields gracefully
+- Reuses existing `booking_url` column (no schema changes to hotels table)
 
 ## Database Considerations
 
 - **Database:** PostgreSQL (uses JSONB and GIN indexes)
-- **Idempotency:** All migrations can be run multiple times safely
+- **Idempotency:** Migration can be run multiple times safely
 - **Performance:** Indexes added for efficient queries
 - **Storage:** JSONB columns are stored compressed in PostgreSQL
 
 ## Testing
 
-After applying migrations, verify:
+After applying the migration, verify:
 
-1. **Migrations Applied:**
+1. **Migration Applied:**
    ```sql
-   SELECT column_name, data_type, is_nullable 
-   FROM information_schema.columns 
-   WHERE table_name = 'hotels' AND column_name = 'booking_com_url';
-   
    SELECT column_name, data_type, is_nullable 
    FROM information_schema.columns 
    WHERE table_name = 'scan_results' AND column_name = 'booking_com_data';
@@ -145,17 +134,60 @@ After applying migrations, verify:
    ```sql
    SELECT indexname, indexdef 
    FROM pg_indexes 
-   WHERE tablename IN ('hotels', 'scan_results') 
+   WHERE tablename = 'scan_results' 
    AND indexname LIKE '%booking_com%';
    ```
 
-3. **API Endpoints:**
-   - Test `GET /api/hotels` returns new field
-   - Test `POST /api/hotels` with `booking_com_url`
+3. **Existing booking_url Column:**
+   ```sql
+   SELECT column_name, data_type, character_maximum_length
+   FROM information_schema.columns 
+   WHERE table_name = 'hotels' AND column_name = 'booking_url';
+   ```
+
+4. **API Endpoints:**
    - Test `GET /api/scan-results` returns new field
+   - Test `GET /api/hotels` returns existing `booking_url`
+
+## Usage Example
+
+### Setting Booking.com URL for a Hotel
+```bash
+POST /api/hotels
+{
+  "name": "Hotel Example",
+  "code": "HOTEL123",
+  "booking_url": "https://www.booking.com/hotel/example.html?checkin=2024-01-01&checkout=2024-01-05"
+}
+```
+
+### Storing Scraped Booking.com Data
+After scraping, update the scan result:
+```sql
+UPDATE scan_results 
+SET booking_com_data = '{
+  "rooms": [{"type": "double", "name": "Standard Double Room"}],
+  "rates": [{"type": "standard", "name": "Non-refundable", "cancellation": "non_refundable"}],
+  "prices": [{"amount": 150.00, "currency": "EUR", "room_id": 0, "rate_id": 0}],
+  "scrape_status": "success",
+  "scraped_at": "2024-01-01T10:00:00Z"
+}'::jsonb
+WHERE scan_id = 1 AND hotel_id = 1 AND check_in_date = '2024-01-01';
+```
+
+### Querying Successful Scrapes
+```sql
+SELECT hotel_id, check_in_date, 
+       booking_com_data->>'scrape_status' as status,
+       booking_com_data->'prices' as prices
+FROM scan_results 
+WHERE scan_id = 1 
+AND booking_com_data @> '{"scrape_status": "success"}';
+```
 
 ## Notes
 
 - The `booking_com_data` JSONB structure is flexible and can be extended
 - The GIN index enables efficient queries like: `WHERE booking_com_data @> '{"scrape_status": "success"}'`
 - Consider adding additional indexes based on query patterns in production
+- The existing `booking_url` column in hotels table serves dual purpose for Booking.com integration

@@ -1,5 +1,6 @@
--- Migration 007: Add booking_com_data JSONB column to scan_results table
+-- Migration 006: Add booking_com_data JSONB column to scan_results table
 -- Stores extracted Booking.com data with structure for rooms, rates, prices, and scrape status
+-- Note: Uses existing booking_url column from hotels table (added in migration 005)
 
 ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS booking_com_data JSONB DEFAULT NULL;
 

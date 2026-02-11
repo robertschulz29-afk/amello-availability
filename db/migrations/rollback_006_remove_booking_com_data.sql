@@ -1,4 +1,4 @@
--- Rollback Migration 007: Remove booking_com_data JSONB column from scan_results table
+-- Rollback Migration 006: Remove booking_com_data JSONB column from scan_results table
 -- This rollback removes the Booking.com data column and its associated indexes
 
 -- Drop the GIN index on the JSONB column
