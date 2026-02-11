@@ -175,8 +175,8 @@ export default function MonitoringPage() {
                                 <td>{metric.success_count}</td>
                                 <td>
                                   <span className={`badge ${
-                                    parseFloat(metric.success_percentage) >= 90 ? 'bg-success' :
-                                    parseFloat(metric.success_percentage) >= 80 ? 'bg-warning' :
+                                    metric.success_percentage >= 90 ? 'bg-success' :
+                                    metric.success_percentage >= 80 ? 'bg-warning' :
                                     'bg-danger'
                                   }`}>
                                     {metric.success_percentage}%

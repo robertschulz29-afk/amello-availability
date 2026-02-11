@@ -2,7 +2,7 @@
 // API endpoint for fetching scrape logs
 
 import { NextRequest, NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { query } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0');
 
     // Build query with filters
-    let query = `
+    let queryText = `
       SELECT 
         id,
         timestamp,
@@ -59,28 +59,28 @@ export async function GET(req: NextRequest) {
     let paramIndex = 1;
 
     if (scanId) {
-      query += ` AND scan_id = $${paramIndex}`;
+      queryText += ` AND scan_id = $${paramIndex}`;
       values.push(parseInt(scanId));
       paramIndex++;
     }
 
     if (hotelId) {
-      query += ` AND hotel_id = $${paramIndex}`;
+      queryText += ` AND hotel_id = $${paramIndex}`;
       values.push(parseInt(hotelId));
       paramIndex++;
     }
 
     if (status) {
-      query += ` AND scrape_status = $${paramIndex}`;
+      queryText += ` AND scrape_status = $${paramIndex}`;
       values.push(status);
       paramIndex++;
     }
 
-    query += ` ORDER BY timestamp DESC`;
-    query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    queryText += ` ORDER BY timestamp DESC`;
+    queryText += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     values.push(limit, offset);
 
-    const result = await sql(query.split('\n'), ...values);
+    const result = await query(queryText, values);
 
     return NextResponse.json({
       logs: result.rows,
