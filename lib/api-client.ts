@@ -25,13 +25,13 @@ function getApiBaseUrl(): string {
 function buildApiUrl(path: string): string {
   const baseUrl = getApiBaseUrl();
   
-  // If no base URL configured, use the path as-is (backward compatible)
-  if (!baseUrl) {
+  // If no base URL configured or only whitespace, use the path as-is (backward compatible)
+  if (!baseUrl || !baseUrl.trim()) {
     return path;
   }
   
-  // Remove trailing slash from base URL if present
-  const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+  // Remove all trailing slashes from base URL if present
+  const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
   
   // Ensure path starts with /
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
