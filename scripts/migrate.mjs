@@ -10,6 +10,8 @@ path.join(process.cwd(), 'db', 'migrations', '001_init.sql'),
 path.join(process.cwd(), 'db', 'migrations', '002_scans.sql'),
 path.join(process.cwd(), 'db', 'migrations', '003_scan_sources.sql'),
 path.join(process.cwd(), 'db', 'migrations', '004_scan_results_extended.sql'),
+path.join(process.cwd(), 'db', 'migrations', '005_add_hotel_urls.sql'),
+path.join(process.cwd(), 'db', 'migrations', '006_add_booking_com_data.sql'),
 ];
 for (const file of files) {
 const ddl = fs.readFileSync(file, 'utf8');
