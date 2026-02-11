@@ -63,7 +63,7 @@ function hasNonEmptyRooms(obj: any): boolean {
  * Check if the response content type represents JSON (application/json or +json suffix types).
  */
 function isJsonContentType(contentType?: string | null): boolean {
-  const normalized = (contentType ?? '').toLowerCase();
+  const normalized = contentType?.toLowerCase() ?? '';
   return normalized.startsWith('application/json') || /\+json(;|$)/.test(normalized);
 }
 
@@ -286,7 +286,7 @@ export async function POST(req: NextRequest) {
             status = 'red';
             responseJson = {
               httpStatus: res.status,
-              error: `Unexpected Content-Type from Amello API. Expected JSON but received ${ctype || 'unknown'}. Verify AMELLO_BASE_URL points to the correct API endpoint.`,
+              error: `Unexpected Content-Type from Amello API. Expected JSON but received ${ctype || 'unknown'}. Verify AMELLO_BASE_URL points to the API and /hotel/offer returns JSON.`,
               contentType: ctype,
             };
           } else {
