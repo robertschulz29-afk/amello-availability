@@ -63,7 +63,7 @@ function hasNonEmptyRooms(obj: any): boolean {
  * Check if the response content type represents JSON (application/json or +json suffix types).
  */
 function isJsonContentType(contentType?: string | null): boolean {
-  const normalized = (contentType || '').toLowerCase();
+  const normalized = (contentType ?? '').toLowerCase();
   return normalized.startsWith('application/json') || /\+json(;|$)/.test(normalized);
 }
 
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
 
     // Read Mandator ID once (required by Amello API)
     // Note: We log a warning but don't fail fast to allow gradual configuration rollout
-    const amelloMandatorId = (process.env.AMELLO_MANDATOR_ID || '').trim();
+    const amelloMandatorId = (process.env.AMELLO_MANDATOR_ID ?? '').trim();
     if (!amelloMandatorId) {
       console.warn('[process] WARNING: AMELLO_MANDATOR_ID not set - Amello API requests will likely fail with 400 error');
     }
