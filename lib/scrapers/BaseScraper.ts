@@ -261,8 +261,7 @@ export abstract class BaseScraper {
       const url = this.buildURL(request);
 
       // Extract hotel ID if available (for logging)
-      const parsed = parseInt(request.hotelCode, 10);
-      const hotelId = isNaN(parsed) ? undefined : parsed;
+      const hotelId = parseInt(request.hotelCode) || undefined;
 
       // Fetch HTML content
       const html = await this.fetchHTML(url, hotelId);
@@ -271,9 +270,7 @@ export abstract class BaseScraper {
       const parsedData = this.parseData(html);
 
       // Process data and return result
-      const result = this.processData(parsedData, html);
-
-      return result;
+      return this.processData(parsedData, html);
     } catch (error: any) {
       console.error('[BaseScraper] Scrape error:', error);
 
