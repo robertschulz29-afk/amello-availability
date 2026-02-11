@@ -261,7 +261,8 @@ export abstract class BaseScraper {
       const url = this.buildURL(request);
 
       // Extract hotel ID if available (for logging)
-      const hotelId = parseInt(request.hotelCode) || undefined;
+      const parsed = parseInt(request.hotelCode, 10);
+      const hotelId = isNaN(parsed) ? undefined : parsed;
 
       // Fetch HTML content
       const html = await this.fetchHTML(url, hotelId);
