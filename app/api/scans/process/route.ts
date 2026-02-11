@@ -293,7 +293,7 @@ export async function POST(req: NextRequest) {
               console.log('[process] Check-in date:', cell.checkIn);
               console.log('[process] Status:', bookingStatus);
               console.log('[process] Source field:', 'booking');
-              console.log('[process] Data structure:', JSON.stringify(bookingData).substring(0, 200) + '...');
+              console.log('[process] Data structure (truncated):', JSON.stringify(bookingData).substring(0, 100) + '...');
 
               await sql`
                 INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json, source)

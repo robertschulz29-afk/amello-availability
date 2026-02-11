@@ -52,15 +52,19 @@ export class BookingComScraper extends BaseScraper {
       console.log('[BookingComScraper] === HTTP REQUEST PHASE ===');
       console.log('[BookingComScraper] Constructed URL:', url);
       
-      // Log request headers
+      // Log request headers (excluding sensitive ones)
       const headers = this.getHeaders();
-      console.log('[BookingComScraper] Request headers:', JSON.stringify(headers, null, 2));
+      const safeHeaders = { ...headers };
+      delete safeHeaders['Authorization'];
+      delete safeHeaders['Cookie'];
+      delete safeHeaders['X-API-Key'];
+      console.log('[BookingComScraper] Request headers:', JSON.stringify(safeHeaders, null, 2));
       
       // Fetch HTML content
       const html = await this.fetchHTML(url);
       console.log('[BookingComScraper] Response received - Status: 200 (OK)');
       console.log('[BookingComScraper] Response content length:', html.length, 'characters');
-      console.log('[BookingComScraper] First 500 chars of HTML:', html.substring(0, 500));
+      console.log('[BookingComScraper] First 200 chars of HTML:', html.substring(0, 200).replace(/\s+/g, ' '));
       
       // Parse data using CSS selectors (not used for Booking.com, but kept for compatibility)
       const parsedData = this.parseData(html);
