@@ -149,8 +149,11 @@ export class BookingComScraper extends BaseScraper {
    * @returns Parsed price as number
    */
   private parsePrice(priceText: string): number {
+    // Common currency symbols to remove
+    const currencySymbols = /[€$£¥₹₽¢₩]/g;
+    
     // Remove currency symbols and whitespace
-    let cleaned = priceText.replace(/[€$£\s]/g, '');
+    let cleaned = priceText.replace(currencySymbols, '').replace(/\s/g, '');
     
     // Detect format: if last comma is after last period, it's European format (1.234,56)
     // Otherwise it's US format (1,234.56)
@@ -239,13 +242,14 @@ export class BookingComScraper extends BaseScraper {
             let rate_id = 0;
             
             if (rooms.length > 0 && rates.length > 0) {
-              // Distribute prices across rooms and rates
+              // Distribute prices across rooms and rates (rates.length guaranteed > 0 here)
               room_id = Math.floor(index / rates.length) % rooms.length;
               rate_id = index % rates.length;
             } else if (rooms.length > 0) {
               // Only rooms, no rates
               room_id = index % rooms.length;
             }
+            // If no rooms or rates, defaults to room_id=0, rate_id=0
             
             prices.push({
               amount,
