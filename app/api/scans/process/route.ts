@@ -205,6 +205,11 @@ export async function POST(req: NextRequest) {
       slice.push({ hotelId: h.id, hotelCode: h.code, bookingUrl: h.booking_url, checkIn, checkOut });
     }
 
+    // Warn once if Mandator ID is not configured
+    if (!process.env.AMELLO_MANDATOR_ID) {
+      console.warn('[process] WARNING: AMELLO_MANDATOR_ID not set - Amello API requests will likely fail with 400 error');
+    }
+
     const CONCURRENCY = 4;
     let i = 0;
     let processed = 0;
