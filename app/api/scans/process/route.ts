@@ -249,7 +249,7 @@ export async function POST(req: NextRequest) {
           await sql`
             INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json, source)
             VALUES (${scanId}, ${cell.hotelId}, ${cell.checkIn}, ${status}, ${responseJson}, 'amello')
-            ON CONFLICT (scan_id, hotel_id, check_in_date, source)
+            ON CONFLICT (scan_id, hotel_id, source, check_in_date)
             DO UPDATE SET status = EXCLUDED.status, response_json = EXCLUDED.response_json
           `;
           processed++;
@@ -280,7 +280,7 @@ export async function POST(req: NextRequest) {
               await sql`
                 INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, booking_com_data, source)
                 VALUES (${scanId}, ${cell.hotelId}, ${cell.checkIn}, ${bookingStatus}, ${bookingData}, 'booking')
-                ON CONFLICT (scan_id, hotel_id, check_in_date, source)
+                ON CONFLICT (scan_id, hotel_id, source, check_in_date)
                 DO UPDATE SET status = EXCLUDED.status, booking_com_data = EXCLUDED.booking_com_data
               `;
               bookingProcessed++;
@@ -303,7 +303,7 @@ export async function POST(req: NextRequest) {
                     ${JSON.stringify({ error: e.message || String(e), source: 'booking' })},
                     'booking'
                   )
-                  ON CONFLICT (scan_id, hotel_id, check_in_date, source)
+                  ON CONFLICT (scan_id, hotel_id, source, check_in_date)
                   DO UPDATE SET status = EXCLUDED.status, booking_com_data = EXCLUDED.booking_com_data
                 `;
               } catch (dbError) {

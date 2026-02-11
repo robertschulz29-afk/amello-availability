@@ -27,11 +27,11 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.table_constraints 
     WHERE table_name = 'scan_results' 
-    AND constraint_name = 'scan_results_scan_id_hotel_id_check_in_date_source_key'
+    AND constraint_name = 'scan_results_unique_per_source'
   ) THEN
     ALTER TABLE scan_results 
-    ADD CONSTRAINT scan_results_scan_id_hotel_id_check_in_date_source_key 
-    UNIQUE(scan_id, hotel_id, check_in_date, source);
+    ADD CONSTRAINT scan_results_unique_per_source 
+    UNIQUE(scan_id, hotel_id, source, check_in_date);
   END IF;
 END $$;
 
