@@ -24,12 +24,15 @@ export async function fetchJSON(input: RequestInfo, init?: RequestInit) {
 
   const text = await r.text();
   if (!r.ok) {
+    let errorMessage = r.statusText;
     try {
       const j = JSON.parse(text);
-      throw new Error(j.error || r.statusText);
+      errorMessage = j.error || r.statusText;
     } catch {
-      throw new Error(text || r.statusText);
+      // If JSON parsing fails, use the raw text or status text
+      errorMessage = text || r.statusText;
     }
+    throw new Error(errorMessage);
   }
   return text ? JSON.parse(text) : null;
 }
