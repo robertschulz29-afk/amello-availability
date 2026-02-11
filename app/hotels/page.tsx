@@ -2,6 +2,7 @@
 'use client';
 
 import * as React from 'react';
+import { fetchJSON } from '@/lib/api-client';
 
 type Hotel = { 
   id: number; 
@@ -14,16 +15,6 @@ type Hotel = {
   tuiamello_url?: string | null;
   expedia_url?: string | null;
 };
-
-async function fetchJSON(input: RequestInfo, init?: RequestInit) {
-  const r = await fetch(input, init);
-  const text = await r.text();
-  if (!r.ok) {
-    try { const j = JSON.parse(text); throw new Error(j.error || r.statusText); }
-    catch { throw new Error(text || r.statusText); }
-  }
-  return text ? JSON.parse(text) : null;
-}
 
 function isValidUrl(urlString: string): boolean {
   if (!urlString.trim()) return true; // Empty URLs are valid (optional)
