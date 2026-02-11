@@ -212,7 +212,7 @@ export async function getDailyMetrics(days: number = 7): Promise<any[]> {
       COUNT(*) FILTER (WHERE scrape_status = 'error') as error_count,
       COUNT(*) FILTER (WHERE scrape_status = 'timeout') as timeout_count
     FROM scrape_logs
-    WHERE timestamp >= NOW() - INTERVAL '${days} days'
+    WHERE timestamp >= NOW() - INTERVAL '1 day' * ${days}
     GROUP BY DATE(timestamp)
     ORDER BY date DESC
   `;
