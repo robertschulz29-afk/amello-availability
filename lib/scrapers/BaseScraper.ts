@@ -7,6 +7,7 @@ import { parseHTML, extractText, extractMultiple } from './utils/html-parser';
 import { retryWithStatusHandling, retryWithTimeoutHandling, isTimeoutError } from './utils/retry-logic';
 import { SessionManager } from './utils/session-manager';
 import { logScrapeEvent, createScrapeEvent, getLogger } from './utils/logger';
+import { logScrapeEvent as logScrapeEventToDB } from './utils/scrape-logger';
 import type {
   ScanSource,
   ScrapeRequest,
@@ -30,6 +31,12 @@ export abstract class BaseScraper {
   protected options: Required<ScraperOptions>;
   protected sessionManager: SessionManager;
   protected proxyConfig?: ProxyConfig;
+  protected sessionId: string;
+  
+  // Logging context - can be set externally
+  public scanId?: number;
+  public hotelId?: number;
+  public hotelName?: string;
 
   constructor(source: ScanSource, options: ScraperOptions = {}) {
     this.source = source;
@@ -45,6 +52,9 @@ export abstract class BaseScraper {
 
     // Initialize session manager (10-20 requests per session)
     this.sessionManager = new SessionManager(15);
+    
+    // Generate unique session ID for tracking
+    this.sessionId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
   /**
@@ -247,23 +257,103 @@ export abstract class BaseScraper {
    * Scrape data for a single hotel/date combination
    */
   async scrape(request: ScrapeRequest): Promise<ScrapeResult> {
+    const startTime = Date.now();
+    let url = '';
+    let httpStatus: number | undefined;
+    let retryCount = 0;
+    let delayMs = this.options.rateLimitMs;
+    let userAgent = '';
+    
     try {
       // Build the URL for the request
-      const url = this.buildURL(request);
+      url = this.buildURL(request);
 
       // Extract hotel ID if available (for logging)
       const hotelId = parseInt(request.hotelCode) || undefined;
+      
+      // Get user agent for logging
+      userAgent = this.getHeaders()['User-Agent'] || 'Unknown';
 
       // Fetch HTML content
       const html = await this.fetchHTML(url, hotelId);
+      httpStatus = 200;
 
       // Parse data using CSS selectors
       const parsedData = this.parseData(html);
 
       // Process data and return result
-      return this.processData(parsedData, html);
+      const result = this.processData(parsedData, html);
+      
+      // Calculate response time
+      const responseTimeMs = Date.now() - startTime;
+
+      // Log successful scrape to database
+      // Note: retry_count and delay_ms are logged internally by fetchHTML's console logger
+      // This top-level log captures overall scrape success with scan/hotel context
+      await logScrapeEventToDB({
+        timestamp: new Date(),
+        scrape_status: 'success',
+        hotel_id: this.hotelId || hotelId,
+        hotel_name: this.hotelName,
+        scan_id: this.scanId,
+        check_in_date: request.checkInDate,
+        url,
+        http_status: httpStatus,
+        delay_ms: undefined,
+        retry_count: 0,
+        error_message: null,
+        user_agent: userAgent,
+        reason: undefined,
+        response_time_ms: responseTimeMs,
+        session_id: this.sessionId,
+      });
+
+      return result;
     } catch (error: any) {
       console.error('[BaseScraper] Scrape error:', error);
+
+      const responseTimeMs = Date.now() - startTime;
+      const errorStatus = error.status || error.code;
+      
+      // Determine scrape status
+      let scrapeStatus: 'error' | 'timeout' | 'block' | 'manual_review' = 'error';
+      let reason = error.message || 'Unknown error';
+      
+      if (error.code === 'ETIMEDOUT' || error.name === 'AbortError') {
+        scrapeStatus = 'timeout';
+        reason = `Timeout after ${this.options.timeout}ms`;
+      } else if (error.status === 429 || error.status === 403) {
+        scrapeStatus = 'block';
+        if (error.status === 429) {
+          reason = 'Booking.com rate limit (429)';
+        } else {
+          reason = 'Access forbidden (403) - possible IP block';
+        }
+      } else if (error.status === 503) {
+        scrapeStatus = 'block';
+        reason = 'Service unavailable (503) - possible bot detection';
+      }
+
+      // Log error to database
+      // Note: retry_count and delay_ms are logged internally by fetchHTML's console logger
+      // This top-level log captures overall scrape failure with scan/hotel context
+      await logScrapeEventToDB({
+        timestamp: new Date(),
+        scrape_status: scrapeStatus,
+        hotel_id: this.hotelId || (request.hotelCode ? parseInt(request.hotelCode) : undefined),
+        hotel_name: this.hotelName,
+        scan_id: this.scanId,
+        check_in_date: request.checkInDate,
+        url,
+        http_status: error.status,
+        delay_ms: undefined,
+        retry_count: 0,
+        error_message: error.message,
+        user_agent: userAgent || 'Unknown',
+        reason,
+        response_time_ms: responseTimeMs,
+        session_id: this.sessionId,
+      });
 
       return {
         status: 'error',
@@ -328,5 +418,14 @@ export abstract class BaseScraper {
    */
   rotateSession(): void {
     this.sessionManager.rotateSession();
+  }
+  
+  /**
+   * Set logging context for scrape events
+   */
+  setLoggingContext(context: { scanId?: number; hotelId?: number; hotelName?: string }): void {
+    this.scanId = context.scanId;
+    this.hotelId = context.hotelId;
+    this.hotelName = context.hotelName;
   }
 }
