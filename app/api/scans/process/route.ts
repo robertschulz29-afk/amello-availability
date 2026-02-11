@@ -266,7 +266,8 @@ export async function POST(req: NextRequest) {
           });
 
           const ctype = res.headers.get('content-type') || '';
-          const isJson = ctype.toLowerCase().includes('json');
+          const normalizedCtype = ctype.toLowerCase();
+          const isJson = normalizedCtype.includes('application/json') || normalizedCtype.includes('+json');
           if (res.status === 200 && isJson) {
             const j = await res.json();
             // Extract compact room/rate data instead of storing full response
