@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
 
     // Read Mandator ID once (required by Amello API)
     // Note: We log a warning but don't fail fast to allow gradual configuration rollout
-    const amelloMandatorId = process.env.AMELLO_MANDATOR_ID?.trim();
+    const amelloMandatorId = (process.env.AMELLO_MANDATOR_ID || '').trim();
     if (!amelloMandatorId) {
       console.warn('[process] WARNING: AMELLO_MANDATOR_ID not set - Amello API requests will likely fail with 400 error');
     }
@@ -283,7 +283,7 @@ export async function POST(req: NextRequest) {
             status = 'red';
             responseJson = {
               httpStatus: res.status,
-              error: `Expected JSON response (received ${ctype || 'unknown'})`,
+              error: `Expected JSON response (received ${ctype || 'unknown'}). Check Amello API configuration.`,
               contentType: ctype,
             };
           } else {
