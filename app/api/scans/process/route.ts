@@ -211,9 +211,12 @@ export async function POST(req: NextRequest) {
     let failures  = 0;
     let stopEarly = false;
     
-    // Booking.com concurrency limiter (max 3 concurrent requests)
+    // Booking.com concurrency limiter and timing constants
     let bookingComActiveRequests = 0;
     const BOOKING_COM_MAX_CONCURRENT = 3;
+    const BOOKING_COM_MIN_DELAY_MS = 2000;
+    const BOOKING_COM_MAX_ADDITIONAL_DELAY_MS = 3000;
+    const BOOKING_COM_TIME_BUFFER_MS = 10_000; // Skip Booking.com if less than 10s remaining
 
     async function worker() {
       while (true) {
@@ -285,26 +288,35 @@ export async function POST(req: NextRequest) {
         if (cell.bookingUrl && bookingComSource && bookingComSource.enabled) {
           // Check time budget before starting Booking.com scrape
           const timeRemaining = SOFT_BUDGET_MS - (Date.now() - tStart);
-          if (timeRemaining < 10_000) {
+          if (timeRemaining < BOOKING_COM_TIME_BUFFER_MS) {
             console.log('[process] Skipping Booking.com scrape - time budget low', { 
               hotelId: cell.hotelId, 
               checkIn: cell.checkIn,
               timeRemaining 
             });
           } else {
-            // Wait if too many concurrent Booking.com requests
-            while (bookingComActiveRequests >= BOOKING_COM_MAX_CONCURRENT) {
+            // Wait if too many concurrent Booking.com requests (simple backoff)
+            let waitAttempts = 0;
+            while (bookingComActiveRequests >= BOOKING_COM_MAX_CONCURRENT && waitAttempts < 20) {
               await new Promise(resolve => setTimeout(resolve, 500));
+              waitAttempts++;
             }
             
-            bookingComActiveRequests++;
-            
-            try {
-              // Add delay between TUIAmello and Booking.com (2-5 seconds)
-              const delay = 2000 + Math.random() * 3000;
-              await new Promise(resolve => setTimeout(resolve, delay));
+            // Skip if we waited too long
+            if (bookingComActiveRequests >= BOOKING_COM_MAX_CONCURRENT) {
+              console.log('[process] Skipping Booking.com scrape - concurrency limit reached', {
+                hotelId: cell.hotelId,
+                checkIn: cell.checkIn,
+              });
+            } else {
+              bookingComActiveRequests++;
+              
+              try {
+                // Add delay between TUIAmello and Booking.com (2-5 seconds)
+                const delay = BOOKING_COM_MIN_DELAY_MS + Math.random() * BOOKING_COM_MAX_ADDITIONAL_DELAY_MS;
+                await new Promise(resolve => setTimeout(resolve, delay));
 
-              let bookingComData: any = null;
+                let bookingComData: any = null;
               let retries = 0;
               const maxRetries = 2;
 
@@ -397,6 +409,7 @@ export async function POST(req: NextRequest) {
             } finally {
               bookingComActiveRequests--;
             }
+          }
           }
         }
       }

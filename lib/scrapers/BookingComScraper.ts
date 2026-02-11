@@ -83,16 +83,17 @@ export class BookingComScraper extends BaseScraper {
     if (priceText) {
       // Booking.com typically shows prices like "€150" or "$200"
       const priceMatch = priceText.match(/([€$£])?\s*([\d,]+\.?\d*)/);
-      const currencyMatch = priceText.match(/[€$£]/);
       
       if (priceMatch && priceMatch[2]) {
         price = parseFloat(priceMatch[2].replace(/,/g, ''));
-        currency = currencyMatch ? this.getCurrencyCode(currencyMatch[0]) : 'EUR';
+        // Use capture group [1] for currency if available, otherwise default to EUR
+        currency = priceMatch[1] ? this.getCurrencyCode(priceMatch[1]) : 'EUR';
       }
     }
 
     // If we found rooms or a price, consider it available
-    if (roomsText || price) {
+    // Use !== undefined to correctly handle 0 prices (free accommodations)
+    if (roomsText || price !== undefined) {
       return {
         status: 'green',
         scrapedData: data,
