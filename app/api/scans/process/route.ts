@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { extractRoomRateData } from '@/lib/price-utils';
-import { BookingComScraper } from '@/lib/scrapers/BookingComScraper';
+import { BookingComScraper, type BookingComData } from '@/lib/scrapers/BookingComScraper';
 import type { ScanSource } from '@/lib/scrapers/types';
 
 export const runtime = 'nodejs';
@@ -341,7 +341,7 @@ export async function POST(req: NextRequest) {
                     });
 
                     // Use the BookingComData structure directly from scrapedData
-                    bookingComData = result.scrapedData as any;
+                    bookingComData = result.scrapedData as BookingComData;
 
                     console.log('[BookingCom] scrape success', { 
                       hotelId: cell.hotelId, 
