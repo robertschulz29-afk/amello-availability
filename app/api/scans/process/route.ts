@@ -205,8 +205,9 @@ export async function POST(req: NextRequest) {
       slice.push({ hotelId: h.id, hotelCode: h.code, bookingUrl: h.booking_url, checkIn, checkOut });
     }
 
-    // Warn once if Mandator ID is not configured
-    if (!process.env.AMELLO_MANDATOR_ID) {
+    // Read Mandator ID once (required by Amello API)
+    const amelloMandatorId = process.env.AMELLO_MANDATOR_ID;
+    if (!amelloMandatorId) {
       console.warn('[process] WARNING: AMELLO_MANDATOR_ID not set - Amello API requests will likely fail with 400 error');
     }
 
@@ -252,9 +253,8 @@ export async function POST(req: NextRequest) {
           };
           
           // Add Bello-Mandator header if configured (required by Amello API)
-          const mandatorId = process.env.AMELLO_MANDATOR_ID;
-          if (mandatorId) {
-            headers['Bello-Mandator'] = mandatorId;
+          if (amelloMandatorId) {
+            headers['Bello-Mandator'] = amelloMandatorId;
           }
 
           const res = await fetch(`${BASE_URL}/hotel/offer`, {
