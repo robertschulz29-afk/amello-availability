@@ -59,6 +59,10 @@ function hasNonEmptyRooms(obj: any): boolean {
   }
   return false;
 }
+function isJsonContentType(contentType: string): boolean {
+  const normalized = contentType.toLowerCase();
+  return normalized.startsWith('application/json') || /\+json($|;)/.test(normalized);
+}
 
 /* ---------- handler ---------- */
 export async function POST(req: NextRequest) {
@@ -266,9 +270,7 @@ export async function POST(req: NextRequest) {
           });
 
           const ctype = res.headers.get('content-type') || '';
-          const normalizedCtype = ctype.toLowerCase();
-          const isJson =
-            normalizedCtype.startsWith('application/json') || /\+json($|;)/.test(normalizedCtype);
+          const isJson = isJsonContentType(ctype);
           if (res.status === 200 && isJson) {
             const j = await res.json();
             // Extract compact room/rate data instead of storing full response
