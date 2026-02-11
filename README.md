@@ -2,6 +2,19 @@
 
 ## Configuration
 
+### Database Setup
+
+Before running the application, ensure the database schema is up to date by running migrations:
+
+```bash
+node scripts/migrate.mjs
+```
+
+This will apply all database migrations in order, including:
+- Initial schema (hotels, scans, scan_results)
+- Extended scan results tables
+- Source tracking for multi-source scans
+
 ### Environment Variables
 
 Create a `.env` file in the project root (see `.env.example` for reference):
