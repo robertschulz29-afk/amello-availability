@@ -2,6 +2,8 @@
  * Centralized API client utility for making requests with consistent headers
  */
 
+import { DEFAULT_BELLO_MANDATOR } from './constants';
+
 /**
  * Get the API base URL from environment variable or fallback to empty string for relative paths
  * NEXT_PUBLIC_API_URL should be the full base URL of the backend API (e.g., https://api.example.com)
@@ -57,7 +59,7 @@ export async function fetchJSON(input: RequestInfo, init?: RequestInit) {
   
   // Merge the Bello-Mandator header with any existing headers
   const headers = new Headers(init?.headers);
-  headers.set('Bello-Mandator', 'amello.en');
+  headers.set('Bello-Mandator', DEFAULT_BELLO_MANDATOR);
 
   // Make the request with updated headers
   const r = await fetch(url, {

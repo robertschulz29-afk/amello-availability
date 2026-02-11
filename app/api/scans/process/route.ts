@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { extractRoomRateData } from '@/lib/price-utils';
+import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -62,6 +63,10 @@ function hasNonEmptyRooms(obj: any): boolean {
 export async function POST(req: NextRequest) {
   const tStart = Date.now();
   const SOFT_BUDGET_MS = 40_000;
+
+  // Get the Bello-Mandator header from the incoming request
+  // Middleware ensures this is present, but we default to DEFAULT_BELLO_MANDATOR as fallback
+  const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -179,7 +184,10 @@ export async function POST(req: NextRequest) {
 
           const res = await fetch(`${BASE_URL}/hotel/offer`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Bello-Mandator': belloMandator,
+            },
             body: JSON.stringify(payload),
             cache: 'no-store',
           });
