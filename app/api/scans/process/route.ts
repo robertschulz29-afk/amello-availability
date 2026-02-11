@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
 
     // Read Mandator ID once (required by Amello API)
     // Note: We log a warning but don't fail fast to allow gradual configuration rollout
-    const amelloMandatorId = process.env.AMELLO_MANDATOR_ID;
+    const amelloMandatorId = process.env.AMELLO_MANDATOR_ID?.trim();
     if (!amelloMandatorId) {
       console.warn('[process] WARNING: AMELLO_MANDATOR_ID not set - Amello API requests will likely fail with 400 error');
     }
@@ -265,22 +265,21 @@ export async function POST(req: NextRequest) {
             cache: 'no-store',
           });
 
-          if (res.status === 200) {
-            const ctype = res.headers.get('content-type') || '';
-            if (ctype.includes('application/json')) {
-              const j = await res.json();
-              // Extract compact room/rate data instead of storing full response
-              const compactData = extractRoomRateData(j);
-              responseJson = compactData;
-              // Check if we have any rooms with rates for status
-              status = (compactData.rooms && compactData.rooms.length > 0) ? 'green' : 'red';
-            } else {
-              status = 'red';
-              responseJson = { httpStatus: res.status, text: await res.text().catch(()=>null) };
-            }
+          const ctype = res.headers.get('content-type') || '';
+          const isJson = ctype.includes('json');
+          if (res.status === 200 && isJson) {
+            const j = await res.json();
+            // Extract compact room/rate data instead of storing full response
+            const compactData = extractRoomRateData(j);
+            responseJson = compactData;
+            // Check if we have any rooms with rates for status
+            status = (compactData.rooms && compactData.rooms.length > 0) ? 'green' : 'red';
+          } else if (res.status === 200) {
+            status = 'red';
+            responseJson = { httpStatus: res.status, error: 'Unexpected response type' };
           } else {
             status = 'red';
-            responseJson = { httpStatus: res.status, text: await res.text().catch(()=>null) };
+            responseJson = { httpStatus: res.status, error: res.statusText || 'Amello API error' };
           }
         } catch (e:any) {
           console.error('[process] upstream fetch error', e, cell);
