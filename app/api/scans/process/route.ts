@@ -242,9 +242,19 @@ export async function POST(req: NextRequest) {
             locale: 'de_DE',
           };
 
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          
+          // Add Bello-Mandator header if configured (required by Amello API)
+          const mandatorId = process.env.AMELLO_MANDATOR_ID;
+          if (mandatorId) {
+            headers['Bello-Mandator'] = mandatorId;
+          }
+
           const res = await fetch(`${BASE_URL}/hotel/offer`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(payload),
             cache: 'no-store',
           });

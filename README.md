@@ -1,5 +1,15 @@
 # amello-availability
 
+## Configuration
+
+### Required Environment Variables
+
+- `AMELLO_MANDATOR_ID` - TUI Amello API Mandator ID (required for hotel availability API calls)
+- `AMELLO_BASE_URL` - Amello API base URL (default: `https://prod-api.amello.plusline.net/api/v1`)
+- `DATABASE_URL` - PostgreSQL connection string
+
+The Mandator ID is a unique identifier assigned by TUI during partner onboarding and is required for all API requests to the Amello platform.
+
 ## Core Features
 
 ### Scan history
