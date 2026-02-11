@@ -272,7 +272,7 @@ export abstract class BaseScraper {
       const hotelId = parseInt(request.hotelCode) || undefined;
       
       // Get user agent for logging
-      userAgent = this.getHeaders()['User-Agent'];
+      userAgent = this.getHeaders()['User-Agent'] || 'Unknown';
 
       // Fetch HTML content
       const html = await this.fetchHTML(url, hotelId);
@@ -297,11 +297,11 @@ export abstract class BaseScraper {
         check_in_date: request.checkInDate,
         url,
         http_status: httpStatus,
-        delay_ms: delayMs,
-        retry_count: retryCount,
+        delay_ms: undefined,  // Delay is applied internally by fetchHTML
+        retry_count: 0,       // Retry count not available at this level
         error_message: null,
         user_agent: userAgent,
-        reason: 'Scrape completed successfully',
+        reason: undefined,    // No reason needed for successful scrapes
         response_time_ms: responseTimeMs,
         session_id: this.sessionId,
       });
@@ -342,10 +342,10 @@ export abstract class BaseScraper {
         check_in_date: request.checkInDate,
         url,
         http_status: error.status,
-        delay_ms: delayMs,
-        retry_count: retryCount,
+        delay_ms: undefined,   // Delay is applied internally by fetchHTML
+        retry_count: 0,        // Retry count not available at this level
         error_message: error.message,
-        user_agent: userAgent,
+        user_agent: userAgent || 'Unknown',
         reason,
         response_time_ms: responseTimeMs,
         session_id: this.sessionId,
