@@ -217,6 +217,8 @@ export async function POST(req: NextRequest) {
     const BOOKING_COM_MIN_DELAY_MS = 2000;
     const BOOKING_COM_MAX_ADDITIONAL_DELAY_MS = 3000;
     const BOOKING_COM_TIME_BUFFER_MS = 10_000; // Skip Booking.com if less than 10s remaining
+    const MAX_CONCURRENCY_WAIT_ATTEMPTS = 20;
+    const CONCURRENCY_WAIT_DELAY_MS = 500;
 
     async function worker() {
       while (true) {
@@ -297,8 +299,8 @@ export async function POST(req: NextRequest) {
           } else {
             // Wait if too many concurrent Booking.com requests (simple backoff)
             let waitAttempts = 0;
-            while (bookingComActiveRequests >= BOOKING_COM_MAX_CONCURRENT && waitAttempts < 20) {
-              await new Promise(resolve => setTimeout(resolve, 500));
+            while (bookingComActiveRequests >= BOOKING_COM_MAX_CONCURRENT && waitAttempts < MAX_CONCURRENCY_WAIT_ATTEMPTS) {
+              await new Promise(resolve => setTimeout(resolve, CONCURRENCY_WAIT_DELAY_MS));
               waitAttempts++;
             }
             
@@ -317,65 +319,65 @@ export async function POST(req: NextRequest) {
                 await new Promise(resolve => setTimeout(resolve, delay));
 
                 let bookingComData: any = null;
-              let retries = 0;
-              const maxRetries = 2;
+                let retries = 0;
+                const maxRetries = 2;
 
-              while (retries <= maxRetries) {
-                try {
-                  // Create scraper with hotel's booking_url as base_url
-                  const scraperSource = {
-                    ...bookingComSource,
-                    base_url: cell.bookingUrl, // Use hotel's specific Booking.com URL
-                  };
-                  const bookingComScraper = new BookingComScraper(scraperSource);
+                while (retries <= maxRetries) {
+                  try {
+                    // Create scraper with hotel's booking_url as base_url
+                    const scraperSource = {
+                      ...bookingComSource,
+                      base_url: cell.bookingUrl, // Use hotel's specific Booking.com URL
+                    };
+                    const bookingComScraper = new BookingComScraper(scraperSource);
 
-                  // Scrape Booking.com
-                  const result = await bookingComScraper.scrape({
-                    hotelCode: cell.hotelCode,
-                    checkInDate: cell.checkIn,
-                    checkOutDate: cell.checkOut,
-                    adults: 2,
-                    children: 0,
-                  });
-
-                  // Format result for database storage
-                  bookingComData = {
-                    scrape_status: result.status === 'green' ? 'success' : result.status === 'red' ? 'no_availability' : 'failed',
-                    status: result.status,
-                    scraped_at: new Date().toISOString(),
-                    price: result.price,
-                    currency: result.currency,
-                    availability_text: result.availabilityText,
-                    scraped_data: result.scrapedData,
-                    error_message: result.errorMessage,
-                  };
-
-                  console.log('[BookingCom] scrape success', { 
-                    hotelId: cell.hotelId, 
-                    checkIn: cell.checkIn,
-                    status: result.status,
-                    price: result.price 
-                  });
-                  
-                  break; // Success, exit retry loop
-                } catch (e: any) {
-                  retries++;
-                  const isRetryable = e.status === 429 || e.status === 503 || e.code === 'ETIMEDOUT';
-                  
-                  if (retries <= maxRetries && isRetryable) {
-                    console.log(`[BookingCom] Retrying (${retries}/${maxRetries})`, { 
-                      hotelId: cell.hotelId, 
-                      checkIn: cell.checkIn,
-                      error: String(e) 
+                    // Scrape Booking.com
+                    const result = await bookingComScraper.scrape({
+                      hotelCode: cell.hotelCode,
+                      checkInDate: cell.checkIn,
+                      checkOutDate: cell.checkOut,
+                      adults: 2,
+                      children: 0,
                     });
-                    // Exponential backoff
-                    await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
-                  } else {
-                    console.error('[BookingCom] scrape failed', { 
+
+                    // Format result for database storage
+                    bookingComData = {
+                      scrape_status: result.status === 'green' ? 'success' : result.status === 'red' ? 'no_availability' : 'failed',
+                      status: result.status,
+                      scraped_at: new Date().toISOString(),
+                      price: result.price,
+                      currency: result.currency,
+                      availability_text: result.availabilityText,
+                      scraped_data: result.scrapedData,
+                      error_message: result.errorMessage,
+                    };
+
+                    console.log('[BookingCom] scrape success', { 
                       hotelId: cell.hotelId, 
                       checkIn: cell.checkIn,
-                      error: String(e),
-                      retries 
+                      status: result.status,
+                      price: result.price 
+                    });
+                    
+                    break; // Success, exit retry loop
+                  } catch (e: any) {
+                    retries++;
+                    const isRetryable = e.status === 429 || e.status === 503 || e.code === 'ETIMEDOUT';
+                    
+                    if (retries <= maxRetries && isRetryable) {
+                      console.log(`[BookingCom] Retrying (${retries}/${maxRetries})`, { 
+                        hotelId: cell.hotelId, 
+                        checkIn: cell.checkIn,
+                        error: String(e) 
+                      });
+                      // Exponential backoff
+                      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
+                    } else {
+                      console.error('[BookingCom] scrape failed', { 
+                        hotelId: cell.hotelId, 
+                        checkIn: cell.checkIn,
+                        error: String(e),
+                        retries 
                     });
                     
                     bookingComData = {
@@ -386,30 +388,30 @@ export async function POST(req: NextRequest) {
                     break;
                   }
                 }
-              }
-
-              // Update scan_results with Booking.com data
-              if (bookingComData) {
-                try {
-                  await sql`
-                    UPDATE scan_results 
-                    SET booking_com_data = ${bookingComData}
-                    WHERE scan_id = ${scanId} 
-                      AND hotel_id = ${cell.hotelId} 
-                      AND check_in_date = ${cell.checkIn}
-                  `;
-                } catch (e) {
-                  console.error('[process] Failed to update booking_com_data', e, {
-                    scanId,
-                    hotelId: cell.hotelId,
-                    checkIn: cell.checkIn,
-                  });
                 }
+
+                // Update scan_results with Booking.com data
+                if (bookingComData) {
+                  try {
+                    await sql`
+                      UPDATE scan_results 
+                      SET booking_com_data = ${bookingComData}
+                      WHERE scan_id = ${scanId} 
+                        AND hotel_id = ${cell.hotelId} 
+                        AND check_in_date = ${cell.checkIn}
+                    `;
+                  } catch (e) {
+                    console.error('[process] Failed to update booking_com_data', e, {
+                      scanId,
+                      hotelId: cell.hotelId,
+                      checkIn: cell.checkIn,
+                    });
+                  }
+                }
+              } finally {
+                bookingComActiveRequests--;
               }
-            } finally {
-              bookingComActiveRequests--;
             }
-          }
           }
         }
       }
