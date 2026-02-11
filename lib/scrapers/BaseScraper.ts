@@ -1,29 +1,35 @@
 // lib/scrapers/BaseScraper.ts
-// Base class for web scraping with bot detection prevention
+// Base class for web scraping with enhanced bot detection prevention
 
-import { getRandomUserAgent, getNextUserAgent } from './utils/user-agents';
-import { RateLimiter, randomSleep } from './utils/delays';
+import { getSpoofedHeaders } from './utils/headers';
+import { getRandomDelay, applyJitter, sleep } from './utils/delays';
 import { parseHTML, extractText, extractMultiple } from './utils/html-parser';
-import { retry, isRetryableError } from './utils/retry';
+import { retryWithStatusHandling, retryWithTimeoutHandling, isTimeoutError } from './utils/retry-logic';
+import { SessionManager } from './utils/session-manager';
+import { logScrapeEvent, createScrapeEvent, getLogger } from './utils/logger';
 import type {
   ScanSource,
   ScrapeRequest,
   ScrapeResult,
   ScraperOptions,
+  ProxyConfig,
 } from './types';
 
 /**
- * Base scraper class with bot detection prevention features
- * - User-Agent rotation
- * - Request rate limiting
- * - Random delays between requests
- * - Retry logic with exponential backoff
- * - HTML parsing with CSS selectors
+ * Base scraper class with enhanced bot detection prevention features
+ * - User-Agent rotation (30+ real browser profiles)
+ * - Header spoofing (Accept-Language, Referer, Cache-Control)
+ * - Request delays with jitter (3-8s with ±20% variance)
+ * - Session management with cookie persistence
+ * - Retry logic with HTTP status-specific handling
+ * - Structured logging with event tracking
+ * - Proxy interface (designed but not implemented)
  */
 export abstract class BaseScraper {
   protected source: ScanSource;
-  protected rateLimiter: RateLimiter;
   protected options: Required<ScraperOptions>;
+  protected sessionManager: SessionManager;
+  protected proxyConfig?: ProxyConfig;
 
   constructor(source: ScanSource, options: ScraperOptions = {}) {
     this.source = source;
@@ -31,92 +37,182 @@ export abstract class BaseScraper {
     // Set default options
     this.options = {
       userAgentRotation: source.user_agent_rotation ?? true,
-      rateLimitMs: source.rate_limit_ms ?? 2000,
+      rateLimitMs: source.rate_limit_ms ?? 3000, // Default 3s (bot detection requirement)
       maxRetries: options.maxRetries ?? 3,
       retryDelayMs: options.retryDelayMs ?? 1000,
       timeout: options.timeout ?? 30000,
     };
 
-    // Initialize rate limiter
-    this.rateLimiter = new RateLimiter(this.options.rateLimitMs);
+    // Initialize session manager (10-20 requests per session)
+    this.sessionManager = new SessionManager(15);
   }
 
   /**
-   * Get headers for HTTP requests with User-Agent rotation
+   * Get headers for HTTP requests with spoofing
    */
   protected getHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-      'Cache-Control': 'max-age=0',
-    };
+    const session = this.sessionManager.getSession();
+    const headers = getSpoofedHeaders();
 
-    // Rotate User-Agent if enabled
-    if (this.options.userAgentRotation) {
-      headers['User-Agent'] = getRandomUserAgent();
+    // Add cookies from session if available
+    const cookieString = session.getCookieString();
+    if (cookieString) {
+      headers['Cookie'] = cookieString;
     }
 
     return headers;
   }
 
   /**
+   * Apply request delay with jitter to mimic human behavior
+   * Base delay: 3-8 seconds with ±20% jitter
+   */
+  protected async applyDelay(): Promise<number> {
+    const baseDelay = getRandomDelay(3000, 8000); // 3-8 seconds
+    const delayWithJitter = applyJitter(baseDelay, 20); // ±20% jitter
+    await sleep(delayWithJitter);
+    return delayWithJitter;
+  }
+
+  /**
    * Fetch HTML content from a URL with retries and rate limiting
    */
-  protected async fetchHTML(url: string): Promise<string> {
-    // Wait for rate limiter
-    await this.rateLimiter.waitForNextRequest();
+  protected async fetchHTML(url: string, hotelId?: number): Promise<string> {
+    let retryCount = 0;
+    let lastDelay = 0;
+    const userAgent = this.getHeaders()['User-Agent'];
 
-    // Add random delay to mimic human behavior
-    await randomSleep(100, 500);
+    try {
+      // Apply delay before request
+      lastDelay = await this.applyDelay();
 
-    // Retry with exponential backoff
-    return retry(
-      async () => {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.options.timeout);
+      // Increment session request count
+      this.sessionManager.incrementRequestCount();
 
-        try {
-          const response = await fetch(url, {
-            method: 'GET',
-            headers: this.getHeaders(),
-            signal: controller.signal,
-          });
+      // Fetch with retry logic
+      const html = await retryWithStatusHandling(
+        async () => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), this.options.timeout);
 
-          clearTimeout(timeoutId);
+          try {
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: this.getHeaders(),
+              signal: controller.signal,
+            });
 
-          if (!response.ok) {
-            const error: any = new Error(`HTTP ${response.status}: ${response.statusText}`);
-            error.status = response.status;
+            clearTimeout(timeoutId);
+
+            // Store cookies from response
+            const setCookie = response.headers.get('set-cookie');
+            if (setCookie) {
+              this.sessionManager.getSession().parseCookieHeader(setCookie);
+            }
+
+            if (!response.ok) {
+              const error: any = new Error(`HTTP ${response.status}: ${response.statusText}`);
+              error.status = response.status;
+              error.statusCode = response.status;
+              throw error;
+            }
+
+            return await response.text();
+          } catch (error: any) {
+            clearTimeout(timeoutId);
+            
+            // Handle abort errors as timeouts
+            if (error.name === 'AbortError') {
+              const timeoutError: any = new Error('Request timeout');
+              timeoutError.code = 'ETIMEDOUT';
+              throw timeoutError;
+            }
+            
             throw error;
           }
-
-          return await response.text();
-        } catch (error: any) {
-          clearTimeout(timeoutId);
-          
-          // Handle abort errors
-          if (error.name === 'AbortError') {
-            const timeoutError: any = new Error('Request timeout');
-            timeoutError.code = 'ETIMEDOUT';
-            throw timeoutError;
-          }
-          
-          throw error;
-        }
-      },
-      {
-        maxRetries: this.options.maxRetries,
-        baseDelayMs: this.options.retryDelayMs,
-        maxDelayMs: 30000,
-        exponentialBackoff: true,
-        onRetry: (attempt, error) => {
-          console.log(`[BaseScraper] Retry attempt ${attempt} for ${url}: ${error.message}`);
         },
+        this.options.maxRetries,
+        (retryAttempt, error, delayMs) => {
+          retryCount = retryAttempt;
+          const httpStatus = error.status || error.statusCode || 0;
+          
+          // Log retry event
+          logScrapeEvent(createScrapeEvent(
+            'error',
+            url,
+            `Retry attempt ${retryAttempt + 1}: ${error.message}`,
+            {
+              hotel_id: hotelId,
+              http_status: httpStatus,
+              retry_count: retryAttempt,
+              error_message: error.message,
+              user_agent: userAgent,
+              delay_ms: delayMs,
+            }
+          ));
+        }
+      );
+
+      // Log success
+      logScrapeEvent(createScrapeEvent(
+        'success',
+        url,
+        'Scrape completed successfully',
+        {
+          hotel_id: hotelId,
+          http_status: 200,
+          retry_count: retryCount,
+          delay_ms: lastDelay,
+          user_agent: userAgent,
+        }
+      ));
+
+      return html;
+
+    } catch (error: any) {
+      const httpStatus = error.status || error.statusCode || 0;
+      
+      // Determine status based on error type
+      let scrapeStatus: 'error' | 'timeout' | 'block' | 'manual_review' = 'error';
+      let reason = error.message || 'Unknown error';
+
+      // HTTP 403 - Bot blocked
+      if (httpStatus === 403 || error.botBlocked) {
+        scrapeStatus = 'block';
+        reason = 'Bot detection - HTTP 403 Forbidden';
       }
-    );
+      // HTTP 429 - Rate limit
+      else if (httpStatus === 429) {
+        scrapeStatus = 'block';
+        reason = 'Booking.com rate limit (429)';
+      }
+      // Timeout
+      else if (isTimeoutError(error)) {
+        scrapeStatus = 'timeout';
+        reason = 'Request timeout (>30s)';
+      }
+      // Other errors
+      else {
+        scrapeStatus = 'error';
+        reason = `HTTP ${httpStatus}: ${error.message}`;
+      }
+
+      // Log error event
+      logScrapeEvent(createScrapeEvent(
+        scrapeStatus,
+        url,
+        reason,
+        {
+          hotel_id: hotelId,
+          http_status: httpStatus,
+          retry_count: retryCount,
+          error_message: error.message,
+          user_agent: userAgent,
+        }
+      ));
+
+      throw error;
+    }
   }
 
   /**
@@ -155,8 +251,11 @@ export abstract class BaseScraper {
       // Build the URL for the request
       const url = this.buildURL(request);
 
+      // Extract hotel ID if available (for logging)
+      const hotelId = parseInt(request.hotelCode) || undefined;
+
       // Fetch HTML content
-      const html = await this.fetchHTML(url);
+      const html = await this.fetchHTML(url, hotelId);
 
       // Parse data using CSS selectors
       const parsedData = this.parseData(html);
@@ -193,10 +292,14 @@ export abstract class BaseScraper {
    */
   updateOptions(options: Partial<ScraperOptions>): void {
     this.options = { ...this.options, ...options };
-    
-    if (options.rateLimitMs !== undefined) {
-      this.rateLimiter.setMinDelay(options.rateLimitMs);
-    }
+  }
+
+  /**
+   * Configure proxy settings (prepared for future implementation)
+   */
+  setProxyConfig(config: ProxyConfig): void {
+    this.proxyConfig = config;
+    // Future: Implement actual proxy rotation
   }
 
   /**
@@ -204,5 +307,26 @@ export abstract class BaseScraper {
    */
   getSource(): ScanSource {
     return this.source;
+  }
+
+  /**
+   * Get session statistics
+   */
+  getSessionStats(): { requestCount: number; sessionAge: number; cookieCount: number } {
+    return this.sessionManager.getStats();
+  }
+
+  /**
+   * Get scraping statistics
+   */
+  getScrapeStats(): Record<string, number> {
+    return getLogger().getStats();
+  }
+
+  /**
+   * Force session rotation
+   */
+  rotateSession(): void {
+    this.sessionManager.rotateSession();
   }
 }
