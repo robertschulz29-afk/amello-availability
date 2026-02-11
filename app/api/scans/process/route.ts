@@ -63,6 +63,10 @@ export async function POST(req: NextRequest) {
   const tStart = Date.now();
   const SOFT_BUDGET_MS = 40_000;
 
+  // Get the Bello-Mandator header from the incoming request
+  // Middleware ensures this is present, but we default to 'amello.en' as fallback
+  const belloMandator = req.headers.get('Bello-Mandator') || 'amello.en';
+
   try {
     const body = await req.json().catch(() => ({}));
     const scanId = Number(body?.scanId);
@@ -179,7 +183,10 @@ export async function POST(req: NextRequest) {
 
           const res = await fetch(`${BASE_URL}/hotel/offer`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Bello-Mandator': belloMandator,
+            },
             body: JSON.stringify(payload),
             cache: 'no-store',
           });
