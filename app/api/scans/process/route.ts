@@ -59,6 +59,15 @@ function hasNonEmptyRooms(obj: any): boolean {
   }
   return false;
 }
+/**
+ * Check if the response content type represents JSON (application/json or +json suffix types).
+ * @param contentType Content-Type header value.
+ * @returns True if the content type represents a JSON payload.
+ */
+function isJsonContentType(contentType?: string | null): boolean {
+  const normalized = contentType?.toLowerCase() ?? '';
+  return normalized.startsWith('application/json') || /\+json(;|$)/.test(normalized);
+}
 
 /* ---------- handler ---------- */
 export async function POST(req: NextRequest) {
@@ -181,7 +190,7 @@ export async function POST(req: NextRequest) {
 
     // Read Mandator ID once (required by Amello API)
     // Note: We log a warning but don't fail fast to allow gradual configuration rollout
-    const amelloMandatorId = process.env.AMELLO_MANDATOR_ID;
+    const amelloMandatorId = (process.env.AMELLO_MANDATOR_ID ?? '').trim();
     if (!amelloMandatorId) {
       console.warn('[process] WARNING: AMELLO_MANDATOR_ID not set - Amello API requests will likely fail with 400 error');
     }
@@ -234,6 +243,7 @@ export async function POST(req: NextRequest) {
         if (idx >= slice.length) break;
         const cell = slice[idx];
 
+        // Scan result status (not HTTP status).
         let status: 'green' | 'red' = 'red';
         let responseJson: any = null;
 
@@ -265,22 +275,29 @@ export async function POST(req: NextRequest) {
             cache: 'no-store',
           });
 
-          if (res.status === 200) {
-            const ctype = res.headers.get('content-type') || '';
-            if (ctype.includes('application/json')) {
-              const j = await res.json();
-              // Extract compact room/rate data instead of storing full response
-              const compactData = extractRoomRateData(j);
-              responseJson = compactData;
-              // Check if we have any rooms with rates for status
-              status = (compactData.rooms && compactData.rooms.length > 0) ? 'green' : 'red';
-            } else {
-              status = 'red';
-              responseJson = { httpStatus: res.status, text: await res.text().catch(()=>null) };
-            }
+          const ctype = res.headers.get('content-type') || '';
+          const isJson = isJsonContentType(ctype);
+          if (res.status === 200 && isJson) {
+            const j = await res.json();
+            // Extract compact room/rate data instead of storing full response
+            const compactData = extractRoomRateData(j);
+            responseJson = compactData;
+            // Check if we have any rooms with rates for status
+            status = (compactData.rooms && compactData.rooms.length > 0) ? 'green' : 'red';
+          } else if (res.status === 200) {
+            status = 'red';
+            responseJson = {
+              httpStatus: res.status,
+              error: `Unexpected Content-Type from Amello API. Expected JSON but received ${ctype || 'unknown'}. Verify AMELLO_BASE_URL points to the API and the offer endpoint returns JSON.`,
+              contentType: ctype,
+            };
           } else {
             status = 'red';
-            responseJson = { httpStatus: res.status, text: await res.text().catch(()=>null) };
+            responseJson = {
+              httpStatus: res.status,
+              error: res.statusText || 'Amello API request failed',
+              contentType: ctype,
+            };
           }
         } catch (e:any) {
           console.error('[process] upstream fetch error', e, cell);
