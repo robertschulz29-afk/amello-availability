@@ -11,9 +11,24 @@ export async function sleep(ms: number): Promise<void> {
 /**
  * Generate a random delay between min and max milliseconds
  * Useful for mimicking human behavior
+ * Default: 3-8 seconds (3000-8000ms) as per bot detection requirements
  */
-export function getRandomDelay(minMs: number, maxMs: number): number {
+export function getRandomDelay(minMs: number = 3000, maxMs: number = 8000): number {
   return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+}
+
+/**
+ * Apply jitter (variance) to a delay value
+ * Default jitter is ±20% of the original delay
+ * 
+ * @param delayMs - Base delay in milliseconds
+ * @param jitterPercent - Percentage of variance (default: 20)
+ * @returns Delay with jitter applied
+ */
+export function applyJitter(delayMs: number, jitterPercent: number = 20): number {
+  const jitterRange = delayMs * (jitterPercent / 100);
+  const jitter = (Math.random() * 2 - 1) * jitterRange; // Random value between -jitterRange and +jitterRange
+  return Math.max(0, Math.floor(delayMs + jitter));
 }
 
 /**
