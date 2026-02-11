@@ -266,7 +266,7 @@ export async function POST(req: NextRequest) {
           });
 
           const ctype = res.headers.get('content-type') || '';
-          const isJson = ctype.includes('json');
+          const isJson = ctype.toLowerCase().includes('json');
           if (res.status === 200 && isJson) {
             const j = await res.json();
             // Extract compact room/rate data instead of storing full response
@@ -276,7 +276,7 @@ export async function POST(req: NextRequest) {
             status = (compactData.rooms && compactData.rooms.length > 0) ? 'green' : 'red';
           } else if (res.status === 200) {
             status = 'red';
-            responseJson = { httpStatus: res.status, error: 'Unexpected response type' };
+            responseJson = { httpStatus: res.status, error: 'Unexpected response type', contentType: ctype };
           } else {
             status = 'red';
             responseJson = { httpStatus: res.status, error: res.statusText || 'Amello API error' };
