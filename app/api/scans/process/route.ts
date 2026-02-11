@@ -280,7 +280,7 @@ export async function POST(req: NextRequest) {
             responseJson = { httpStatus: res.status, error: 'Expected JSON response', contentType: ctype };
           } else {
             status = 'red';
-            responseJson = { httpStatus: res.status, error: res.statusText || `Amello API error (${res.status})` };
+            responseJson = { httpStatus: res.status, error: res.statusText || 'Amello API request failed' };
           }
         } catch (e:any) {
           console.error('[process] upstream fetch error', e, cell);
