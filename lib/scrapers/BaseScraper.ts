@@ -173,7 +173,6 @@ export abstract class BaseScraper {
       url = this.buildURL(request);
 
       // Track retry count
-      const originalRetry = retry;
       let attemptCount = 0;
 
       // Fetch HTML content with retry tracking
@@ -185,7 +184,6 @@ export abstract class BaseScraper {
           await this.rateLimiter.waitForNextRequest();
 
           // Add random delay to mimic human behavior
-          const randomDelayMs = Math.floor(Math.random() * 400) + 100;
           await randomSleep(100, 500);
           
           const controller = new AbortController();
