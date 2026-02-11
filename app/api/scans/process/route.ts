@@ -288,7 +288,11 @@ export async function POST(req: NextRequest) {
             };
           } else {
             status = 'red';
-            responseJson = { httpStatus: res.status, error: res.statusText || 'Amello API request failed' };
+            responseJson = {
+              httpStatus: res.status,
+              error: res.statusText || 'Amello API request failed',
+              contentType: ctype,
+            };
           }
         } catch (e:any) {
           console.error('[process] upstream fetch error', e, cell);
