@@ -147,11 +147,20 @@ export class BookingComScraper extends BaseScraper {
         
         if (rateElements.length === 0) {
           // Try to find rates in a broader context (sometimes rates are in sibling rows)
-          // Get all rate rows that follow this room until the next room
-          const nextRoomRow = roomRow.nextAll().find('.hprt-roomtype-link').first().closest('tr, .hprt-table-row');
-          const rateRows = nextRoomRow.length > 0 
-            ? roomRow.nextUntil(nextRoomRow)
-            : roomRow.nextAll();
+          // Get all rate rows that follow this room
+          // We'll filter by looking at all nextAll() and stop when we hit another room type
+          const allNextRows = roomRow.nextAll();
+          let rateRows = allNextRows;
+          
+          // Find the index of the next room type if it exists
+          const nextRoomIndex = allNextRows.toArray().findIndex((el) => {
+            return $(el).find('.hprt-roomtype-link').length > 0;
+          });
+          
+          // If we found another room, only take rows before it
+          if (nextRoomIndex >= 0) {
+            rateRows = allNextRows.slice(0, nextRoomIndex);
+          }
           
           rateRows.find('.bui-list__item.e2e-cancellation').each((_, rateElement) => {
             const rate = this.extractRateFromElement($, rateElement);

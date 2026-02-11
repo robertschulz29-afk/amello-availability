@@ -265,7 +265,7 @@ export async function POST(req: NextRequest) {
             try {
               const scraper = initBookingScraper();
               const bookingResult = await scraper.scrape({
-                hotelCode: cell.bookingUrl, // Pass booking_url as hotelCode
+                hotelCode: cell.bookingUrl!, // Non-null assertion - we already checked it's not null above
                 checkInDate: cell.checkIn,
                 checkOutDate: cell.checkOut,
                 adults: 2,
