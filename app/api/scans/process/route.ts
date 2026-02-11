@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { extractRoomRateData } from '@/lib/price-utils';
+import { BookingComScraper, type BookingComData } from '@/lib/scrapers/BookingComScraper';
+import type { ScanSource } from '@/lib/scrapers/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -108,8 +110,62 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Hotels
-    const hotels = (await sql`SELECT id, code FROM hotels ORDER BY id ASC`).rows as Array<{ id:number; code:string }>;
+    // Hotels - fetch with booking_url for Booking.com integration
+    const hotels = (await sql`SELECT id, code, booking_url FROM hotels ORDER BY id ASC`).rows as Array<{ id:number; code:string; booking_url:string|null }>;
+
+    // Fetch Booking.com scan source (or create if doesn't exist)
+    let bookingComSource: ScanSource | null = null;
+    try {
+      const sourceQ = await sql`
+        SELECT id, name, enabled, base_url, css_selectors, rate_limit_ms, user_agent_rotation, created_at, updated_at
+        FROM scan_sources 
+        WHERE name = 'Booking.com'
+        LIMIT 1
+      `;
+      
+      if (sourceQ.rows.length > 0) {
+        const row = sourceQ.rows[0] as any;
+        bookingComSource = {
+          id: row.id,
+          name: row.name,
+          enabled: row.enabled,
+          base_url: row.base_url,
+          css_selectors: row.css_selectors,
+          rate_limit_ms: row.rate_limit_ms,
+          user_agent_rotation: row.user_agent_rotation,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+      } else {
+        // Create default Booking.com source if it doesn't exist
+        const ins = await sql`
+          INSERT INTO scan_sources (name, enabled, base_url, css_selectors, rate_limit_ms, user_agent_rotation)
+          VALUES (
+            'Booking.com',
+            true,
+            'https://www.booking.com',
+            '{"price": ".bui-price-display__value", "availability": ".room-info", "rooms": ".hprt-table"}'::jsonb,
+            3000,
+            true
+          )
+          RETURNING id, name, enabled, base_url, css_selectors, rate_limit_ms, user_agent_rotation, created_at, updated_at
+        `;
+        const row = ins.rows[0] as any;
+        bookingComSource = {
+          id: row.id,
+          name: row.name,
+          enabled: row.enabled,
+          base_url: row.base_url,
+          css_selectors: row.css_selectors,
+          rate_limit_ms: row.rate_limit_ms,
+          user_agent_rotation: row.user_agent_rotation,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+      }
+    } catch (e) {
+      console.warn('[process] Unable to load Booking.com source, skipping Booking.com scraping', e);
+    }
 
     // Guard: nothing to do
     if (!hotels.length) {
@@ -135,7 +191,7 @@ export async function POST(req: NextRequest) {
 
     // Build slice
     const stayNights = Number((scan as any).stay_nights) || 7;
-    const slice: { hotelId:number; hotelCode:string; checkIn:string; checkOut:string }[] = [];
+    const slice: { hotelId:number; hotelCode:string; bookingUrl:string|null; checkIn:string; checkOut:string }[] = [];
     for (let idx = startIndex; idx < endIndex; idx++) {
       const hotelIdx = Math.floor(idx / dates.length);
       const dateIdx  = idx % dates.length;
@@ -146,7 +202,7 @@ export async function POST(req: NextRequest) {
       checkInDt.setUTCDate(checkInDt.getUTCDate() + stayNights);
       const checkOut = toYMDUTC(checkInDt);
 
-      slice.push({ hotelId: h.id, hotelCode: h.code, checkIn, checkOut });
+      slice.push({ hotelId: h.id, hotelCode: h.code, bookingUrl: h.booking_url, checkIn, checkOut });
     }
 
     const CONCURRENCY = 4;
@@ -154,6 +210,15 @@ export async function POST(req: NextRequest) {
     let processed = 0;
     let failures  = 0;
     let stopEarly = false;
+    
+    // Booking.com concurrency limiter and timing constants
+    let bookingComActiveRequests = 0;
+    const BOOKING_COM_MAX_CONCURRENT = 3;
+    const BOOKING_COM_MIN_DELAY_MS = 2000;
+    const BOOKING_COM_MAX_ADDITIONAL_DELAY_MS = 3000;
+    const BOOKING_COM_TIME_BUFFER_MS = 10_000; // Skip Booking.com if less than 10s remaining
+    const MAX_CONCURRENCY_WAIT_ATTEMPTS = 20;
+    const CONCURRENCY_WAIT_DELAY_MS = 500;
 
     async function worker() {
       while (true) {
@@ -219,6 +284,130 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           failures++;
           console.error('[process] DB write error', e, { scanId, hotelId: cell.hotelId, checkIn: cell.checkIn });
+        }
+
+        // Booking.com scraping integration (if hotel has booking_url)
+        if (cell.bookingUrl && bookingComSource && bookingComSource.enabled) {
+          // Check time budget before starting Booking.com scrape
+          const timeRemaining = SOFT_BUDGET_MS - (Date.now() - tStart);
+          if (timeRemaining < BOOKING_COM_TIME_BUFFER_MS) {
+            console.log('[process] Skipping Booking.com scrape - time budget low', { 
+              hotelId: cell.hotelId, 
+              checkIn: cell.checkIn,
+              timeRemaining 
+            });
+          } else {
+            // Wait if too many concurrent Booking.com requests (simple backoff)
+            let waitAttempts = 0;
+            while (bookingComActiveRequests >= BOOKING_COM_MAX_CONCURRENT && waitAttempts < MAX_CONCURRENCY_WAIT_ATTEMPTS) {
+              await new Promise(resolve => setTimeout(resolve, CONCURRENCY_WAIT_DELAY_MS));
+              waitAttempts++;
+            }
+            
+            // Skip if we waited too long
+            if (bookingComActiveRequests >= BOOKING_COM_MAX_CONCURRENT) {
+              console.log('[process] Skipping Booking.com scrape - concurrency limit reached', {
+                hotelId: cell.hotelId,
+                checkIn: cell.checkIn,
+              });
+            } else {
+              bookingComActiveRequests++;
+              
+              try {
+                // Add delay between TUIAmello and Booking.com (2-5 seconds)
+                const delay = BOOKING_COM_MIN_DELAY_MS + Math.random() * BOOKING_COM_MAX_ADDITIONAL_DELAY_MS;
+                await new Promise(resolve => setTimeout(resolve, delay));
+
+                let bookingComData: any = null;
+                let retries = 0;
+                const maxRetries = 2;
+
+                while (retries <= maxRetries) {
+                  try {
+                    // Create scraper with hotel's booking_url as base_url
+                    const scraperSource = {
+                      ...bookingComSource,
+                      base_url: cell.bookingUrl, // Use hotel's specific Booking.com URL
+                    };
+                    const bookingComScraper = new BookingComScraper(scraperSource);
+
+                    // Scrape Booking.com
+                    const result = await bookingComScraper.scrape({
+                      hotelCode: cell.hotelCode,
+                      checkInDate: cell.checkIn,
+                      checkOutDate: cell.checkOut,
+                      adults: 2,
+                      children: 0,
+                    });
+
+                    // Use the BookingComData structure directly from scrapedData
+                    bookingComData = result.scrapedData as BookingComData;
+
+                    console.log('[BookingCom] scrape success', { 
+                      hotelId: cell.hotelId, 
+                      checkIn: cell.checkIn,
+                      status: result.status,
+                      rooms: bookingComData?.rooms?.length || 0,
+                      prices: bookingComData?.prices?.length || 0
+                    });
+                    
+                    break; // Success, exit retry loop
+                  } catch (e: any) {
+                    retries++;
+                    const isRetryable = e.status === 429 || e.status === 503 || e.code === 'ETIMEDOUT';
+                    
+                    if (retries <= maxRetries && isRetryable) {
+                      console.log(`[BookingCom] Retrying (${retries}/${maxRetries})`, { 
+                        hotelId: cell.hotelId, 
+                        checkIn: cell.checkIn,
+                        error: String(e) 
+                      });
+                      // Exponential backoff
+                      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
+                    } else {
+                      console.error('[BookingCom] scrape failed', { 
+                        hotelId: cell.hotelId, 
+                        checkIn: cell.checkIn,
+                        error: String(e),
+                        retries 
+                    });
+                    
+                    bookingComData = {
+                      rooms: [],
+                      rates: [],
+                      prices: [],
+                      scrape_status: 'failed',
+                      error_message: String(e),
+                      scraped_at: new Date().toISOString(),
+                    };
+                    break;
+                  }
+                }
+                }
+
+                // Update scan_results with Booking.com data
+                if (bookingComData) {
+                  try {
+                    await sql`
+                      UPDATE scan_results 
+                      SET booking_com_data = ${bookingComData}
+                      WHERE scan_id = ${scanId} 
+                        AND hotel_id = ${cell.hotelId} 
+                        AND check_in_date = ${cell.checkIn}
+                    `;
+                  } catch (e) {
+                    console.error('[process] Failed to update booking_com_data', e, {
+                      scanId,
+                      hotelId: cell.hotelId,
+                      checkIn: cell.checkIn,
+                    });
+                  }
+                }
+              } finally {
+                bookingComActiveRequests--;
+              }
+            }
+          }
         }
       }
     }
