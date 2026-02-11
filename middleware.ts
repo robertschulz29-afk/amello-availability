@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
 
 /**
  * Next.js Middleware to ensure the Bello-Mandator header is present on API requests
@@ -17,7 +18,7 @@ export function middleware(request: NextRequest) {
   
   // Check if Bello-Mandator header exists, if not add it
   if (!requestHeaders.has('Bello-Mandator')) {
-    requestHeaders.set('Bello-Mandator', 'amello.en');
+    requestHeaders.set('Bello-Mandator', DEFAULT_BELLO_MANDATOR);
   }
   
   // Create a new response with the updated headers
