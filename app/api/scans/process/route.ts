@@ -59,6 +59,7 @@ function hasNonEmptyRooms(obj: any): boolean {
   }
   return false;
 }
+// Treat application/json and +json suffix types as JSON payloads.
 function isJsonContentType(contentType: string): boolean {
   const normalized = contentType.toLowerCase();
   return normalized.startsWith('application/json') || /\+json($|;)/.test(normalized);
@@ -280,7 +281,11 @@ export async function POST(req: NextRequest) {
             status = (compactData.rooms && compactData.rooms.length > 0) ? 'green' : 'red';
           } else if (res.status === 200) {
             status = 'red';
-            responseJson = { httpStatus: res.status, error: 'Expected JSON response', contentType: ctype };
+            responseJson = {
+              httpStatus: res.status,
+              error: `Expected JSON response (received ${ctype || 'unknown'})`,
+              contentType: ctype,
+            };
           } else {
             status = 'red';
             responseJson = { httpStatus: res.status, error: res.statusText || 'Amello API request failed' };
