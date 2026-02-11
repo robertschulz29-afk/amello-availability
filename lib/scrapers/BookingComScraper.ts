@@ -144,6 +144,31 @@ export class BookingComScraper extends BaseScraper {
   }
 
   /**
+   * Parse price from text, handling various international number formats
+   * @param priceText - Price text like "€150.00", "$1,234.56", "1.234,56 €"
+   * @returns Parsed price as number
+   */
+  private parsePrice(priceText: string): number {
+    // Remove currency symbols and whitespace
+    let cleaned = priceText.replace(/[€$£\s]/g, '');
+    
+    // Detect format: if last comma is after last period, it's European format (1.234,56)
+    // Otherwise it's US format (1,234.56)
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastPeriod = cleaned.lastIndexOf('.');
+    
+    if (lastComma > lastPeriod) {
+      // European format: 1.234,56 -> remove periods (thousands), replace comma with period
+      cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+    } else {
+      // US format: 1,234.56 -> just remove commas (thousands)
+      cleaned = cleaned.replace(/,/g, '');
+    }
+    
+    return parseFloat(cleaned);
+  }
+
+  /**
    * Extract Booking.com data from HTML
    * @param html - Raw HTML from Booking.com
    * @returns Structured Booking.com data
@@ -197,27 +222,36 @@ export class BookingComScraper extends BaseScraper {
       $('.bui-price-display__value').each((index, element) => {
         const priceText = $(element).text().trim();
         if (priceText) {
-          // Parse price - handle various formats like "€150", "$200.50", "1,234.56"
-          const cleanPrice = priceText.replace(/[^\d.,]/g, '').replace(',', '');
-          const amount = parseFloat(cleanPrice);
+          // Parse price - handle various formats
+          const amount = this.parsePrice(priceText);
           
-          if (!isNaN(amount)) {
+          if (!isNaN(amount) && amount > 0) {
             // Extract currency from price text
             let currency = 'EUR'; // Default to EUR
             if (priceText.includes('$')) currency = 'USD';
             else if (priceText.includes('£')) currency = 'GBP';
             else if (priceText.includes('€')) currency = 'EUR';
             
-            // Map prices to rooms and rates (simple approach: use index)
-            // In a real scenario, you'd need more sophisticated mapping
-            const room_id = Math.floor(index / Math.max(rates.length, 1));
-            const rate_id = index % Math.max(rates.length, 1);
+            // Map prices to rooms and rates
+            // Note: This is a simplified mapping. In production, you may need
+            // to analyze the HTML structure to determine correct associations.
+            let room_id = 0;
+            let rate_id = 0;
+            
+            if (rooms.length > 0 && rates.length > 0) {
+              // Distribute prices across rooms and rates
+              room_id = Math.floor(index / rates.length) % rooms.length;
+              rate_id = index % rates.length;
+            } else if (rooms.length > 0) {
+              // Only rooms, no rates
+              room_id = index % rooms.length;
+            }
             
             prices.push({
               amount,
               currency,
-              room_id: room_id < rooms.length ? room_id : 0,
-              rate_id: rate_id < rates.length ? rate_id : 0,
+              room_id,
+              rate_id,
             });
           }
         }
@@ -268,11 +302,9 @@ export class BookingComScraper extends BaseScraper {
       // Fetch HTML content
       const html = await this.fetchHTML(url);
 
-      // Parse data (not using CSS selectors from source, we parse directly)
-      const parsedData = {};
-
       // Process data and return result
-      return this.processData(parsedData, html);
+      // Note: parsedData parameter is not used as BookingComScraper does direct HTML parsing
+      return this.processData({}, html);
     } catch (error: any) {
       console.error('[BookingComScraper] Scrape error:', error);
 
