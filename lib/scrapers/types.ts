@@ -91,3 +91,46 @@ export interface RetryConfig {
   maxDelayMs: number;
   exponentialBackoff: boolean;
 }
+
+/**
+ * Proxy configuration interface (for future implementation)
+ * Designed to support proxy rotation without refactoring scraper
+ */
+export interface ProxyConfig {
+  enabled: boolean;
+  host?: string;
+  port?: number;
+  protocol?: 'http' | 'https' | 'socks4' | 'socks5';
+  username?: string;
+  password?: string;
+  rotationEnabled?: boolean;
+  rotationInterval?: number; // Requests before rotation
+}
+
+/**
+ * Header options for customizing HTTP headers
+ */
+export interface HeaderOptions {
+  userAgent?: string;
+  referer?: string;
+  acceptLanguage?: string;
+  cacheControl?: string;
+}
+
+/**
+ * Scraping event for structured logging
+ */
+export type ScrapeStatus = 'success' | 'error' | 'timeout' | 'block' | 'manual_review';
+
+export interface ScrapeEvent {
+  timestamp: string;
+  scrape_status: ScrapeStatus;
+  hotel_id?: number;
+  url: string;
+  http_status?: number;
+  delay_ms?: number;
+  retry_count: number;
+  error_message: string | null;
+  user_agent?: string;
+  reason: string;
+}
