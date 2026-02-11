@@ -288,6 +288,8 @@ export abstract class BaseScraper {
       const responseTimeMs = Date.now() - startTime;
 
       // Log successful scrape to database
+      // Note: retry_count and delay_ms are logged internally by fetchHTML's console logger
+      // This top-level log captures overall scrape success with scan/hotel context
       await logScrapeEventToDB({
         timestamp: new Date(),
         scrape_status: 'success',
@@ -297,11 +299,11 @@ export abstract class BaseScraper {
         check_in_date: request.checkInDate,
         url,
         http_status: httpStatus,
-        delay_ms: undefined,  // Delay is applied internally by fetchHTML
-        retry_count: 0,       // Retry count not available at this level
+        delay_ms: undefined,
+        retry_count: 0,
         error_message: null,
         user_agent: userAgent,
-        reason: undefined,    // No reason needed for successful scrapes
+        reason: undefined,
         response_time_ms: responseTimeMs,
         session_id: this.sessionId,
       });
@@ -333,6 +335,8 @@ export abstract class BaseScraper {
       }
 
       // Log error to database
+      // Note: retry_count and delay_ms are logged internally by fetchHTML's console logger
+      // This top-level log captures overall scrape failure with scan/hotel context
       await logScrapeEventToDB({
         timestamp: new Date(),
         scrape_status: scrapeStatus,
@@ -342,8 +346,8 @@ export abstract class BaseScraper {
         check_in_date: request.checkInDate,
         url,
         http_status: error.status,
-        delay_ms: undefined,   // Delay is applied internally by fetchHTML
-        retry_count: 0,        // Retry count not available at this level
+        delay_ms: undefined,
+        retry_count: 0,
         error_message: error.message,
         user_agent: userAgent || 'Unknown',
         reason,
