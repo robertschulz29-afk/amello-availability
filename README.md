@@ -1,5 +1,25 @@
 # amello-availability
 
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file in the project root (see `.env.example` for reference):
+
+- **DATABASE_URL** (required): PostgreSQL connection string (pooled connection URL from Supabase or your provider)
+- **NEXT_PUBLIC_API_URL** (optional): Full URL of the backend API server (e.g., `https://api.example.com`)
+  - If not set, API requests will use relative paths (calls to the same Next.js server)
+  - Set this when deploying frontend and backend separately
+- **API_BASE_URL** (optional): Server-side only API URL (alternative to NEXT_PUBLIC_API_URL)
+- **AMELLO_BASE_URL** (optional): Base URL for the Amello API (defaults to `https://prod-api.amello.plusline.net/api/v1`)
+
+### API Client
+
+All frontend API requests use the `fetchJSON` utility from `lib/api-client.ts`, which:
+- Automatically adds the `Bello-Mandator: amello.en` header to all requests
+- Constructs full API URLs using `NEXT_PUBLIC_API_URL` if configured
+- Falls back to relative paths for backward compatibility
+
 ## Core Features
 
 ### Scan history
