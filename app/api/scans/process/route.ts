@@ -340,23 +340,15 @@ export async function POST(req: NextRequest) {
                       children: 0,
                     });
 
-                    // Format result for database storage
-                    bookingComData = {
-                      scrape_status: result.status === 'green' ? 'success' : result.status === 'red' ? 'no_availability' : 'failed',
-                      status: result.status,
-                      scraped_at: new Date().toISOString(),
-                      price: result.price,
-                      currency: result.currency,
-                      availability_text: result.availabilityText,
-                      scraped_data: result.scrapedData,
-                      error_message: result.errorMessage,
-                    };
+                    // Use the BookingComData structure directly from scrapedData
+                    bookingComData = result.scrapedData as any;
 
                     console.log('[BookingCom] scrape success', { 
                       hotelId: cell.hotelId, 
                       checkIn: cell.checkIn,
                       status: result.status,
-                      price: result.price 
+                      rooms: bookingComData?.rooms?.length || 0,
+                      prices: bookingComData?.prices?.length || 0
                     });
                     
                     break; // Success, exit retry loop
@@ -381,6 +373,9 @@ export async function POST(req: NextRequest) {
                     });
                     
                     bookingComData = {
+                      rooms: [],
+                      rates: [],
+                      prices: [],
                       scrape_status: 'failed',
                       error_message: String(e),
                       scraped_at: new Date().toISOString(),
