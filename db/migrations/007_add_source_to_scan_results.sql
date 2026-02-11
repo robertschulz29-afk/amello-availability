@@ -22,9 +22,18 @@ END $$;
 
 -- Add new unique constraint that includes source
 -- This allows multiple rows for the same scan/hotel/date but different sources
-ALTER TABLE scan_results 
-ADD CONSTRAINT IF NOT EXISTS scan_results_scan_id_hotel_id_check_in_date_source_key 
-UNIQUE(scan_id, hotel_id, check_in_date, source);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE table_name = 'scan_results' 
+    AND constraint_name = 'scan_results_unique_per_source'
+  ) THEN
+    ALTER TABLE scan_results 
+    ADD CONSTRAINT scan_results_unique_per_source 
+    UNIQUE(scan_id, hotel_id, source, check_in_date);
+  END IF;
+END $$;
 
 -- Add index on source column for efficient filtering
 CREATE INDEX IF NOT EXISTS idx_scan_results_source ON scan_results(source);
