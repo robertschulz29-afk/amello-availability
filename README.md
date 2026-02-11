@@ -1,15 +1,5 @@
 # amello-availability
 
-## Configuration
-
-### Required Environment Variables
-
-- `AMELLO_MANDATOR_ID` - TUI Amello API Mandator ID (required for hotel availability API calls)
-- `AMELLO_BASE_URL` - Amello API base URL (default: `https://prod-api.amello.plusline.net/api/v1`)
-- `DATABASE_URL` - PostgreSQL connection string
-
-The Mandator ID is a unique identifier assigned by TUI during partner onboarding and is required for all API requests to the Amello platform.
-
 ## Core Features
 
 ### Scan history
@@ -20,50 +10,11 @@ The Mandator ID is a unique identifier assigned by TUI during partner onboarding
 
 All scans use Europe/Berlin; dates are fixed at startOffset=5, endOffset=90 and fixed checkout = today+12 (relative to the scan time).
 
-## Scrape Monitoring & Logging
-
-**NEW**: Comprehensive monitoring infrastructure for web scraping health and reliability.
-
-Features:
-- ✅ Structured event logging for every scrape attempt
-- ✅ Real-time metrics aggregation (success rate, errors, blocks, timeouts)
-- ✅ Dashboard widget for at-a-glance health status
-- ✅ Monitoring page at `/monitoring` with daily/weekly trends
-- ✅ Automatic alerting when success rate drops or blocks increase
-- ✅ CSV export for detailed analysis
-
-**[📖 Full Documentation](docs/SCRAPE_MONITORING.md)**
-
-### Quick Start
-
-1. Apply database migration:
-   ```bash
-   psql $DATABASE_URL < db/migrations/007_scrape_logs.sql
-   ```
-
-2. Scraping is automatically logged:
-   ```typescript
-   const scraper = new BookingComScraper(source);
-   scraper.setLoggingContext({ scanId, hotelId, hotelName });
-   await scraper.scrape(request); // Logged automatically
-   ```
-
-3. View monitoring dashboard:
-   - Navigate to `/monitoring`
-   - Or use `<ScrapeHealthWidget scanId={123} />` component
-
 ## Multi-Source Booking Scraper
 
 The application now supports scanning multiple booking sources (Booking.com, Expedia, etc.) via web scraping.
 
 ### Database Schema
-
-#### `scrape_logs` table (NEW)
-Stores detailed logs of every scrape attempt:
-- `scrape_status` - success, error, timeout, block, manual_review
-- `http_status`, `response_time_ms`, `retry_count`
-- `reason` - Human-readable failure reason
-- Full context: hotel, scan, date, URL, user-agent
 
 #### `scan_sources` table
 Stores configuration for different booking sources:
@@ -91,14 +42,12 @@ Located in `lib/scrapers/`:
   - Request rate limiting with configurable delays
   - Retry logic with exponential backoff
   - CSS selector-based HTML parsing
-  - **Automatic logging** of all scrape attempts
   - Cookie/session management support
 
 - **Utilities**:
   - `utils/user-agents.ts` - User-Agent rotation (10+ real browser UAs)
   - `utils/delays.ts` - Request throttling and rate limiting
   - `utils/html-parser.ts` - HTML parsing with cheerio
-  - `utils/scrape-logger.ts` - **NEW**: Logging and metrics utilities
   - `utils/retry.ts` - Retry logic with exponential backoff
 
 ### API Endpoints
