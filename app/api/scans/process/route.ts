@@ -277,7 +277,7 @@ export async function POST(req: NextRequest) {
             status = (compactData.rooms && compactData.rooms.length > 0) ? 'green' : 'red';
           } else if (res.status === 200) {
             status = 'red';
-            responseJson = { httpStatus: res.status, error: 'Unexpected response type', contentType: ctype };
+            responseJson = { httpStatus: res.status, error: 'Expected JSON response', contentType: ctype };
           } else {
             status = 'red';
             responseJson = { httpStatus: res.status, error: res.statusText || `Amello API error (${res.status})` };
