@@ -278,10 +278,10 @@ export async function POST(req: NextRequest) {
               const bookingData = bookingResult.scrapedData || {};
 
               await sql`
-                INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json, source)
+                INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, booking_com_data, source)
                 VALUES (${scanId}, ${cell.hotelId}, ${cell.checkIn}, ${bookingStatus}, ${bookingData}, 'booking')
                 ON CONFLICT (scan_id, hotel_id, check_in_date, source)
-                DO UPDATE SET status = EXCLUDED.status, response_json = EXCLUDED.response_json
+                DO UPDATE SET status = EXCLUDED.status, booking_com_data = EXCLUDED.booking_com_data
               `;
               bookingProcessed++;
             } catch (e: any) {
@@ -294,7 +294,7 @@ export async function POST(req: NextRequest) {
               // Store error result for Booking.com
               try {
                 await sql`
-                  INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json, source)
+                  INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, booking_com_data, source)
                   VALUES (
                     ${scanId}, 
                     ${cell.hotelId}, 
@@ -304,7 +304,7 @@ export async function POST(req: NextRequest) {
                     'booking'
                   )
                   ON CONFLICT (scan_id, hotel_id, check_in_date, source)
-                  DO UPDATE SET status = EXCLUDED.status, response_json = EXCLUDED.response_json
+                  DO UPDATE SET status = EXCLUDED.status, booking_com_data = EXCLUDED.booking_com_data
                 `;
               } catch (dbError) {
                 console.error('[process] Failed to store Booking.com error:', dbError);
