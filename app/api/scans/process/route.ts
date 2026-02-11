@@ -179,6 +179,13 @@ export async function POST(req: NextRequest) {
 
     const total = hotels.length * dates.length;
 
+    // Read Mandator ID once (required by Amello API)
+    // Note: We log a warning but don't fail fast to allow gradual configuration rollout
+    const amelloMandatorId = process.env.AMELLO_MANDATOR_ID;
+    if (!amelloMandatorId) {
+      console.warn('[process] WARNING: AMELLO_MANDATOR_ID not set - Amello API requests will likely fail with 400 error');
+    }
+
     // Clamp
     startIndex = Math.max(0, Math.min(startIndex, total));
     const endIndex = Math.min(total, startIndex + size);
@@ -203,12 +210,6 @@ export async function POST(req: NextRequest) {
       const checkOut = toYMDUTC(checkInDt);
 
       slice.push({ hotelId: h.id, hotelCode: h.code, bookingUrl: h.booking_url, checkIn, checkOut });
-    }
-
-    // Read Mandator ID once (required by Amello API)
-    const amelloMandatorId = process.env.AMELLO_MANDATOR_ID;
-    if (!amelloMandatorId) {
-      console.warn('[process] WARNING: AMELLO_MANDATOR_ID not set - Amello API requests will likely fail with 400 error');
     }
 
     const CONCURRENCY = 4;
