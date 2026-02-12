@@ -8,3 +8,4 @@ export * from './utils/user-agents';
 export * from './utils/delays';
 export * from './utils/html-parser';
 export * from './utils/retry';
+export * from './utils/browser-manager';

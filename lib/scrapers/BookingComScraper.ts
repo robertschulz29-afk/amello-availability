@@ -4,6 +4,9 @@
 import { BaseScraper } from './BaseScraper';
 import { parseHTML } from './utils/html-parser';
 import type { ScrapeRequest, ScrapeResult } from './types';
+import { getBrowserManager } from './utils/browser-manager';
+import { getRandomUserAgent } from './utils/user-agents';
+import type { Page } from 'puppeteer';
 
 export interface BookingComRoom {
   name: string;
@@ -106,8 +109,8 @@ export class BookingComScraper extends BaseScraper {
   }
 
   /**
-   * Override fetchHTML to capture response body even on HTTP errors
-   * This allows us to store the HTML for offline analysis even when Booking.com returns error pages
+   * Override fetchHTML to use Puppeteer for JavaScript execution
+   * This allows us to bypass AWS WAF challenges and get rendered HTML
    */
   protected async fetchHTML(url: string): Promise<string> {
     // Wait for rate limiter
@@ -117,41 +120,76 @@ export class BookingComScraper extends BaseScraper {
     const { randomSleep } = await import('./utils/delays');
     await randomSleep(100, 500);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.options.timeout);
+    const browserManager = getBrowserManager();
+    let page: Page | null = null;
 
     try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: this.getHeaders(),
-        signal: controller.signal,
+      console.log('[BookingComScraper] Creating browser page...');
+      
+      // Get user agent for this request
+      const userAgent = getRandomUserAgent();
+      page = await browserManager.createPage(userAgent);
+      
+      console.log('[BookingComScraper] Browser page created with User-Agent:', userAgent);
+      console.log('[BookingComScraper] Navigating to URL:', url);
+
+      // Navigate to URL with extended timeout to handle AWS WAF challenges
+      await page.goto(url, {
+        waitUntil: 'networkidle2',
+        timeout: 30000,
       });
 
-      clearTimeout(timeoutId);
+      console.log('[BookingComScraper] Page loaded, waiting for #available_rooms element...');
 
-      // Always get the response body, even on error status codes
-      const html = await response.text();
-
-      // Throw error for non-OK responses, but only after we've captured the HTML
-      if (!response.ok) {
-        const error: any = new Error(`HTTP ${response.status}: ${response.statusText}`);
-        error.status = response.status;
-        error.responseBody = html; // Attach the HTML to the error
-        throw error;
+      // Wait for the available_rooms element to appear (with timeout)
+      try {
+        await page.waitForSelector('#available_rooms', {
+          timeout: 15000,
+        });
+        console.log('[BookingComScraper] #available_rooms element found');
+      } catch (waitError) {
+        console.warn('[BookingComScraper] #available_rooms element not found within timeout');
+        // Continue anyway - we'll still get the rendered HTML
       }
 
+      // Get the fully rendered HTML after JavaScript execution
+      const html = await page.content();
+      
+      console.log('[BookingComScraper] Rendered HTML retrieved, length:', html.length);
+      
       return html;
     } catch (error: any) {
-      clearTimeout(timeoutId);
+      console.error('[BookingComScraper] Puppeteer error:', error.message);
       
-      // Handle abort errors
-      if (error.name === 'AbortError') {
-        const timeoutError: any = new Error('Request timeout');
-        timeoutError.code = 'ETIMEDOUT';
-        throw timeoutError;
+      // Try to get HTML even on error
+      let errorHtml = '';
+      if (page) {
+        try {
+          errorHtml = await page.content();
+          console.log('[BookingComScraper] Captured HTML from error page, length:', errorHtml.length);
+        } catch (contentError) {
+          console.error('[BookingComScraper] Failed to get content from error page:', contentError);
+        }
+      }
+
+      // Attach error HTML if available
+      if (errorHtml) {
+        const enrichedError: any = new Error(error.message || 'Puppeteer navigation failed');
+        enrichedError.responseBody = errorHtml;
+        throw enrichedError;
       }
       
       throw error;
+    } finally {
+      // Always close the page to free resources
+      if (page) {
+        try {
+          await page.close();
+          console.log('[BookingComScraper] Browser page closed');
+        } catch (closeError) {
+          console.error('[BookingComScraper] Error closing page:', closeError);
+        }
+      }
     }
   }
 
