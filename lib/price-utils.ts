@@ -434,6 +434,7 @@ export function formatPrice(price: number | null | string | any, currency: strin
   // Handle string types - normalize and parse
   if (typeof price === 'string') {
     // Remove non-numeric characters except '.', ',', and '-'
+    // Note: This is intentionally tolerant. Malformed strings like '1.2.3' will parse as '1.2'
     const normalized = price.replace(/[^0-9.,-]/g, '').replace(',', '.');
     const parsed = parseFloat(normalized);
     if (!isFinite(parsed)) {
