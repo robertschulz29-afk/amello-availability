@@ -87,7 +87,8 @@ export class BookingComScraper extends BaseScraper {
         children
       });
 
-      // If the error has a response body (HTTP error), use it; otherwise use what we have
+      // If the error has a response body (HTTP error), use it
+      // Otherwise, rawHtml will contain any HTML fetched before the error (or empty string)
       if (error.responseBody) {
         rawHtml = error.responseBody;
         console.log('[BookingComScraper] Captured HTML from error response, length:', rawHtml.length);
