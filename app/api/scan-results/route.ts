@@ -58,8 +58,13 @@ export async function GET(req: NextRequest) {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // Build and execute count query with JOIN
-    const countQuery = `SELECT COUNT(*)::int AS total FROM scan_results sr ${whereClause}`;
+    // Build and execute count query with JOIN (for consistency with data query)
+    const countQuery = `
+      SELECT COUNT(*)::int AS total 
+      FROM scan_results sr
+      LEFT JOIN hotels h ON sr.hotel_id = h.id
+      ${whereClause}
+    `;
     const { rows: countRows } = await query<{ total: number }>(countQuery, params);
     const total = countRows[0]?.total || 0;
 

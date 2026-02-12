@@ -42,6 +42,10 @@ function fmtDateTime(dt: string) {
   try { return new Date(dt).toLocaleString(); } catch { return dt; }
 }
 
+function getHotelDisplay(name: string, id: number): string {
+  return `${name} (${id})`;
+}
+
 function getSourceDisplay(source?: string) {
   if (source === 'booking') {
     return { label: 'Booking.com', badgeClass: 'bg-info' };
@@ -203,7 +207,7 @@ export default function Page() {
               <option value="">All Hotels</option>
               {hotels.map(h => (
                 <option key={h.id} value={h.id}>
-                  {h.name} ({h.id})
+                  {getHotelDisplay(h.name, h.id)}
                 </option>
               ))}
             </select>
@@ -296,7 +300,7 @@ export default function Page() {
                     return (
                       <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}`}>
                         <td>{result.scan_id}</td>
-                        <td>{result.hotel_name || `Hotel ${result.hotel_id}`}</td>
+                        <td>{result.hotel_name ? result.hotel_name : `Hotel ${result.hotel_id}`}</td>
                         <td>{result.check_in_date}</td>
                         <td>
                           <span className={`badge ${result.status === 'green' ? 'bg-success' : 'bg-danger'}`}>
