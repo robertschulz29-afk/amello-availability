@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
     // Build WHERE conditions dynamically
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: (number | string)[] = [];
     let paramCount = 0;
 
     if (scanID !== null) {

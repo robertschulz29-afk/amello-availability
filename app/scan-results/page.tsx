@@ -42,8 +42,8 @@ function fmtDateTime(dt: string) {
   try { return new Date(dt).toLocaleString(); } catch { return dt; }
 }
 
-function getHotelDisplay(name: string, id: number): string {
-  return `${name} (${id})`;
+function getHotelDisplay(name: string | null | undefined, id: number): string {
+  return name ? `${name} (${id})` : `Hotel ${id}`;
 }
 
 function getSourceDisplay(source?: string) {
