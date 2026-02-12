@@ -71,7 +71,7 @@ function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) 
       <div className="card-body text-center">
         <h5 className="card-title mb-2" style={{ color: textColor }}>Availability overview</h5>
         <h2 className="mb-0" style={{ fontSize: '2.5rem', fontWeight: 'bold', color: textColor }}>
-          {score.toFixed(1)}%
+          {typeof score === 'number' && isFinite(score) ? `${score.toFixed(1)}%` : '—'}
         </h2>
       </div>
     </div>
