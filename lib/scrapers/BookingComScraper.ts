@@ -92,6 +92,7 @@ export class BookingComScraper extends BaseScraper {
         status: 'error',
         errorMessage: error.message || 'Unknown error',
         scrapedData: { 
+          rooms: [],
           error: String(error),
           source: 'booking',
         },
@@ -198,7 +199,7 @@ export class BookingComScraper extends BaseScraper {
    * Process scraped Booking.com HTML and extract structured room/rate/price data
    * @param data - Extracted data using CSS selectors (not used for Booking.com)
    * @param html - Raw HTML from Booking.com
-   * @returns Scraping result with structured data
+   * @returns Scraping result with structured data (always includes normalized scrapedData)
    */
   protected processData(
     data: Record<string, string | null>,
@@ -212,6 +213,13 @@ export class BookingComScraper extends BaseScraper {
       console.log('[BookingComScraper] === DATA EXTRACTION COMPLETE ===');
       console.log('[BookingComScraper] Total rooms extracted:', bookingData.rooms.length);
       console.log('[BookingComScraper] Source field value:', bookingData.source);
+      
+      // Log warning if no rooms found
+      if (bookingData.rooms.length === 0) {
+        console.warn('[BookingComScraper] === NO ROOMS FOUND ===');
+        console.warn('[BookingComScraper] Parsed data contains zero rooms');
+        console.warn('[BookingComScraper] HTML length:', html.length, 'characters');
+      }
       
       // Log each room's data
       bookingData.rooms.forEach((room, idx) => {
@@ -231,9 +239,13 @@ export class BookingComScraper extends BaseScraper {
       
       console.log('[BookingComScraper] Data structure prepared for database insertion');
       
+      // Always return normalized structure with rooms array
       return {
         status,
-        scrapedData: bookingData,
+        scrapedData: {
+          rooms: bookingData.rooms || [],
+          source: 'booking',
+        },
       };
     } catch (error: any) {
       console.error('[BookingComScraper] === ERROR IN PROCESSING DATA ===');
@@ -242,10 +254,12 @@ export class BookingComScraper extends BaseScraper {
       console.error('[BookingComScraper] Error stack:', error.stack || 'No stack trace');
       console.error('[BookingComScraper] HTML length:', html.length);
       
+      // Return error status with normalized structure (empty rooms array)
       return {
         status: 'error',
         errorMessage: error.message || 'Failed to parse Booking.com data',
         scrapedData: { 
+          rooms: [],
           error: String(error),
           source: 'booking',
         },
