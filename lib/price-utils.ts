@@ -412,9 +412,39 @@ function extractPriceValue(obj: any, pricesInCents: boolean = false): number | n
 
 /**
  * Formats a price for display with currency symbol
+ * Accepts various input types and safely coerces them to numeric values
  */
-export function formatPrice(price: number | null, currency: string | null = null): string {
-  if (price === null || !isFinite(price)) {
+export function formatPrice(price: number | null | string | any, currency: string | null = null): string {
+  // Handle null/undefined
+  if (price === null || price === undefined) {
+    return '—';
+  }
+  
+  // Handle object types - try to extract price from common fields
+  if (typeof price === 'object') {
+    const possibleFields = ['price', 'amount', 'value', 'total', 'cost', 'rate', 'basePrice', 'netPrice', 'grossPrice'];
+    for (const field of possibleFields) {
+      if (price[field] != null) {
+        price = price[field];
+        break;
+      }
+    }
+  }
+  
+  // Handle string types - normalize and parse
+  if (typeof price === 'string') {
+    // Remove non-numeric characters except '.', ',', and '-'
+    const normalized = price.replace(/[^0-9.,-]/g, '').replace(',', '.');
+    const parsed = parseFloat(normalized);
+    if (!isFinite(parsed)) {
+      return '—';
+    }
+    price = parsed;
+  }
+  
+  // Coerce to number
+  const n = Number(price);
+  if (!isFinite(n)) {
     return '—';
   }
   
@@ -428,5 +458,5 @@ export function formatPrice(price: number | null, currency: string | null = null
   };
   
   const symbol = currency ? (currencySymbols[currency.toUpperCase()] || currency) : '€';
-  return `${symbol}${price.toFixed(2)}`;
+  return `${symbol}${n.toFixed(2)}`;
 }
