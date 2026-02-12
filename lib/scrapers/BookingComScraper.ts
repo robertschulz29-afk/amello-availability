@@ -46,6 +46,7 @@ export class BookingComScraper extends BaseScraper {
     console.log('[BookingComScraper] Check-out:', checkOutDate);
     console.log('[BookingComScraper] Adults:', adults, 'Children:', children);
     
+    let rawHtml = '';
     try {
       // Build the URL for the request
       const url = this.buildURL(request);
@@ -62,6 +63,7 @@ export class BookingComScraper extends BaseScraper {
       
       // Fetch HTML content
       const html = await this.fetchHTML(url);
+      rawHtml = html;
       console.log('[BookingComScraper] Response received - Status: 200 (OK)');
       console.log('[BookingComScraper] Response content length:', html.length, 'characters');
       console.log('[BookingComScraper] First 200 chars of HTML:', html.substring(0, 200).replace(/\s+/g, ' '));
@@ -85,11 +87,71 @@ export class BookingComScraper extends BaseScraper {
         children
       });
 
+      // If the error has a response body (HTTP error), use it
+      // Otherwise, rawHtml will contain any HTML fetched before the error (or empty string)
+      if (error.responseBody) {
+        rawHtml = error.responseBody;
+        console.log('[BookingComScraper] Captured HTML from error response, length:', rawHtml.length);
+      }
+
       return {
         status: 'error',
         errorMessage: error.message || 'Unknown error',
-        scrapedData: { error: String(error) },
+        scrapedData: { 
+          error: String(error),
+          rawHtml: rawHtml, // Include any HTML we managed to fetch (even from error response)
+        },
       };
+    }
+  }
+
+  /**
+   * Override fetchHTML to capture response body even on HTTP errors
+   * This allows us to store the HTML for offline analysis even when Booking.com returns error pages
+   */
+  protected async fetchHTML(url: string): Promise<string> {
+    // Wait for rate limiter
+    await this.rateLimiter.waitForNextRequest();
+
+    // Add random delay to mimic human behavior
+    const { randomSleep } = await import('./utils/delays');
+    await randomSleep(100, 500);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.options.timeout);
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      // Always get the response body, even on error status codes
+      const html = await response.text();
+
+      // Throw error for non-OK responses, but only after we've captured the HTML
+      if (!response.ok) {
+        const error: any = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        error.status = response.status;
+        error.responseBody = html; // Attach the HTML to the error
+        throw error;
+      }
+
+      return html;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      
+      // Handle abort errors
+      if (error.name === 'AbortError') {
+        const timeoutError: any = new Error('Request timeout');
+        timeoutError.code = 'ETIMEDOUT';
+        throw timeoutError;
+      }
+      
+      throw error;
     }
   }
 
