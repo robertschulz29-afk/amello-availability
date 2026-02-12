@@ -367,19 +367,25 @@ export async function POST(req: NextRequest) {
       try {
         // Use a timeout to prevent hanging (25s buffer for Vercel's 30s limit)
         const BOOKING_TIMEOUT_MS = 25_000;
-        const timeoutPromise = new Promise<void>((resolve) => 
-          setTimeout(() => {
+        let timeoutId: NodeJS.Timeout | null = null;
+        const timeoutPromise = new Promise<'timeout'>((resolve) => {
+          timeoutId = setTimeout(() => {
             console.warn('[process] Booking.com scans timed out after', BOOKING_TIMEOUT_MS, 'ms');
-            resolve();
-          }, BOOKING_TIMEOUT_MS)
-        );
+            resolve('timeout');
+          }, BOOKING_TIMEOUT_MS);
+        });
 
-        await Promise.race([
-          Promise.all(bookingPromises),
+        const result = await Promise.race([
+          Promise.allSettled(bookingPromises).then(() => 'completed' as const),
           timeoutPromise,
         ]);
         
-        console.log('[process] All Booking.com scans completed or timed out');
+        // Clear timeout if promises completed first
+        if (timeoutId && result === 'completed') {
+          clearTimeout(timeoutId);
+        }
+        
+        console.log('[process] All Booking.com scans', result === 'timeout' ? 'timed out' : 'completed');
       } catch (e) {
         console.error('[process] Error waiting for Booking.com scans:', e);
       }
