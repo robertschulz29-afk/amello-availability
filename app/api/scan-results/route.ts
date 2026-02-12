@@ -36,18 +36,20 @@ export async function GET(req: NextRequest) {
     }
 
     // Build and execute data query
+    // Note: We query both response_json and booking_com_data for backwards compatibility
+    // New data should be in response_json, but old Booking.com data may still be in booking_com_data
     let dataRows: any[] = [];
     if (scanID !== null && status !== null) {
-      const { rows } = await sql`SELECT scan_id, hotel_id, check_in_date, status, response_json, booking_com_data FROM scan_results WHERE scan_id = ${scanID} AND status = ${status} ORDER BY scan_id DESC LIMIT ${limit} OFFSET ${offset}`;
+      const { rows } = await sql`SELECT scan_id, hotel_id, check_in_date, status, response_json, source FROM scan_results WHERE scan_id = ${scanID} AND status = ${status} ORDER BY scan_id DESC LIMIT ${limit} OFFSET ${offset}`;
       dataRows = rows;
     } else if (scanID !== null) {
-      const { rows } = await sql`SELECT scan_id, hotel_id, check_in_date, status, response_json, booking_com_data FROM scan_results WHERE scan_id = ${scanID} ORDER BY scan_id DESC LIMIT ${limit} OFFSET ${offset}`;
+      const { rows } = await sql`SELECT scan_id, hotel_id, check_in_date, status, response_json, source FROM scan_results WHERE scan_id = ${scanID} ORDER BY scan_id DESC LIMIT ${limit} OFFSET ${offset}`;
       dataRows = rows;
     } else if (status !== null) {
-      const { rows } = await sql`SELECT scan_id, hotel_id, check_in_date, status, response_json, booking_com_data FROM scan_results WHERE status = ${status} ORDER BY scan_id DESC LIMIT ${limit} OFFSET ${offset}`;
+      const { rows } = await sql`SELECT scan_id, hotel_id, check_in_date, status, response_json, source FROM scan_results WHERE status = ${status} ORDER BY scan_id DESC LIMIT ${limit} OFFSET ${offset}`;
       dataRows = rows;
     } else {
-      const { rows } = await sql`SELECT scan_id, hotel_id, check_in_date, status, response_json, booking_com_data FROM scan_results ORDER BY scan_id DESC LIMIT ${limit} OFFSET ${offset}`;
+      const { rows } = await sql`SELECT scan_id, hotel_id, check_in_date, status, response_json, source FROM scan_results ORDER BY scan_id DESC LIMIT ${limit} OFFSET ${offset}`;
       dataRows = rows;
     }
 

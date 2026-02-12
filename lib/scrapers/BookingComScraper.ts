@@ -49,7 +49,6 @@ export class BookingComScraper extends BaseScraper {
     console.log('[BookingComScraper] Check-out:', checkOutDate);
     console.log('[BookingComScraper] Adults:', adults, 'Children:', children);
     
-    let rawHtml = '';
     try {
       // Build the URL for the request
       const url = this.buildURL(request);
@@ -66,7 +65,6 @@ export class BookingComScraper extends BaseScraper {
       
       // Fetch HTML content
       const html = await this.fetchHTML(url);
-      rawHtml = html;
       console.log('[BookingComScraper] Response received - Status: 200 (OK)');
       console.log('[BookingComScraper] Response content length:', html.length, 'characters');
       console.log('[BookingComScraper] First 200 chars of HTML:', html.substring(0, 200).replace(/\s+/g, ' '));
@@ -90,19 +88,12 @@ export class BookingComScraper extends BaseScraper {
         children
       });
 
-      // If the error has a response body (HTTP error), use it
-      // Otherwise, rawHtml will contain any HTML fetched before the error (or empty string)
-      if (error.responseBody) {
-        rawHtml = error.responseBody;
-        console.log('[BookingComScraper] Captured HTML from error response, length:', rawHtml.length);
-      }
-
       return {
         status: 'error',
         errorMessage: error.message || 'Unknown error',
         scrapedData: { 
           error: String(error),
-          rawHtml: rawHtml, // Include any HTML we managed to fetch (even from error response)
+          source: 'booking',
         },
       };
     }
@@ -160,25 +151,6 @@ export class BookingComScraper extends BaseScraper {
       return html;
     } catch (error: any) {
       console.error('[BookingComScraper] Puppeteer error:', error.message);
-      
-      // Try to get HTML even on error
-      let errorHtml = '';
-      if (page) {
-        try {
-          errorHtml = await page.content();
-          console.log('[BookingComScraper] Captured HTML from error page, length:', errorHtml.length);
-        } catch (contentError) {
-          console.error('[BookingComScraper] Failed to get content from error page:', contentError);
-        }
-      }
-
-      // Attach error HTML if available
-      if (errorHtml) {
-        const enrichedError: any = new Error(error.message || 'Puppeteer navigation failed');
-        enrichedError.responseBody = errorHtml;
-        throw enrichedError;
-      }
-      
       throw error;
     } finally {
       // Always close the page to free resources
@@ -257,17 +229,11 @@ export class BookingComScraper extends BaseScraper {
       
       console.log('[BookingComScraper] Final status:', status);
       
-      // Store full HTML in scraped data along with parsed structure
-      const scrapedData = {
-        ...bookingData,
-        rawHtml: html, // Store full HTML response
-      };
-      
       console.log('[BookingComScraper] Data structure prepared for database insertion');
       
       return {
         status,
-        scrapedData,
+        scrapedData: bookingData,
       };
     } catch (error: any) {
       console.error('[BookingComScraper] === ERROR IN PROCESSING DATA ===');
@@ -281,7 +247,7 @@ export class BookingComScraper extends BaseScraper {
         errorMessage: error.message || 'Failed to parse Booking.com data',
         scrapedData: { 
           error: String(error),
-          rawHtml: html,
+          source: 'booking',
         },
       };
     }
