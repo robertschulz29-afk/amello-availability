@@ -1,8 +1,10 @@
 # PR #77 Rebase Summary
 
-## Status: ✅ REBASE COMPLETED - READY FOR MANUAL PUSH
+## Status: ✅ REBASE COMPLETED - MANUAL UPDATE TO PR #77 BRANCH REQUIRED
 
-The rebase/merge of PR #77 onto the latest main branch has been successfully completed. All conflicts have been resolved and tests are passing. Due to environment constraints (no direct git push access), a **manual force-push is required** to update the remote PR #77 branch.
+The rebase/merge of PR #77 onto the latest main branch has been successfully completed. All conflicts have been resolved and tests are passing. The rebased changes have been pushed to the task branch `copilot/update-pr-77-rebase-main`. 
+
+**A manual update is required to apply these changes to the actual PR #77 branch (`copilot/fix-missing-results-multi-day-scans`).**
 
 ## What Was Done
 
@@ -53,16 +55,25 @@ These sit on top of main's merge commits for PR #76, PR #78, etc.
 
 ## Manual Action Required
 
-To complete the update of PR #77, execute the following command:
+The rebased code is currently on branch `copilot/update-pr-77-rebase-main` (commit: dd52770). To update the actual PR #77 branch, execute:
 
+### Option 1: Reset PR #77 branch to the rebased commit
 ```bash
+git fetch origin copilot/update-pr-77-rebase-main
+git checkout copilot/fix-missing-results-multi-day-scans
+git reset --hard origin/copilot/update-pr-77-rebase-main  
 git push --force-with-lease origin copilot/fix-missing-results-multi-day-scans
 ```
 
-**Alternative (if force-with-lease fails due to remote changes):**
+### Option 2: Cherry-pick the rebased commit onto PR #77
 ```bash
-git push --force origin copilot/fix-missing-results-multi-day-scans
+git fetch origin copilot/update-pr-77-rebase-main
+git checkout copilot/fix-missing-results-multi-day-scans
+git cherry-pick dd52770  # The rebased commit
+git push origin copilot/fix-missing-results-multi-day-scans
 ```
+
+**Recommended:** Option 1 (reset) provides the cleanest history.
 
 This will update the remote `copilot/fix-missing-results-multi-day-scans` branch, which will automatically update PR #77.
 
@@ -76,8 +87,17 @@ After pushing, verify:
 
 ## Technical Details
 
-### Why Manual Push is Needed
-The automated `report_progress` tool attempts to rebase local commits onto the remote branch before pushing. Since we have a merge commit and the history has diverged from the remote, this automatic rebase fails with conflicts. The solution is a force-push, which requires manual execution.
+### Current State
+The rebased and conflict-resolved code is available in:
+- **Branch:** `copilot/update-pr-77-rebase-main` 
+- **Commit:** `dd52770` - "Merge PR #77 changes with main - all conflicts resolved"
+- **Tests:** ✅ All 11 tests passing
+- **Status:** Pushed to GitHub on the task branch
+
+This commit contains the complete PR #77 functionality merged with main (including PR #76 and PR #78), with all conflicts intelligently resolved.
+
+### Why Manual Update is Needed
+The automated `report_progress` tool successfully pushed the rebased changes to the task branch (`copilot/update-pr-77-rebase-main`). However, the actual PR #77 points to a different branch (`copilot/fix-missing-results-multi-day-scans`). To update PR #77, the rebased commit needs to be applied to that branch, which requires manual execution of the git commands provided above.
 
 ### Conflict Resolution Rationale
 
