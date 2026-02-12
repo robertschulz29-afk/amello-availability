@@ -6,6 +6,7 @@ import { parseHTML } from './utils/html-parser';
 import type { ScrapeRequest, ScrapeResult } from './types';
 import { getBrowserManager } from './utils/browser-manager';
 import { getRandomUserAgent } from './utils/user-agents';
+import type { Page } from 'puppeteer';
 
 export interface BookingComRoom {
   name: string;
@@ -120,7 +121,7 @@ export class BookingComScraper extends BaseScraper {
     await randomSleep(100, 500);
 
     const browserManager = getBrowserManager();
-    let page = null;
+    let page: Page | null = null;
 
     try {
       console.log('[BookingComScraper] Creating browser page...');
