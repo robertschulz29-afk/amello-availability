@@ -6,7 +6,7 @@ import { parseHTML } from './utils/html-parser';
 import type { ScrapeRequest, ScrapeResult } from './types';
 import { getBrowserManager } from './utils/browser-manager';
 import { getRandomUserAgent } from './utils/user-agents';
-import type { Page } from 'puppeteer';
+import type { Page } from 'puppeteer-core';
 
 export interface BookingComRoom {
   name: string;

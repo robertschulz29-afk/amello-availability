@@ -1,7 +1,8 @@
 // lib/scrapers/utils/browser-manager.ts
 // Puppeteer browser instance manager for scraping
 
-import puppeteer, { Browser, Page } from 'puppeteer';
+import puppeteer, { Browser, Page } from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 
 /**
  * Simple browser manager for Puppeteer
@@ -42,16 +43,11 @@ export class BrowserManager {
   private async launchBrowser(): Promise<Browser> {
     console.log('[BrowserManager] Launching Puppeteer browser...');
     
+    const executablePath = await chromium.executablePath();
     const browser = await puppeteer.launch({
+      args: chromium.args,
+      executablePath: executablePath,
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--window-size=1920,1080',
-      ],
     });
 
     console.log('[BrowserManager] Browser launched successfully');
