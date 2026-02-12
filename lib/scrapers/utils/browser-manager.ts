@@ -43,7 +43,22 @@ export class BrowserManager {
   private async launchBrowser(): Promise<Browser> {
     console.log('[BrowserManager] Launching Puppeteer browser...');
     
-    const executablePath = await chromium.executablePath();
+    // Detect if we're running in a serverless environment (Vercel/Lambda)
+    const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+    
+    console.log('[BrowserManager] Environment:', isServerless ? 'Serverless (Vercel/Lambda)' : 'Local/Standard');
+    
+    // Get the executable path - for serverless, use without arguments
+    // This allows @sparticuz/chromium to use its internal binaries correctly
+    let executablePath: string;
+    try {
+      executablePath = await chromium.executablePath();
+      console.log('[BrowserManager] Chromium executable path:', executablePath);
+    } catch (error: any) {
+      console.error('[BrowserManager] Failed to get chromium executable path:', error.message);
+      throw new Error(`Failed to locate Chromium binary: ${error.message}`);
+    }
+
     const browser = await puppeteer.launch({
       args: chromium.args,
       executablePath: executablePath,
