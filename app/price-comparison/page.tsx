@@ -60,8 +60,8 @@ function addDays(ymd: string, n: number): string {
   dt.setUTCDate(dt.getUTCDate() + n);
   const yy = dt.getUTCFullYear();
   const mm = String(dt.getUTCMonth()+1).padStart(2,'0');
-  const dd2 = String(dt.getUTCDate()).padStart(2,'0');
-  return `${yy}-${mm}-${dd2}`;
+  const dd = String(dt.getUTCDate()).padStart(2,'0');
+  return `${yy}-${mm}-${dd}`;
 }
 
 function todayYMD(): string {
@@ -218,7 +218,7 @@ export default function Page() {
 
   // Calculate price difference
   const calculateDifference = (amelloPrice: number | null, bookingPrice: number | null) => {
-    if (amelloPrice == null || bookingPrice == null) return null;
+    if (amelloPrice == null || bookingPrice == null || bookingPrice === 0) return null;
     const diff = amelloPrice - bookingPrice;
     const pct = (diff / bookingPrice) * 100;
     return { diff, pct };
