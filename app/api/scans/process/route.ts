@@ -165,6 +165,9 @@ export async function POST(req: NextRequest) {
     let bookingFailures = 0;
     let stopEarly = false;
 
+    // Collect Booking.com scan promises to await before returning response
+    const bookingPromises: Promise<void>[] = [];
+
     // Initialize Booking.com scraper if needed (lazy initialization)
     let bookingScraper: BookingComScraper | null = null;
     const BOOKING_INTERNAL_SOURCE_ID = -1; // Negative ID to avoid conflicts with real DB records
@@ -261,8 +264,8 @@ export async function POST(req: NextRequest) {
         // ============ Booking.com Parallel Scan (NEW) ============
         // Only scan if hotel has booking_url defined
         if (cell.bookingUrl && cell.bookingUrl.trim()) {
-          // Run Booking.com scan in parallel (don't await, fire and forget with error handling)
-          (async () => {
+          // Run Booking.com scan in parallel - collect promise to await later
+          const bookingPromise = (async () => {
             try {
               console.log('[process] === BOOKING.COM SCAN STARTED ===');
               console.log('[process] Hotel ID:', cell.hotelId);
@@ -350,12 +353,43 @@ export async function POST(req: NextRequest) {
                 console.error('[process] DB Error stack:', dbError.stack || 'No stack trace');
               }
             }
-          })(); // Fire and forget - don't block TUIAmello scan
+          })();
+          bookingPromises.push(bookingPromise);
         }
       }
     }
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+
+    // Wait for all Booking.com scans to complete before returning response
+    // This ensures database writes finish before serverless function terminates
+    if (bookingPromises.length > 0) {
+      try {
+        // Use a timeout to prevent hanging (25s buffer for Vercel's 30s limit)
+        const BOOKING_TIMEOUT_MS = 25_000;
+        let timeoutId: NodeJS.Timeout | null = null;
+        const timeoutPromise = new Promise<'timeout'>((resolve) => {
+          timeoutId = setTimeout(() => {
+            console.warn('[process] Booking.com scans timed out after', BOOKING_TIMEOUT_MS, 'ms');
+            resolve('timeout');
+          }, BOOKING_TIMEOUT_MS);
+        });
+
+        const result = await Promise.race([
+          Promise.allSettled(bookingPromises).then(() => 'completed' as const),
+          timeoutPromise,
+        ]);
+        
+        // Clear timeout if promises completed first
+        if (timeoutId && result === 'completed') {
+          clearTimeout(timeoutId);
+        }
+        
+        console.log('[process] All Booking.com scans', result === 'timeout' ? 'timed out' : 'completed');
+      } catch (e) {
+        console.error('[process] Error waiting for Booking.com scans:', e);
+      }
+    }
 
     if (processed > 0) {
       await sql`UPDATE scans SET done_cells = LEAST(done_cells + ${processed}, ${total}) WHERE id = ${scanId}`;
