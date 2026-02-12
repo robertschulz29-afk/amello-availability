@@ -305,10 +305,14 @@ export async function POST(req: NextRequest) {
                 }
 
                 // Normalize booking status to valid values only
-                let bookingStatus: 'green' | 'red' | 'error' = 'red';
-                if (bookingResult.status === 'green' || bookingResult.status === 'red' || bookingResult.status === 'error') {
-                  bookingStatus = bookingResult.status;
-                } else {
+                const validStatuses = new Set(['green', 'red', 'error']);
+                const bookingStatus: 'green' | 'red' | 'error' = 
+                  validStatuses.has(bookingResult.status as any) && 
+                  (bookingResult.status === 'green' || bookingResult.status === 'red' || bookingResult.status === 'error')
+                    ? bookingResult.status
+                    : 'red';
+                
+                if (!validStatuses.has(bookingResult.status as any)) {
                   console.warn('[process] Invalid booking status received:', bookingResult.status, '- defaulting to "red"');
                 }
 
