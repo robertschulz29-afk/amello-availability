@@ -264,6 +264,12 @@ export async function POST(req: NextRequest) {
           // Run Booking.com scan in parallel (don't await, fire and forget with error handling)
           (async () => {
             try {
+              console.log('[process] === BOOKING.COM SCAN STARTED ===');
+              console.log('[process] Hotel ID:', cell.hotelId);
+              console.log('[process] Booking URL:', cell.bookingUrl);
+              console.log('[process] Check-in:', cell.checkIn);
+              console.log('[process] Check-out:', cell.checkOut);
+              
               const scraper = initBookingScraper();
               const bookingResult = await scraper.scrape({
                 hotelCode: cell.bookingUrl!, // Non-null assertion - we already checked it's not null above
@@ -273,9 +279,21 @@ export async function POST(req: NextRequest) {
                 children: 0,
               });
 
+              console.log('[process] === BOOKING.COM SCAN COMPLETE ===');
+              console.log('[process] Result status:', bookingResult.status);
+              console.log('[process] Has scraped data:', !!bookingResult.scrapedData);
+
               // Store Booking.com result
               const bookingStatus = bookingResult.status;
               const bookingData = bookingResult.scrapedData || {};
+
+              console.log('[process] === DATABASE WRITE PHASE ===');
+              console.log('[process] Scan ID:', scanId);
+              console.log('[process] Hotel ID:', cell.hotelId);
+              console.log('[process] Check-in date:', cell.checkIn);
+              console.log('[process] Status:', bookingStatus);
+              console.log('[process] Source field:', 'booking');
+              console.log('[process] Data structure (truncated):', JSON.stringify(bookingData).substring(0, 100) + '...');
 
               await sql`
                 INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, booking_com_data, source)
@@ -283,16 +301,34 @@ export async function POST(req: NextRequest) {
                 ON CONFLICT (scan_id, hotel_id, source, check_in_date)
                 DO UPDATE SET status = EXCLUDED.status, booking_com_data = EXCLUDED.booking_com_data
               `;
+              
+              console.log('[process] ✓ Database write successful for Booking.com');
               bookingProcessed++;
             } catch (e: any) {
               bookingFailures++;
-              console.error('[process] Booking.com scan error (non-blocking):', e.message, {
+              console.error('[process] === BOOKING.COM SCAN ERROR (NON-BLOCKING) ===');
+              console.error('[process] Error type:', e.name || 'Unknown');
+              console.error('[process] Error message:', e.message || 'No message');
+              console.error('[process] Error stack:', e.stack || 'No stack trace');
+              console.error('[process] Context:', {
                 hotelId: cell.hotelId,
                 checkIn: cell.checkIn,
+                checkOut: cell.checkOut,
                 bookingUrl: cell.bookingUrl,
+                scanId: scanId,
               });
+              
               // Store error result for Booking.com
               try {
+                console.log('[process] === STORING ERROR RESULT IN DATABASE ===');
+                const errorData = JSON.stringify({ 
+                  error: e.message || String(e), 
+                  source: 'booking',
+                  errorType: e.name || 'Unknown',
+                  stack: e.stack || 'No stack trace',
+                });
+                console.log('[process] Error data structure:', errorData);
+                
                 await sql`
                   INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, booking_com_data, source)
                   VALUES (
@@ -300,14 +336,18 @@ export async function POST(req: NextRequest) {
                     ${cell.hotelId}, 
                     ${cell.checkIn}, 
                     'error',
-                    ${JSON.stringify({ error: e.message || String(e), source: 'booking' })},
+                    ${errorData},
                     'booking'
                   )
                   ON CONFLICT (scan_id, hotel_id, source, check_in_date)
                   DO UPDATE SET status = EXCLUDED.status, booking_com_data = EXCLUDED.booking_com_data
                 `;
-              } catch (dbError) {
-                console.error('[process] Failed to store Booking.com error:', dbError);
+                console.log('[process] ✓ Error result stored successfully');
+              } catch (dbError: any) {
+                console.error('[process] === DATABASE ERROR WRITE FAILED ===');
+                console.error('[process] DB Error type:', dbError.name || 'Unknown');
+                console.error('[process] DB Error message:', dbError.message || 'No message');
+                console.error('[process] DB Error stack:', dbError.stack || 'No stack trace');
               }
             }
           })(); // Fire and forget - don't block TUIAmello scan
