@@ -5,6 +5,9 @@
     "start": "next start",
     "lint": "next lint"
   },
+  "engines": {
+    "node": ">=20.11.0"
+  },
   "dependencies": {
     "@sparticuz/chromium": "^143.0.4",
     "cheerio": "^1.0.0-rc.12",
