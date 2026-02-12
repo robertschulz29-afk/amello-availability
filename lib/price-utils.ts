@@ -356,13 +356,81 @@ function extractCurrency(obj: any): string | null {
 
 /**
  * Extracts a numeric price value from various possible price fields
- * Automatically converts prices from cents to decimal (divides by 100)
- * when pricesInCents flag is true
+ * 
+ * For Amello offers (pricesInCents=true):
+ * - Prefers inMinorUnits field (string or number in cents)
+ * - Divides by 100 to convert cents to decimal
+ * - Multiplies by days/nights if present and no explicit total exists
+ * - Falls back to existing price field extraction if inMinorUnits fails
+ * 
+ * For Booking.com (pricesInCents=false):
+ * - Uses existing price fields as-is without conversion
+ * - Does NOT divide by 100
  */
-function extractPriceValue(obj: any, pricesInCents: boolean = false): number | null {
+export function extractPriceValue(obj: any, pricesInCents: boolean = false): number | null {
   if (!obj || typeof obj !== 'object') return null;
 
-  // Try various common field names for price
+  // For Amello offers: prefer inMinorUnits field when pricesInCents=true
+  if (pricesInCents && obj.inMinorUnits != null) {
+    const inMinorUnits = obj.inMinorUnits;
+    let minorUnitsValue: number | null = null;
+
+    // Parse inMinorUnits (can be string or number)
+    if (typeof inMinorUnits === 'number' && isFinite(inMinorUnits) && inMinorUnits >= 0) {
+      minorUnitsValue = inMinorUnits;
+    } else if (typeof inMinorUnits === 'string') {
+      // Strip non-digits from string to handle cases like "$12345"
+      const digitsOnly = inMinorUnits.replace(/\D/g, '');
+      if (digitsOnly.length > 0) {
+        const parsed = parseInt(digitsOnly, 10);
+        if (isFinite(parsed) && parsed >= 0) {
+          minorUnitsValue = parsed;
+        }
+      }
+    }
+
+    // If we successfully parsed inMinorUnits, convert from cents to decimal
+    if (minorUnitsValue !== null) {
+      // Divide by 100 to convert cents to decimal (per-day price)
+      const perDayPrice = minorUnitsValue / 100;
+
+      // Check if there's an explicit total field - if so, prefer that over calculation
+      // Note: Explicit totals in Amello are assumed to be already in final decimal format
+      const explicitTotalFields = ['totalPrice', 'total', 'amount'];
+      for (const field of explicitTotalFields) {
+        if (obj[field] !== undefined && obj[field] !== null) {
+          const value = obj[field];
+          if (typeof value === 'number' && isFinite(value) && value >= 0) {
+            // Return the explicit total as-is (already in decimal format)
+            return value;
+          }
+        }
+      }
+
+      // No explicit total, check for days/nights fields to compute total
+      const daysFields = ['nights', 'numberOfNights', 'days', 'numberOfDays', 'lengthOfStay', 'durationDays'];
+      for (const field of daysFields) {
+        if (obj[field] !== undefined && obj[field] !== null) {
+          const daysValue = obj[field];
+          if (typeof daysValue === 'number' && isFinite(daysValue) && daysValue > 0) {
+            // Multiply per-day price by number of days
+            return perDayPrice * daysValue;
+          } else if (typeof daysValue === 'string') {
+            const parsed = parseInt(daysValue, 10);
+            if (isFinite(parsed) && parsed > 0) {
+              return perDayPrice * parsed;
+            }
+          }
+        }
+      }
+
+      // No days field found, return per-day price (assume single night)
+      return perDayPrice;
+    }
+    // If inMinorUnits parsing failed, fall through to existing logic
+  }
+
+  // Existing logic for other price fields (Booking.com or fallback for Amello)
   const possiblePriceFields = [
     'price',
     'totalPrice',
@@ -381,7 +449,8 @@ function extractPriceValue(obj: any, pricesInCents: boolean = false): number | n
     
     // Direct numeric value
     if (typeof value === 'number' && isFinite(value) && value >= 0) {
-      // Convert from cents to decimal if explicitly indicated
+      // For Booking.com (pricesInCents=false), return as-is
+      // For Amello fallback (pricesInCents=true), divide by 100
       return pricesInCents ? value / 100 : value;
     }
 
@@ -392,7 +461,8 @@ function extractPriceValue(obj: any, pricesInCents: boolean = false): number | n
       if (match) {
         const parsed = parseFloat(match[0]);
         if (isFinite(parsed) && parsed >= 0) {
-          // Convert from cents to decimal if explicitly indicated
+          // For Booking.com (pricesInCents=false), return as-is
+          // For Amello fallback (pricesInCents=true), divide by 100
           return pricesInCents ? parsed / 100 : parsed;
         }
       }
