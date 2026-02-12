@@ -45,6 +45,12 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
               Scan Results
             </Link>
             <Link 
+              href="/price-comparison" 
+              style={getNavLinkStyle(pathname === '/price-comparison', isDark)}
+            >
+              Price Comparison
+            </Link>
+            <Link 
               href="/hotels" 
               style={getNavLinkStyle(pathname === '/hotels', isDark)}
             >
