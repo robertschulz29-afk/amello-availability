@@ -173,6 +173,12 @@ export async function POST(req: NextRequest) {
     // Initialize Booking.com scraper if needed (lazy initialization)
     let bookingScraper: BookingComScraper | null = null;
     const BOOKING_INTERNAL_SOURCE_ID = -1; // Negative ID to avoid conflicts with real DB records
+    
+    // Type guard for checking if scrapedData has rooms property
+    const hasRoomsProperty = (data: any): data is { rooms: Array<any> } => {
+      return data && typeof data === 'object' && Array.isArray(data.rooms);
+    };
+    
     const initBookingScraper = () => {
       if (!bookingScraper) {
         // Create a minimal ScanSource config for Booking.com
@@ -308,23 +314,29 @@ export async function POST(req: NextRequest) {
                     status: bookingResult.status
                   });
                 } else if (bookingResult.status !== 'green' && bookingResult.status !== 'red') {
+                  const roomCount = hasRoomsProperty(bookingResult.scrapedData) 
+                    ? bookingResult.scrapedData.rooms.length 
+                    : 0;
                   console.warn('[process] BOOKING WARNING: Unexpected status', {
                     hotelId: cell.hotelId,
                     checkIn: cell.checkIn,
                     checkOut: cell.checkOut,
                     bookingUrl: cell.bookingUrl,
                     status: bookingResult.status,
-                    scrapedDataCount: (bookingResult.scrapedData as any)?.rooms?.length ?? 0
+                    scrapedDataCount: roomCount
                   });
                 }
 
                 // Log booking result details for debugging
+                const roomCount = hasRoomsProperty(bookingResult.scrapedData) 
+                  ? bookingResult.scrapedData.rooms.length 
+                  : 0;
                 console.log('[process] BOOKING RESULT', {
                   hotelId: cell.hotelId,
                   checkIn: cell.checkIn,
                   checkOut: cell.checkOut,
                   status: bookingResult.status,
-                  scrapedDataCount: (bookingResult.scrapedData as any)?.rooms?.length ?? 0,
+                  scrapedDataCount: roomCount,
                   bookingUrl: cell.bookingUrl
                 });
 

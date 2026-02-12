@@ -245,7 +245,12 @@ export class BookingComScraper extends BaseScraper {
         console.warn('[BookingComScraper]   1. No availability for the requested dates');
         console.warn('[BookingComScraper]   2. HTML structure changed (parsing may need update)');
         console.warn('[BookingComScraper]   3. Bot detection or rate limiting');
-        console.warn('[BookingComScraper] HTML sample (first 500 chars):', html.substring(0, 500).replace(/\s+/g, ' '));
+        console.warn('[BookingComScraper] HTML metadata:', {
+          length: html.length,
+          hasAvailableRoomsDiv: html.includes('id="available_rooms"'),
+          hasRoomTypeLinks: html.includes('hprt-roomtype-link'),
+          hasPriceDisplay: html.includes('bui-price-display__value')
+        });
       }
       
       console.log('[BookingComScraper] Final status:', status);
