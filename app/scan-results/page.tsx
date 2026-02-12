@@ -42,6 +42,16 @@ function fmtDateTime(dt: string) {
   try { return new Date(dt).toLocaleString(); } catch { return dt; }
 }
 
+function getSourceDisplay(source?: string) {
+  if (source === 'booking') {
+    return { label: 'Booking.com', badgeClass: 'bg-info' };
+  } else if (source === 'amello') {
+    return { label: 'Amello', badgeClass: 'bg-secondary' };
+  } else {
+    return { label: source || '—', badgeClass: 'bg-secondary' };
+  }
+}
+
 export default function Page() {
   // Scans list for the dropdown
   const [scans, setScans] = React.useState<ScanRow[]>([]);
@@ -281,6 +291,7 @@ export default function Page() {
                   {results.map(result => {
                     // Extract price info directly without using hooks
                     const priceInfo = extractPriceInfo(result);
+                    const sourceDisplay = getSourceDisplay(result.source);
                     
                     return (
                       <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}`}>
@@ -293,8 +304,8 @@ export default function Page() {
                           </span>
                         </td>
                         <td>
-                          <span className={`badge ${result.source === 'booking' ? 'bg-info' : 'bg-secondary'}`}>
-                            {result.source === 'booking' ? 'Booking.com' : result.source === 'amello' ? 'Amello' : result.source || '—'}
+                          <span className={`badge ${sourceDisplay.badgeClass}`}>
+                            {sourceDisplay.label}
                           </span>
                         </td>
                         <td>{priceInfo.roomName ?? '—'}</td>
