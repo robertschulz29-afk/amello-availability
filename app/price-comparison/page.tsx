@@ -72,6 +72,12 @@ function todayYMD(): string {
   return `${y}-${m}-${dd}`;
 }
 
+function getHotelDisplay(name: string | null | undefined, code: string | null | undefined): string {
+  if (name && code) return `${name} (${code})`;
+  if (name) return name;
+  return code || 'Unknown';
+}
+
 export default function Page() {
   // Scans list for the dropdown
   const [scans, setScans] = React.useState<ScanRow[]>([]);
@@ -218,7 +224,13 @@ export default function Page() {
 
   // Calculate price difference
   const calculateDifference = (amelloPrice: number | null, bookingPrice: number | null) => {
-    if (amelloPrice == null || bookingPrice == null || bookingPrice === 0) return null;
+    if (amelloPrice == null || bookingPrice == null) return null;
+    // Allow zero as valid price, but return null if both are zero (no meaningful difference)
+    if (bookingPrice === 0 && amelloPrice === 0) return null;
+    // If booking price is zero but amello is not, show the full difference
+    if (bookingPrice === 0) {
+      return { diff: amelloPrice, pct: 0 };
+    }
     const diff = amelloPrice - bookingPrice;
     const pct = (diff / bookingPrice) * 100;
     return { diff, pct };
@@ -281,7 +293,7 @@ export default function Page() {
               <option value="">All Hotels</option>
               {filteredHotels.map(h => (
                 <option key={h.id} value={h.id}>
-                  {h.name} ({h.code})
+                  {getHotelDisplay(h.name, h.code)}
                 </option>
               ))}
             </select>
