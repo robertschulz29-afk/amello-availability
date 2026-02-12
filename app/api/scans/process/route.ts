@@ -167,6 +167,8 @@ export async function POST(req: NextRequest) {
 
     // Collect Booking.com scan promises to await before returning response
     const bookingPromises: Promise<void>[] = [];
+    // Track metadata for each booking promise for timeout logging
+    const bookingPromisesMeta: Array<{ hotelId: number; checkIn: string; checkOut: string }> = [];
 
     // Initialize Booking.com scraper if needed (lazy initialization)
     let bookingScraper: BookingComScraper | null = null;
@@ -264,97 +266,140 @@ export async function POST(req: NextRequest) {
         // ============ Booking.com Parallel Scan (NEW) ============
         // Only scan if hotel has booking_url defined
         if (cell.bookingUrl && cell.bookingUrl.trim()) {
-          // Run Booking.com scan in parallel - collect promise to await later
-          const bookingPromise = (async () => {
-            try {
-              console.log('[process] === BOOKING.COM SCAN STARTED ===');
-              console.log('[process] Hotel ID:', cell.hotelId);
-              console.log('[process] Booking URL:', cell.bookingUrl);
-              console.log('[process] Check-in:', cell.checkIn);
-              console.log('[process] Check-out:', cell.checkOut);
-              
-              const scraper = initBookingScraper();
-              const bookingResult = await scraper.scrape({
-                hotelCode: cell.bookingUrl!, // Non-null assertion - we already checked it's not null above
-                checkInDate: cell.checkIn,
-                checkOutDate: cell.checkOut,
-                adults: 2,
-                children: 0,
-              });
-
-              console.log('[process] === BOOKING.COM SCAN COMPLETE ===');
-              console.log('[process] Result status:', bookingResult.status);
-              console.log('[process] Has scraped data:', !!bookingResult.scrapedData);
-
-              // Store Booking.com result
-              const bookingStatus = bookingResult.status;
-              const bookingData = bookingResult.scrapedData || {};
-
-              console.log('[process] === DATABASE WRITE PHASE ===');
-              console.log('[process] Scan ID:', scanId);
-              console.log('[process] Hotel ID:', cell.hotelId);
-              console.log('[process] Check-in date:', cell.checkIn);
-              console.log('[process] Status:', bookingStatus);
-              console.log('[process] Source field:', 'booking');
-              console.log('[process] Data structure (truncated):', JSON.stringify(bookingData).substring(0, 100) + '...');
-
-              await sql`
-                INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json, source)
-                VALUES (${scanId}, ${cell.hotelId}, ${cell.checkIn}, ${bookingStatus}, ${bookingData}, 'booking')
-                ON CONFLICT (scan_id, hotel_id, source, check_in_date)
-                DO UPDATE SET status = EXCLUDED.status, response_json = EXCLUDED.response_json
-              `;
-              
-              console.log('[process] ✓ Database write successful for Booking.com');
-              bookingProcessed++;
-            } catch (e: any) {
-              bookingFailures++;
-              console.error('[process] === BOOKING.COM SCAN ERROR (NON-BLOCKING) ===');
-              console.error('[process] Error type:', e.name || 'Unknown');
-              console.error('[process] Error message:', e.message || 'No message');
-              console.error('[process] Error stack:', e.stack || 'No stack trace');
-              console.error('[process] Context:', {
-                hotelId: cell.hotelId,
-                checkIn: cell.checkIn,
-                checkOut: cell.checkOut,
-                bookingUrl: cell.bookingUrl,
-                scanId: scanId,
-              });
-              
-              // Store error result for Booking.com
+          // Validate checkout > checkin
+          if (cell.checkOut <= cell.checkIn) {
+            console.warn('[process] BOOKING SCAN SKIPPED: Invalid date range', {
+              hotelId: cell.hotelId,
+              checkIn: cell.checkIn,
+              checkOut: cell.checkOut,
+              reason: 'checkOut must be after checkIn'
+            });
+          } else {
+            // Run Booking.com scan in parallel - collect promise to await later
+            // CRITICAL: Push promise IMMEDIATELY to bookingPromises array to ensure it's tracked
+            const bookingPromise = (async () => {
               try {
-                console.log('[process] === STORING ERROR RESULT IN DATABASE ===');
-                const errorData = JSON.stringify({ 
-                  error: e.message || String(e), 
-                  source: 'booking',
-                  errorType: e.name || 'Unknown',
-                  stack: e.stack || 'No stack trace',
-                });
-                console.log('[process] Error data structure:', errorData);
+                console.log('[process] === BOOKING.COM SCAN STARTED ===');
+                console.log('[process] Hotel ID:', cell.hotelId);
+                console.log('[process] Booking URL:', cell.bookingUrl);
+                console.log('[process] Check-in:', cell.checkIn);
+                console.log('[process] Check-out:', cell.checkOut);
                 
+                const scraper = initBookingScraper();
+                const bookingResult = await scraper.scrape({
+                  hotelCode: cell.bookingUrl!, // Non-null assertion - we already checked it's not null above
+                  checkInDate: cell.checkIn,
+                  checkOutDate: cell.checkOut,
+                  adults: 2,
+                  children: 0,
+                });
+
+                console.log('[process] === BOOKING.COM SCAN COMPLETE ===');
+                console.log('[process] Result status:', bookingResult.status);
+                console.log('[process] Has scraped data:', !!bookingResult.scrapedData);
+
+                // Add defensive logging when scrape returns unexpected data
+                if (!bookingResult.scrapedData) {
+                  console.warn('[process] BOOKING WARNING: No scrapedData returned', {
+                    hotelId: cell.hotelId,
+                    checkIn: cell.checkIn,
+                    checkOut: cell.checkOut,
+                    bookingUrl: cell.bookingUrl,
+                    status: bookingResult.status
+                  });
+                } else if (bookingResult.status !== 'green' && bookingResult.status !== 'red') {
+                  console.warn('[process] BOOKING WARNING: Unexpected status', {
+                    hotelId: cell.hotelId,
+                    checkIn: cell.checkIn,
+                    checkOut: cell.checkOut,
+                    bookingUrl: cell.bookingUrl,
+                    status: bookingResult.status,
+                    scrapedDataCount: (bookingResult.scrapedData as any)?.rooms?.length ?? 0
+                  });
+                }
+
+                // Log booking result details for debugging
+                console.log('[process] BOOKING RESULT', {
+                  hotelId: cell.hotelId,
+                  checkIn: cell.checkIn,
+                  checkOut: cell.checkOut,
+                  status: bookingResult.status,
+                  scrapedDataCount: (bookingResult.scrapedData as any)?.rooms?.length ?? 0,
+                  bookingUrl: cell.bookingUrl
+                });
+
+                // Store Booking.com result
+                const bookingStatus = bookingResult.status;
+                const bookingData = bookingResult.scrapedData || {};
+
+                console.log('[process] === DATABASE WRITE PHASE ===');
+                console.log('[process] Scan ID:', scanId);
+                console.log('[process] Hotel ID:', cell.hotelId);
+                console.log('[process] Check-in date:', cell.checkIn);
+                console.log('[process] Status:', bookingStatus);
+                console.log('[process] Source field:', 'booking');
+                console.log('[process] Data structure (truncated):', JSON.stringify(bookingData).substring(0, 100) + '...');
+
                 await sql`
                   INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json, source)
-                  VALUES (
-                    ${scanId}, 
-                    ${cell.hotelId}, 
-                    ${cell.checkIn}, 
-                    'error',
-                    ${errorData},
-                    'booking'
-                  )
+                  VALUES (${scanId}, ${cell.hotelId}, ${cell.checkIn}, ${bookingStatus}, ${bookingData}, 'booking')
                   ON CONFLICT (scan_id, hotel_id, source, check_in_date)
                   DO UPDATE SET status = EXCLUDED.status, response_json = EXCLUDED.response_json
                 `;
-                console.log('[process] ✓ Error result stored successfully');
-              } catch (dbError: any) {
-                console.error('[process] === DATABASE ERROR WRITE FAILED ===');
-                console.error('[process] DB Error type:', dbError.name || 'Unknown');
-                console.error('[process] DB Error message:', dbError.message || 'No message');
-                console.error('[process] DB Error stack:', dbError.stack || 'No stack trace');
+                
+                console.log('[process] ✓ Database write successful for Booking.com');
+                bookingProcessed++;
+              } catch (e: any) {
+                bookingFailures++;
+                console.error('[process] === BOOKING.COM SCAN ERROR (NON-BLOCKING) ===');
+                console.error('[process] Error type:', e.name || 'Unknown');
+                console.error('[process] Error message:', e.message || 'No message');
+                console.error('[process] Error stack:', e.stack || 'No stack trace');
+                console.error('[process] Context:', {
+                  hotelId: cell.hotelId,
+                  checkIn: cell.checkIn,
+                  checkOut: cell.checkOut,
+                  bookingUrl: cell.bookingUrl,
+                  scanId: scanId,
+                });
+                
+                // Store error result for Booking.com
+                try {
+                  console.log('[process] === STORING ERROR RESULT IN DATABASE ===');
+                  const errorData = JSON.stringify({ 
+                    error: e.message || String(e), 
+                    source: 'booking',
+                    errorType: e.name || 'Unknown',
+                    stack: e.stack || 'No stack trace',
+                  });
+                  console.log('[process] Error data structure:', errorData);
+                  
+                  await sql`
+                    INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json, source)
+                    VALUES (
+                      ${scanId}, 
+                      ${cell.hotelId}, 
+                      ${cell.checkIn}, 
+                      'error',
+                      ${errorData},
+                      'booking'
+                    )
+                    ON CONFLICT (scan_id, hotel_id, source, check_in_date)
+                    DO UPDATE SET status = EXCLUDED.status, response_json = EXCLUDED.response_json
+                  `;
+                  console.log('[process] ✓ Error result stored successfully');
+                } catch (dbError: any) {
+                  console.error('[process] === DATABASE ERROR WRITE FAILED ===');
+                  console.error('[process] DB Error type:', dbError.name || 'Unknown');
+                  console.error('[process] DB Error message:', dbError.message || 'No message');
+                  console.error('[process] DB Error stack:', dbError.stack || 'No stack trace');
+                }
               }
-            }
-          })();
-          bookingPromises.push(bookingPromise);
+            })();
+            // CRITICAL: Push immediately after creating promise, not after IIFE completes
+            bookingPromises.push(bookingPromise);
+            bookingPromisesMeta.push({ hotelId: cell.hotelId, checkIn: cell.checkIn, checkOut: cell.checkOut });
+          }
         }
       }
     }
@@ -364,6 +409,7 @@ export async function POST(req: NextRequest) {
     // Wait for all Booking.com scans to complete before returning response
     // This ensures database writes finish before serverless function terminates
     if (bookingPromises.length > 0) {
+      console.log('[process] Waiting for', bookingPromises.length, 'Booking.com scan(s) to complete...');
       try {
         // Use a timeout to prevent hanging (25s buffer for Vercel's 30s limit)
         const BOOKING_TIMEOUT_MS = 25_000;
@@ -371,6 +417,10 @@ export async function POST(req: NextRequest) {
         const timeoutPromise = new Promise<'timeout'>((resolve) => {
           timeoutId = setTimeout(() => {
             console.warn('[process] Booking.com scans timed out after', BOOKING_TIMEOUT_MS, 'ms');
+            console.warn('[process] Pending scans that may not have completed:');
+            bookingPromisesMeta.forEach((meta, idx) => {
+              console.warn(`[process]   - Scan ${idx + 1}: Hotel ${meta.hotelId}, Check-in: ${meta.checkIn}, Check-out: ${meta.checkOut}`);
+            });
             resolve('timeout');
           }, BOOKING_TIMEOUT_MS);
         });
@@ -386,6 +436,7 @@ export async function POST(req: NextRequest) {
         }
         
         console.log('[process] All Booking.com scans', result === 'timeout' ? 'timed out' : 'completed');
+        console.log('[process] Booking scans - Processed:', bookingProcessed, 'Failures:', bookingFailures);
       } catch (e) {
         console.error('[process] Error waiting for Booking.com scans:', e);
       }

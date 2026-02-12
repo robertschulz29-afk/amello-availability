@@ -173,6 +173,17 @@ export class BookingComScraper extends BaseScraper {
   protected buildURL(request: ScrapeRequest): string {
     const { hotelCode, checkInDate, checkOutDate, adults = 2, children = 0 } = request;
     
+    // Log date range for debugging multi-night searches
+    console.log('[BookingComScraper] Building URL for date range:', { checkInDate, checkOutDate });
+    
+    // Validate date range
+    if (checkOutDate <= checkInDate) {
+      console.error('[BookingComScraper] ERROR: Invalid date range - checkOut must be after checkIn', {
+        checkInDate,
+        checkOutDate
+      });
+    }
+    
     // The hotelCode for Booking.com should be the base booking_url from the database
     // We'll append query parameters to it
     let baseUrl = hotelCode;
@@ -226,6 +237,16 @@ export class BookingComScraper extends BaseScraper {
       // Determine status based on available rooms
       const hasRooms = bookingData.rooms && bookingData.rooms.length > 0;
       const status = hasRooms ? 'green' : 'red';
+      
+      // Log warning if no rooms found (this is important for multi-night searches)
+      if (!hasRooms) {
+        console.warn('[BookingComScraper] WARNING: No rooms found in parsed data');
+        console.warn('[BookingComScraper] This could indicate:');
+        console.warn('[BookingComScraper]   1. No availability for the requested dates');
+        console.warn('[BookingComScraper]   2. HTML structure changed (parsing may need update)');
+        console.warn('[BookingComScraper]   3. Bot detection or rate limiting');
+        console.warn('[BookingComScraper] HTML sample (first 500 chars):', html.substring(0, 500).replace(/\s+/g, ' '));
+      }
       
       console.log('[BookingComScraper] Final status:', status);
       
