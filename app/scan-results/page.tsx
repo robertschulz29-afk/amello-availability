@@ -14,12 +14,20 @@ type ScanRow = {
   status: 'queued'|'running'|'done'|'error';
 };
 
+type HotelRow = {
+  id: number;
+  name: string;
+  code: string;
+};
+
 type ScanResult = {
   scan_id: number;
   hotel_id: number;
+  hotel_name?: string;
   check_in_date: string;
   status: 'green' | 'red';
   response_json: any;
+  source?: string;
 };
 
 type PaginatedResponse = {
@@ -38,6 +46,14 @@ export default function Page() {
   // Scans list for the dropdown
   const [scans, setScans] = React.useState<ScanRow[]>([]);
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
+
+  // Hotels list for the dropdown
+  const [hotels, setHotels] = React.useState<HotelRow[]>([]);
+  const [selectedHotelId, setSelectedHotelId] = React.useState<number | null>(null);
+
+  // Additional filters
+  const [selectedCheckInDate, setSelectedCheckInDate] = React.useState<string>('');
+  const [selectedSource, setSelectedSource] = React.useState<string>('');
 
   // Results and pagination
   const [results, setResults] = React.useState<ScanResult[]>([]);
@@ -70,6 +86,18 @@ export default function Page() {
     }
   }, [selectedScanId]);
 
+  // Load hotels list for dropdown
+  const loadHotels = React.useCallback(async () => {
+    try {
+      const list = await fetchJSON('/api/hotels', { cache: 'no-store' });
+      const arr: HotelRow[] = Array.isArray(list) ? list : [];
+      arr.sort((a,b) => a.name.localeCompare(b.name));
+      setHotels(arr);
+    } catch (e:any) {
+      console.error('Failed to load hotels', e);
+    }
+  }, []);
+
   // Load scan results with pagination
   const loadResults = React.useCallback(async () => {
     if (selectedScanId == null) {
@@ -82,7 +110,24 @@ export default function Page() {
     setLoading(true);
     setError(null);
     try {
-      const url = `/api/scan-results?scanID=${selectedScanId}&page=${page}&limit=${limit}`;
+      const params = new URLSearchParams({
+        scanID: selectedScanId.toString(),
+        page: page.toString(),
+        limit: limit.toString(),
+      });
+
+      // Add optional filters
+      if (selectedHotelId) {
+        params.append('hotelID', selectedHotelId.toString());
+      }
+      if (selectedCheckInDate) {
+        params.append('checkInDate', selectedCheckInDate);
+      }
+      if (selectedSource) {
+        params.append('source', selectedSource);
+      }
+
+      const url = `/api/scan-results?${params.toString()}`;
       const data: PaginatedResponse = await fetchJSON(url, { cache: 'no-store' });
       setResults(data.data || []);
       setTotal(data.total || 0);
@@ -93,9 +138,10 @@ export default function Page() {
     } finally {
       setLoading(false);
     }
-  }, [selectedScanId, page, limit]);
+  }, [selectedScanId, page, limit, selectedHotelId, selectedCheckInDate, selectedSource]);
 
   React.useEffect(() => { loadScans(); }, [loadScans]);
+  React.useEffect(() => { loadHotels(); }, [loadHotels]);
   React.useEffect(() => { loadResults(); }, [loadResults]);
 
   // Pagination handlers
@@ -130,6 +176,57 @@ export default function Page() {
                   </option>
                 ))
               )}
+            </select>
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0">Hotel:</label>
+            <select 
+              className="form-select" 
+              style={{ minWidth: 250 }} 
+              value={selectedHotelId ?? ''} 
+              onChange={e => {
+                setSelectedHotelId(e.target.value ? Number(e.target.value) : null);
+                setPage(1); // Reset to first page when changing filter
+              }}
+            >
+              <option value="">All Hotels</option>
+              {hotels.map(h => (
+                <option key={h.id} value={h.id}>
+                  {h.name} ({h.id})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0">Check-in Date:</label>
+            <input 
+              type="date" 
+              className="form-control" 
+              style={{ width: 'auto' }}
+              value={selectedCheckInDate} 
+              onChange={e => {
+                setSelectedCheckInDate(e.target.value);
+                setPage(1); // Reset to first page when changing filter
+              }}
+            />
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0">Source:</label>
+            <select 
+              className="form-select" 
+              style={{ width: 'auto' }}
+              value={selectedSource} 
+              onChange={e => {
+                setSelectedSource(e.target.value);
+                setPage(1); // Reset to first page when changing filter
+              }}
+            >
+              <option value="">All</option>
+              <option value="booking">Booking.com</option>
+              <option value="amello">Amello</option>
             </select>
           </div>
 
@@ -169,9 +266,10 @@ export default function Page() {
                 <thead className="table-light">
                   <tr>
                     <th>Scan ID</th>
-                    <th>Hotel ID</th>
+                    <th>Hotel Name</th>
                     <th>Check-in Date</th>
                     <th>Status</th>
+                    <th>Source</th>
                     <th>Room Name</th>
                     <th>Rate Name</th>
                     <th>Price</th>
@@ -187,11 +285,16 @@ export default function Page() {
                     return (
                       <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}`}>
                         <td>{result.scan_id}</td>
-                        <td>{result.hotel_id}</td>
+                        <td>{result.hotel_name || `Hotel ${result.hotel_id}`}</td>
                         <td>{result.check_in_date}</td>
                         <td>
                           <span className={`badge ${result.status === 'green' ? 'bg-success' : 'bg-danger'}`}>
                             {result.status}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`badge ${result.source === 'booking' ? 'bg-info' : 'bg-secondary'}`}>
+                            {result.source === 'booking' ? 'Booking.com' : result.source === 'amello' ? 'Amello' : result.source || '—'}
                           </span>
                         </td>
                         <td>{priceInfo.roomName ?? '—'}</td>
