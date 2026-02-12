@@ -26,6 +26,27 @@ Create a `.env` file in the project root (see `.env.example` for reference):
 - **API_BASE_URL** (optional): Server-side only API URL (alternative to NEXT_PUBLIC_API_URL)
 - **AMELLO_BASE_URL** (optional): Base URL for the Amello API (defaults to `https://prod-api.amello.plusline.net/api/v1`)
 
+### Vercel/Lambda Deployment
+
+When deploying to Vercel or AWS Lambda, additional configuration is required for the web scraping functionality:
+
+1. **Set Environment Variable in Vercel Dashboard**:
+   - Go to your project settings in Vercel
+   - Navigate to "Environment Variables"
+   - Add: `AWS_LAMBDA_JS_RUNTIME` = `nodejs20.x`
+   - This environment variable must be set in the Vercel dashboard, NOT in your `.env` file
+   - It ensures `@sparticuz/chromium` uses the correct binaries for the Lambda runtime
+
+2. **Chromium Binary Handling**:
+   - The `@sparticuz/chromium` package provides pre-built Chromium binaries for serverless environments
+   - These are automatically extracted to `/tmp` in Lambda (the only writable directory)
+   - The `next.config.mjs` is configured to mark chromium as external to prevent webpack bundling issues
+
+3. **Function Size Limits**:
+   - Vercel has a 50MB limit on uncompressed Lambda function size
+   - The full `@sparticuz/chromium` package fits within this limit
+   - If you encounter size issues, consider using `@sparticuz/chromium-min` with a remote binary URL
+
 ### API Client
 
 All frontend API requests use the `fetchJSON` utility from `lib/api-client.ts`, which:
