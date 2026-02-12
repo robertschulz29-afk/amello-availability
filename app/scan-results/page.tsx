@@ -68,6 +68,7 @@ export default function Page() {
   // Additional filters
   const [selectedCheckInDate, setSelectedCheckInDate] = React.useState<string>('');
   const [selectedSource, setSelectedSource] = React.useState<string>('');
+  const [hotelSearchTerm, setHotelSearchTerm] = React.useState<string>('');
 
   // Results and pagination
   const [results, setResults] = React.useState<ScanResult[]>([]);
@@ -164,6 +165,23 @@ export default function Page() {
   const goToNextPage = () => setPage(p => Math.min(totalPages, p + 1));
   const goToLastPage = () => setPage(totalPages);
 
+  // Filter hotels based on search term
+  const filteredHotels = React.useMemo(() => {
+    if (!hotelSearchTerm.trim()) return hotels;
+    const term = hotelSearchTerm.toLowerCase();
+    return hotels.filter(h => 
+      h.name.toLowerCase().includes(term) || 
+      h.code.toLowerCase().includes(term) ||
+      h.id.toString().includes(term)
+    );
+  }, [hotels, hotelSearchTerm]);
+
+  // Reset date filter
+  const resetDateFilter = () => {
+    setSelectedCheckInDate('');
+    setPage(1);
+  };
+
   return (
     <main>
         <h1 className="h3 mb-3">Scan Results</h1>
@@ -195,22 +213,32 @@ export default function Page() {
 
           <div className="d-flex align-items-center gap-2">
             <label className="form-label mb-0">Hotel:</label>
-            <select 
-              className="form-select" 
-              style={{ minWidth: 250 }} 
-              value={selectedHotelId ?? ''} 
-              onChange={e => {
-                setSelectedHotelId(e.target.value ? Number(e.target.value) : null);
-                setPage(1); // Reset to first page when changing filter
-              }}
-            >
-              <option value="">All Hotels</option>
-              {hotels.map(h => (
-                <option key={h.id} value={h.id}>
-                  {getHotelDisplay(h.name, h.id)}
-                </option>
-              ))}
-            </select>
+            <div className="d-flex flex-column gap-1">
+              <input 
+                type="text" 
+                className="form-control form-control-sm" 
+                style={{ minWidth: 250 }}
+                placeholder="Search hotels by name or code..." 
+                value={hotelSearchTerm} 
+                onChange={e => setHotelSearchTerm(e.target.value)}
+              />
+              <select 
+                className="form-select form-select-sm" 
+                style={{ minWidth: 250 }} 
+                value={selectedHotelId ?? ''} 
+                onChange={e => {
+                  setSelectedHotelId(e.target.value ? Number(e.target.value) : null);
+                  setPage(1); // Reset to first page when changing filter
+                }}
+              >
+                <option value="">All Hotels</option>
+                {filteredHotels.map(h => (
+                  <option key={h.id} value={h.id}>
+                    {h.name} ({h.code})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="d-flex align-items-center gap-2">
@@ -225,6 +253,13 @@ export default function Page() {
                 setPage(1); // Reset to first page when changing filter
               }}
             />
+            <button 
+              className="btn btn-outline-secondary btn-sm" 
+              onClick={resetDateFilter}
+              disabled={!selectedCheckInDate}
+            >
+              Reset
+            </button>
           </div>
 
           <div className="d-flex align-items-center gap-2">
