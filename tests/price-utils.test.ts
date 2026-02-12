@@ -55,7 +55,7 @@ describe('extractPriceValue', () => {
         nights: 2
       };
       const result = extractPriceValue(offer, true);
-      // Should use totalPrice directly (already in cents, so divide by 100)
+      // Should use totalPrice directly (already in decimal format)
       assert.strictEqual(result, 150.50);
     });
 
@@ -86,6 +86,16 @@ describe('extractPriceValue', () => {
       const result = extractPriceValue(offer, true);
       // Should fall back to price field: 100/100 = 1
       assert.strictEqual(result, 1);
+    });
+
+    it('should handle null inMinorUnits gracefully', () => {
+      const offer = {
+        inMinorUnits: null,
+        price: 200
+      };
+      const result = extractPriceValue(offer, true);
+      // Should fall back to price field: 200/100 = 2
+      assert.strictEqual(result, 2);
     });
   });
 

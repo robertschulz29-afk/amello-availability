@@ -371,7 +371,7 @@ export function extractPriceValue(obj: any, pricesInCents: boolean = false): num
   if (!obj || typeof obj !== 'object') return null;
 
   // For Amello offers: prefer inMinorUnits field when pricesInCents=true
-  if (pricesInCents && obj.inMinorUnits !== undefined) {
+  if (pricesInCents && obj.inMinorUnits != null) {
     const inMinorUnits = obj.inMinorUnits;
     let minorUnitsValue: number | null = null;
 
