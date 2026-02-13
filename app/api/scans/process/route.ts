@@ -557,6 +557,7 @@ export async function POST(req: NextRequest) {
       
       // Fire and forget - don't await the response
       // This allows the current request to return immediately
+      // Note: belloMandator is always defined (set at top of function with fallback)
       fetch(targetUrl, {
         method: 'POST',
         headers: { 

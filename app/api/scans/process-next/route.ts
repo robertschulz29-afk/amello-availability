@@ -6,6 +6,17 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
+ * Result of processing a single scan
+ */
+interface ScanProcessingResult {
+  scanId: number;
+  processed: number;
+  nextIndex: number;
+  done: boolean;
+  total: number;
+}
+
+/**
  * GET /api/scans/process-next
  * 
  * Processes the next batch of any running scan.
@@ -76,7 +87,7 @@ async function processNextScan(req: NextRequest) {
     console.log('[process-next] ===== PARALLEL PROCESSING =====');
     console.log('[process-next] Processing', runningScans.rows.length, 'scans in parallel');
     
-    const processingPromises = runningScans.rows.map(async (scan) => {
+    const processingPromises: Promise<ScanProcessingResult>[] = runningScans.rows.map(async (scan) => {
       const scanId = scan.id as number;
       const doneCells = scan.done_cells as number;
       const totalCells = scan.total_cells as number;
@@ -131,7 +142,7 @@ async function processNextScan(req: NextRequest) {
     
     // Collect results
     const successfulScans = results
-      .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+      .filter((r): r is PromiseFulfilledResult<ScanProcessingResult> => r.status === 'fulfilled')
       .map(r => r.value);
     const failedScans = results
       .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
