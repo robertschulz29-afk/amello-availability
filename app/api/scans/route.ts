@@ -37,10 +37,13 @@ async function processFirstBatch(scanId: number, belloMandator: string) {
     
     const targetUrl = `${baseUrl}/api/scans/process`;
     
-    console.log('[POST /api/scans] === TRIGGERING FIRST BATCH ===');
-    console.log('[POST /api/scans] Scan ID:', scanId);
-    console.log('[POST /api/scans] Target URL:', targetUrl);
-    console.log('[POST /api/scans] Bello-Mandator:', belloMandator);
+    console.log('[processFirstBatch] ==================== START ====================');
+    console.log('[processFirstBatch] Scan ID:', scanId);
+    console.log('[processFirstBatch] Base URL:', baseUrl);
+    console.log('[processFirstBatch] Target URL:', targetUrl);
+    console.log('[processFirstBatch] Bello-Mandator:', belloMandator);
+    console.log('[processFirstBatch] NEXTAUTH_URL:', process.env.NEXTAUTH_URL || 'NOT SET');
+    console.log('[processFirstBatch] VERCEL_URL:', process.env.VERCEL_URL || 'NOT SET');
     
     // Fire request and log result (don't await in caller)
     const fetchPromise = fetch(targetUrl, {
@@ -56,30 +59,42 @@ async function processFirstBatch(scanId: number, belloMandator: string) {
       }),
     });
     
-    // Log result but don't block
+    // Log result but don't block scan creation
     fetchPromise
       .then(async (response) => {
-        console.log('[POST /api/scans] First batch response status:', response.status);
+        console.log('[processFirstBatch] ===== RESPONSE RECEIVED =====');
+        console.log('[processFirstBatch] Status:', response.status);
+        console.log('[processFirstBatch] Status Text:', response.statusText);
+        
         if (!response.ok) {
-          const text = await response.text().catch(() => 'unable to read response body');
-          console.error('[POST /api/scans] First batch FAILED:', response.status, text);
+          const text = await response.text().catch(() => 'Could not read body');
+          console.error('[processFirstBatch] ❌ REQUEST FAILED');
+          console.error('[processFirstBatch] Status:', response.status);
+          console.error('[processFirstBatch] Body:', text);
         } else {
-          const result = await response.json().catch(() => ({}));
-          console.log('[POST /api/scans] First batch SUCCESS:', result.processed, 'cells processed');
+          const result = await response.json().catch(() => ({ error: 'Could not parse JSON' }));
+          console.log('[processFirstBatch] ✅ REQUEST SUCCESS');
+          console.log('[processFirstBatch] Processed:', result.processed || 0);
+          console.log('[processFirstBatch] Next Index:', result.nextIndex || 0);
+          console.log('[processFirstBatch] Done:', result.done || false);
+          console.log('[processFirstBatch] Total:', result.total || 0);
         }
+        console.log('[processFirstBatch] ==================== END ====================');
       })
       .catch(e => {
-        console.error('[POST /api/scans] === FIRST BATCH FETCH ERROR ===');
-        console.error('[POST /api/scans] Error type:', e.name || 'Unknown');
-        console.error('[POST /api/scans] Error message:', e.message || 'No message');
-        console.error('[POST /api/scans] Error stack:', e.stack || 'No stack');
-        // Don't throw - scan is created, processing can be retried manually
+        console.error('[processFirstBatch] ===== FETCH ERROR =====');
+        console.error('[processFirstBatch] Error type:', e.name || 'Unknown');
+        console.error('[processFirstBatch] Error message:', e.message || 'No message');
+        console.error('[processFirstBatch] Error stack:', e.stack || 'No stack');
+        console.error('[processFirstBatch] Scan will rely on cron job to continue');
+        console.error('[processFirstBatch] ==================== END ====================');
       });
       
-  } catch (e: unknown) {
-    console.error('[POST /api/scans] === ERROR IN processFirstBatch ===');
-    console.error('[POST /api/scans] Error:', e);
-    // Don't throw - scan is created, processing can be retried manually
+  } catch (e: any) {
+    console.error('[processFirstBatch] ===== OUTER ERROR =====');
+    console.error('[processFirstBatch] Error:', e);
+    console.error('[processFirstBatch] Message:', e?.message || 'No message');
+    console.error('[processFirstBatch] Stack:', e?.stack || 'No stack');
   }
 }
 
