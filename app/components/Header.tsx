@@ -4,7 +4,6 @@
 import { useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { getHeaderStyle, headerIconStyle, getToggleButtonStyle } from '../styles/headerStyles';
-import './Header.css';
 
 export function Header() {
   const { theme, toggleTheme } = useTheme();
