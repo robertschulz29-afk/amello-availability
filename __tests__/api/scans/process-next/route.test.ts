@@ -21,7 +21,6 @@ describe('Process Next Endpoint', () => {
   });
 
   describe('Scan Selection Logic', () => {
-  describe('Scan Selection Logic', () => {
     it('should prioritize scans with status="running" and incomplete processing', () => {
       // Mock scan data scenarios
       const scans = [
