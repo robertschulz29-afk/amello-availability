@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/scans/process-next",
+      "schedule": "* * * * *"
+    }
+  ]
+}
