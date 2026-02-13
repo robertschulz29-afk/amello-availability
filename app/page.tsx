@@ -302,12 +302,12 @@ export default function Page() {
   }, [groupBy, hotels, hotelsByCode, matrix]);
 
   // Scan navigation
-//  const currentIndex = React.useMemo(
-//    () => (selectedScanId != null ? scans.findIndex(s => s.id === selectedScanId) : -1),
-//    [scans, selectedScanId]
-//  );
-//  const onPrev = () => { if (currentIndex < 0) return; const nextIdx = currentIndex + 1; if (nextIdx < scans.length) setSelectedScanId(scans[nextIdx].id); };
- // const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
+const currentIndex = React.useMemo(
+    () => (selectedScanId != null ? scans.findIndex(s => s.id === selectedScanId) : -1),
+    [scans, selectedScanId]
+  );
+  const onPrev = () => { if (currentIndex < 0) return; const nextIdx = currentIndex + 1; if (nextIdx < scans.length) setSelectedScanId(scans[nextIdx].id); };
+ const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
 
   return (
     <main>
@@ -324,9 +324,7 @@ export default function Page() {
             </option>
           ))}
         </select>
-        {selectedScanId && scans.find(s => s.id === selectedScanId)?.status === 'running' && (
-         
-        )}
+        
       </div>
 
       {/* Scan Parameters */}
