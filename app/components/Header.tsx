@@ -6,6 +6,7 @@ import { useTheme } from '../context/ThemeContext';
 import { getHeaderStyle, headerIconStyle, getToggleButtonStyle } from '../styles/headerStyles';
 
 export function Header() {
+  const isDark = theme === 'dark';
   
 
   return (
