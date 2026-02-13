@@ -18,6 +18,14 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+  const [isHovered, setIsHovered] = useState(false);
+
+  const buttonStyle = {
+    ...getToggleButtonStyle(isDark),
+    backgroundColor: isHovered ? (isDark ? '#30363d' : '#e9ecef') : 'transparent'
+  };
 
   return (
     <body style={getBodyStyle(isDark)}>
