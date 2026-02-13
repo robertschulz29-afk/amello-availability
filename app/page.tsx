@@ -302,12 +302,12 @@ export default function Page() {
   }, [groupBy, hotels, hotelsByCode, matrix]);
 
   // Scan navigation
-  const currentIndex = React.useMemo(
-    () => (selectedScanId != null ? scans.findIndex(s => s.id === selectedScanId) : -1),
-    [scans, selectedScanId]
-  );
-  const onPrev = () => { if (currentIndex < 0) return; const nextIdx = currentIndex + 1; if (nextIdx < scans.length) setSelectedScanId(scans[nextIdx].id); };
-  const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
+//  const currentIndex = React.useMemo(
+//    () => (selectedScanId != null ? scans.findIndex(s => s.id === selectedScanId) : -1),
+//    [scans, selectedScanId]
+//  );
+//  const onPrev = () => { if (currentIndex < 0) return; const nextIdx = currentIndex + 1; if (nextIdx < scans.length) setSelectedScanId(scans[nextIdx].id); };
+ // const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
 
   return (
     <main>
@@ -350,10 +350,7 @@ export default function Page() {
       {/* History navigation + grouping controls */}
       <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
         <div className="d-flex flex-wrap align-items-center gap-2">
-          <button className="btn btn-outline-secondary" onClick={() => scans.length && setSelectedScanId(scans[0].id)} disabled={scans.length === 0}>Newest</button>
-          <button className="btn btn-outline-secondary" onClick={onPrev} disabled={!scans.length}>Prev</button>
-          <button className="btn btn-outline-secondary" onClick={onNext} disabled={!scans.length}>Next</button>
-          <button className="btn btn-outline-secondary" onClick={async()=>{ await loadScans(); if (selectedScanId!=null) await loadScanById(selectedScanId); }} disabled={selectedScanId==null}>Refresh</button>
+            <button className="btn btn-outline-secondary" onClick={async()=>{ await loadScans(); if (selectedScanId!=null) await loadScanById(selectedScanId); }} disabled={selectedScanId==null}>Refresh</button>
         </div>
 
         <div className="ms-auto d-flex align-items-center gap-2">
