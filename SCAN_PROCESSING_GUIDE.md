@@ -53,10 +53,24 @@ As of the refactoring completed in February 2026, the scan interface has been up
 
 ### Processing a Scan
 
-**Important**: In the serverless (Vercel) environment, scans do not process automatically in the background. Scan processing requires external orchestration.
+**Auto-Processing Enabled**: As of the latest update, scans now process automatically after creation using a dual-approach system.
 
-#### Option 1: Manual Processing (Development/Testing)
-For development and testing, you can manually trigger scan processing:
+#### Automatic Processing (Default Behavior)
+
+When a scan is created, processing begins automatically through two mechanisms:
+
+1. **Immediate Trigger**: The scan creation endpoint triggers the first batch (30 cells) immediately
+2. **Cron Backup**: A Vercel cron job runs every minute to continue processing any incomplete scans
+
+This means:
+- No manual intervention required
+- Scans complete automatically even for large datasets
+- Processing continues within Vercel serverless constraints
+- User can monitor progress on Availability Overview or Scan Results pages
+
+#### Option 1: Manual Processing (Development/Testing Only)
+
+For development and testing without Vercel cron, you can manually trigger scan processing:
 
 ```bash
 # Process a batch of 30 cells starting from index 0
@@ -67,38 +81,24 @@ curl -X POST https://your-app.vercel.app/api/scans/process \
 # Repeat with increasing startIndex until done=true
 ```
 
-#### Option 2: Cron Job (Recommended for Production)
+#### Option 2: Cron Job (Production - Already Configured)
 
-Set up a cron job or scheduled task that repeatedly calls the process endpoint:
+The cron-based processing is already configured in `vercel.json` and runs automatically in production:
 
-```javascript
-// Example cron job (runs every minute)
-async function processPendingScans() {
-  // 1. Fetch running scans
-  const scans = await fetch('https://your-app.vercel.app/api/scans');
-  const runningScanIds = scans
-    .filter(s => s.status === 'running')
-    .map(s => s.id);
-  
-  // 2. Process each running scan
-  for (const scanId of runningScanIds) {
-    const response = await fetch('https://your-app.vercel.app/api/scans/process', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        scanId, 
-        startIndex: 0,  // API will auto-calculate correct startIndex
-        size: 30        // Process 30 cells per invocation
-      })
-    });
-    
-    const result = await response.json();
-    if (result.done) {
-      console.log(`Scan ${scanId} completed`);
-    }
-  }
+```json
+{
+  "crons": [{
+    "path": "/api/scans/process-next",
+    "schedule": "* * * * *"
+  }]
 }
 ```
+
+The `/api/scans/process-next` endpoint:
+- Finds the oldest running scan with incomplete processing
+- Processes the next batch of 30 cells
+- Returns processing result
+- Runs automatically every minute via Vercel cron
 
 #### Option 3: Queue System (Advanced)
 
@@ -206,24 +206,38 @@ The `status` column in the `scans` table is VARCHAR(20), which supports all thes
 ## Troubleshooting
 
 ### Scan not processing
-- Verify that your cron job or processing mechanism is running
+With auto-processing enabled, scans should start immediately. If not:
+- Check server logs for `[POST /api/scans] Triggering first batch processing` message
+- Verify Vercel cron is configured (check vercel.json exists)
 - Check that scan status is 'running' (not 'cancelled' or 'done')
-- Review server logs for errors
+- Review logs at `/api/scans/process-next` for cron activity
+- Manually trigger: `curl -X POST /api/scans/process-next`
 
 ### Scan stuck at partial completion
 - Check for errors in the `/api/scans/process` endpoint logs
 - Verify hotel and date data is valid
-- Try manually calling the process endpoint with the next startIndex
+- Check if scan was cancelled by user
+- Cron should resume processing automatically within 1 minute
 
 ### Browser showing "Scan started" but no progress
-- This is expected behavior - scans no longer process in the browser
-- Set up external processing (cron job) to process the scan
-- Or manually trigger processing via API calls
+- Auto-processing is enabled - progress should appear within 1-2 minutes
+- Check server logs for processing activity
+- Verify scan status in database is 'running'
+- If needed, manually trigger: `POST /api/scans/process-next`
 
 ## Migration Notes
 
+### What's New
+1. **Auto-processing enabled**: Scans now process automatically after creation via dual approach:
+   - Immediate trigger on scan creation
+   - Cron-based polling every minute as backup
+
+2. **New endpoint**: `/api/scans/process-next` for cron-based polling
+
+3. **Vercel cron configured**: `vercel.json` sets up automatic processing
+
 ### Breaking Changes
-1. **Frontend no longer processes scans**: The old behavior where the frontend would loop and process scans in the browser is removed. External orchestration is now required.
+1. **No manual setup required**: External orchestration is now built-in and automatic.
 
 2. **New scan status**: The 'cancelled' status is now supported for stopped scans.
 
@@ -231,8 +245,9 @@ The `status` column in the `scans` table is VARCHAR(20), which supports all thes
 - Existing scans in the database continue to work
 - Old scan results display correctly in all pages
 - Export functionality unchanged
+- Manual processing endpoints still available for development
 
-### If You Need Old Behavior
+### If You Need Manual Control
 If you need the old browser-based processing temporarily, you can:
 1. Navigate to Scan Results page
 2. Select the running scan
