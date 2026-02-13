@@ -84,6 +84,8 @@ async function processNextScan(req: NextRequest) {
     console.log('[process-next] VERCEL_URL:', process.env.VERCEL_URL || 'NOT SET');
     
     // Process all found scans in parallel using Promise.allSettled
+    // Note: Processing is bounded by SOFT_BUDGET_MS (40s) and maxDuration (60s)
+    // to prevent resource exhaustion. With 3 scans max, this is safe.
     console.log('[process-next] ===== PARALLEL PROCESSING =====');
     console.log('[process-next] Processing', runningScans.rows.length, 'scans in parallel');
     

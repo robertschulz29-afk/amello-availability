@@ -544,6 +544,8 @@ export async function POST(req: NextRequest) {
     
     // Chain next batch if scan is not done and not stopping early
     // This speeds up processing by not waiting for the 1-minute cron job
+    // Note: Chaining is fire-and-forget and bounded by SOFT_BUDGET_MS/maxDuration
+    // to prevent unbounded resource growth
     if (!done && !stopEarly) {
       console.log('[process] ===== CHAINING NEXT BATCH =====');
       console.log('[process] Scan not done, triggering next batch immediately');
