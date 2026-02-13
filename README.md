@@ -183,3 +183,56 @@ const result = await scraper.scrape({ hotelCode, checkInDate, checkOutDate });
 - CSS selectors and URL patterns are stored per source and can be updated via API
 - Bot detection prevention is built-in (User-Agent rotation, rate limiting, random delays)
 - Framework is ready for production use - specific scraper implementations to be added per source
+
+## Troubleshooting Scan Processing
+
+### Scans not processing after creation
+
+If scans are created but don't process any data, follow these debugging steps:
+
+1. **Check Vercel logs** for scan creation:
+   - Look for `[POST /api/scans] === TRIGGERING FIRST BATCH ===`
+   - Verify the Target URL is correct (should be your production URL)
+   - Example: `[POST /api/scans] Target URL: https://your-app.vercel.app/api/scans/process`
+   
+2. **Check Vercel logs** for processing endpoint:
+   - Look for `[POST /api/scans/process] === REQUEST RECEIVED ===`
+   - If missing, the initial trigger failed - check the Target URL
+   
+3. **Verify cron is running**:
+   - Check Vercel dashboard → Project → Cron Jobs
+   - Should show `/api/scans/process-next` running every minute
+   - Look for logs: `[POST /api/scans/process-next] Processing scan X`
+   
+4. **Manual trigger** (if needed):
+   ```bash
+   curl -X POST https://your-app.vercel.app/api/scans/process-next \
+     -H "Content-Type: application/json"
+   ```
+
+### Environment Variables
+
+Ensure `NEXTAUTH_URL` is set in Vercel for scan auto-processing:
+```
+NEXTAUTH_URL=https://your-app.vercel.app
+```
+
+This variable is used to construct the callback URL for triggering the first batch of scan processing. If not set, the system falls back to `VERCEL_URL` (automatically set by Vercel) or `http://localhost:3000` for local development.
+
+### Expected Behavior
+
+When a scan is created:
+1. The scan is inserted into the database with `status='running'`
+2. The first batch of processing is triggered via an HTTP call to `/api/scans/process`
+3. The processing endpoint processes 30 cells (hotel-date combinations)
+4. Database `done_cells` column increases after each batch
+5. The cron job continues processing every minute until `done_cells >= total_cells`
+6. Scan status updates to `done` when complete
+
+### Performance Notes
+
+- The cron runs every minute, processing 30 cells per invocation
+- For 8600 cells (86 days × 100 hotels), expect approximately 287 minutes (~4.8 hours) total processing time
+- Formula: `cells / batch_size / batches_per_hour` = `8600 / 30 / 60` ≈ 4.8 hours
+- Comprehensive diagnostic logs are available in Vercel logs for debugging
+- Test on Vercel staging environment first if possible
