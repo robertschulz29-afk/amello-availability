@@ -115,16 +115,20 @@ export async function POST(req: NextRequest) {
       done: result.done || false,
       total: result.total || totalCells,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('[process-next] ===== FATAL ERROR =====');
-    console.error('[process-next] Error type:', e.name || 'Unknown');
-    console.error('[process-next] Error message:', e.message || 'Unknown error');
-    console.error('[process-next] Error stack:', e.stack || 'No stack trace');
+    if (e instanceof Error) {
+      console.error('[process-next] Error type:', e.name);
+      console.error('[process-next] Error message:', e.message);
+      console.error('[process-next] Error stack:', e.stack || 'No stack trace');
+    } else {
+      console.error('[process-next] Error:', String(e));
+    }
     console.error('[process-next] ==================== CRON JOB FAILED ====================');
     return NextResponse.json(
       { 
         error: 'Internal server error',
-        message: e.message || 'Unknown error',
+        message: e instanceof Error ? e.message : 'Unknown error',
       },
       { status: 500 }
     );
