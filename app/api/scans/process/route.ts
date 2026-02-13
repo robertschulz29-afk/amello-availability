@@ -63,18 +63,27 @@ function hasNonEmptyRooms(obj: any): boolean {
 
 /* ---------- handler ---------- */
 export async function POST(req: NextRequest) {
+  console.log('[POST /api/scans/process] === REQUEST RECEIVED ===');
+  console.log('[POST /api/scans/process] Timestamp:', new Date().toISOString());
+  
   const tStart = Date.now();
   const SOFT_BUDGET_MS = 40_000;
 
   // Get the Bello-Mandator header from the incoming request
   // Middleware ensures this is present, but we default to DEFAULT_BELLO_MANDATOR as fallback
   const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
+  
+  console.log('[POST /api/scans/process] Bello-Mandator:', belloMandator);
 
   try {
     const body = await req.json().catch(() => ({}));
     const scanId = Number(body?.scanId);
     let startIndex = Number.isFinite(body?.startIndex) ? Number(body.startIndex) : 0;
     const size = Math.max(1, Math.min(200, Number.isFinite(body?.size) ? Number(body.size) : 50));
+    
+    console.log('[POST /api/scans/process] Scan ID:', scanId);
+    console.log('[POST /api/scans/process] Start Index:', body?.startIndex);
+    console.log('[POST /api/scans/process] Size:', size);
 
     if (!Number.isFinite(scanId) || scanId <= 0) {
       return NextResponse.json({ error: 'Invalid scanId' }, { status: 400 });

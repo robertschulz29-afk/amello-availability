@@ -32,12 +32,18 @@ function berlinTodayYMD(): string {
  */
 async function processFirstBatch(scanId: number, belloMandator: string) {
   try {
-    const baseUrl = process.env.NEXTAUTH_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+    const baseUrl = process.env.NEXTAUTH_URL || 
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
     
-    console.log('[POST /api/scans] Triggering first batch processing for scan', scanId);
+    const targetUrl = `${baseUrl}/api/scans/process`;
     
-    // Fire and forget - don't await the response
-    fetch(`${baseUrl}/api/scans/process`, {
+    console.log('[POST /api/scans] === TRIGGERING FIRST BATCH ===');
+    console.log('[POST /api/scans] Scan ID:', scanId);
+    console.log('[POST /api/scans] Target URL:', targetUrl);
+    console.log('[POST /api/scans] Bello-Mandator:', belloMandator);
+    
+    // Fire request and log result (don't await in caller)
+    const fetchPromise = fetch(targetUrl, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -48,12 +54,31 @@ async function processFirstBatch(scanId: number, belloMandator: string) {
         startIndex: 0, 
         size: 30 
       }),
-    }).catch(e => {
-      console.error('[POST /api/scans] Failed to trigger first batch:', e);
-      // Don't throw - scan is created, processing can be retried manually
     });
-  } catch (e) {
-    console.error('[POST /api/scans] Error in processFirstBatch:', e);
+    
+    // Log result but don't block
+    fetchPromise
+      .then(async (response) => {
+        console.log('[POST /api/scans] First batch response status:', response.status);
+        if (!response.ok) {
+          const text = await response.text().catch(() => 'no body');
+          console.error('[POST /api/scans] First batch FAILED:', response.status, text);
+        } else {
+          const result = await response.json().catch(() => ({}));
+          console.log('[POST /api/scans] First batch SUCCESS:', result.processed, 'cells processed');
+        }
+      })
+      .catch(e => {
+        console.error('[POST /api/scans] === FIRST BATCH FETCH ERROR ===');
+        console.error('[POST /api/scans] Error type:', e.name || 'Unknown');
+        console.error('[POST /api/scans] Error message:', e.message || 'No message');
+        console.error('[POST /api/scans] Error stack:', e.stack || 'No stack');
+        // Don't throw - scan is created, processing can be retried manually
+      });
+      
+  } catch (e: any) {
+    console.error('[POST /api/scans] === ERROR IN processFirstBatch ===');
+    console.error('[POST /api/scans] Error:', e);
     // Don't throw - scan is created, processing can be retried manually
   }
 }
