@@ -61,7 +61,7 @@ async function processFirstBatch(scanId: number, belloMandator: string) {
       .then(async (response) => {
         console.log('[POST /api/scans] First batch response status:', response.status);
         if (!response.ok) {
-          const text = await response.text().catch(() => 'no body');
+          const text = await response.text().catch(() => 'unable to read response body');
           console.error('[POST /api/scans] First batch FAILED:', response.status, text);
         } else {
           const result = await response.json().catch(() => ({}));
@@ -76,7 +76,7 @@ async function processFirstBatch(scanId: number, belloMandator: string) {
         // Don't throw - scan is created, processing can be retried manually
       });
       
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('[POST /api/scans] === ERROR IN processFirstBatch ===');
     console.error('[POST /api/scans] Error:', e);
     // Don't throw - scan is created, processing can be retried manually

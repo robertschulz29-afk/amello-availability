@@ -232,6 +232,7 @@ When a scan is created:
 ### Performance Notes
 
 - The cron runs every minute, processing 30 cells per invocation
-- For 8600 cells (86 days × 100 hotels), expect ~5 hours total processing time
+- For 8600 cells (86 days × 100 hotels), expect approximately 287 minutes (~4.8 hours) total processing time
+- Formula: `cells / batch_size / batches_per_hour` = `8600 / 30 / 60` ≈ 4.8 hours
 - Comprehensive diagnostic logs are available in Vercel logs for debugging
 - Test on Vercel staging environment first if possible
