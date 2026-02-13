@@ -32,9 +32,7 @@ function berlinTodayYMD(): string {
  */
 async function processFirstBatch(scanId: number, belloMandator: string) {
   try {
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:3000';
+    const baseUrl = process.env.NEXTAUTH_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
     
     console.log('[POST /api/scans] Triggering first batch processing for scan', scanId);
     
