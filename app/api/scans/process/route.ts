@@ -63,8 +63,8 @@ function hasNonEmptyRooms(obj: any): boolean {
 
 /* ---------- handler ---------- */
 export async function POST(req: NextRequest) {
-  console.log('[POST /api/scans/process] === REQUEST RECEIVED ===');
-  console.log('[POST /api/scans/process] Timestamp:', new Date().toISOString());
+  console.log('[process] ==================== PROCESSING REQUEST ====================');
+  console.log('[process] Timestamp:', new Date().toISOString());
   
   const tStart = Date.now();
   const SOFT_BUDGET_MS = 40_000;
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
   // Middleware ensures this is present, but we default to DEFAULT_BELLO_MANDATOR as fallback
   const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
   
-  console.log('[POST /api/scans/process] Bello-Mandator:', belloMandator);
+  console.log('[process] Bello-Mandator:', belloMandator);
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -81,11 +81,13 @@ export async function POST(req: NextRequest) {
     let startIndex = Number.isFinite(body?.startIndex) ? Number(body.startIndex) : 0;
     const size = Math.max(1, Math.min(200, Number.isFinite(body?.size) ? Number(body.size) : 50));
     
-    console.log('[POST /api/scans/process] Scan ID:', scanId);
-    console.log('[POST /api/scans/process] Start Index:', body?.startIndex);
-    console.log('[POST /api/scans/process] Size:', size);
+    console.log('[process] ===== PROCESSING PARAMETERS =====');
+    console.log('[process] Scan ID:', scanId);
+    console.log('[process] Start Index:', startIndex);
+    console.log('[process] Batch Size:', size);
 
     if (!Number.isFinite(scanId) || scanId <= 0) {
+      console.error('[process] ❌ Invalid scanId:', scanId);
       return NextResponse.json({ error: 'Invalid scanId' }, { status: 400 });
     }
 
@@ -531,6 +533,14 @@ export async function POST(req: NextRequest) {
       const curDone = (await sql`SELECT done_cells FROM scans WHERE id=${scanId}`).rows[0]?.done_cells ?? 0;
       if (curDone >= total) await sql`UPDATE scans SET status='done' WHERE id=${scanId}`;
     }
+
+    console.log('[process] ===== PROCESSING COMPLETE =====');
+    console.log('[process] Processed:', processed);
+    console.log('[process] Failures:', failures);
+    console.log('[process] Next Index:', nextIndex);
+    console.log('[process] Done:', done);
+    console.log('[process] Duration:', Date.now() - tStart, 'ms');
+    console.log('[process] ==================== END ====================');
 
     return NextResponse.json({
       processed,
