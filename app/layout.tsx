@@ -4,8 +4,6 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Header } from './components/Header';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import { getHeaderStyle, headerIconStyle, getToggleButtonStyle } from './styles/headerStyles';
-
 import {
   getBodyStyle,
   layoutContainerStyle,
@@ -18,14 +16,8 @@ import {
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  //const isDark = theme === 'dark';
-  const { theme, toggleTheme } = useTheme();
-  const [isHovered, setIsHovered] = useState(false);
-
-  const buttonStyle = {
-    ...getToggleButtonStyle(isDark),
-    backgroundColor: isHovered ? (isDark ? '#30363d' : '#e9ecef') : 'transparent'
-  };
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
   return (
     <body style={getBodyStyle(isDark)}>
@@ -40,7 +32,12 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
             >
               Availability Overview
             </Link>
-           
+            <Link 
+              href="/status-overview" 
+              style={getNavLinkStyle(pathname === '/status-overview', isDark)}
+            >
+              Scan Setup
+            </Link>
             <Link 
               href="/scan-results" 
               style={getNavLinkStyle(pathname === '/scan-results', isDark)}
@@ -59,26 +56,6 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
             >
               Hotels
             </Link>
-           <Link 
-              href="/status-overview" 
-              style={getNavLinkStyle(pathname === '/status-overview', isDark)}
-            >
-              Scan Setup
-            </Link>
-            <button
-        style={buttonStyle}
-        onClick={toggleTheme}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        aria-label="Toggle dark mode"
-        title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      >
-        {isDark ? (
-          <i className="fas fa-sun"></i>
-        ) : (
-          <i className="fas fa-moon"></i>
-        )}
-      </button>
           </nav>
 
           {/* Main content area */}
