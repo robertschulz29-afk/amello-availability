@@ -90,11 +90,15 @@ async function processFirstBatch(scanId: number, belloMandator: string) {
         console.error('[processFirstBatch] ==================== END ====================');
       });
       
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('[processFirstBatch] ===== OUTER ERROR =====');
     console.error('[processFirstBatch] Error:', e);
-    console.error('[processFirstBatch] Message:', e?.message || 'No message');
-    console.error('[processFirstBatch] Stack:', e?.stack || 'No stack');
+    if (e instanceof Error) {
+      console.error('[processFirstBatch] Message:', e.message);
+      console.error('[processFirstBatch] Stack:', e.stack || 'No stack');
+    } else {
+      console.error('[processFirstBatch] Message:', String(e));
+    }
   }
 }
 
