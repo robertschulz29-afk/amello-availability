@@ -42,9 +42,7 @@ export async function GET() {
 
 
 
-export async function GET(req: NextRequest) {
-  return POST(req);
-}
+
 /**
  * POST /api/scan-sources
  * Create or update a scan source
