@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
+import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,6 +24,38 @@ function berlinTodayYMD(): string {
     day: '2-digit',
   });
   return fmt.format(new Date()); // YYYY-MM-DD
+}
+
+/**
+ * Trigger the first batch of scan processing in the background
+ * This kickstarts the scan without blocking the response
+ */
+async function processFirstBatch(scanId: number, belloMandator: string) {
+  try {
+    const baseUrl = process.env.NEXTAUTH_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+    
+    console.log('[POST /api/scans] Triggering first batch processing for scan', scanId);
+    
+    // Fire and forget - don't await the response
+    fetch(`${baseUrl}/api/scans/process`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Bello-Mandator': belloMandator,
+      },
+      body: JSON.stringify({ 
+        scanId, 
+        startIndex: 0, 
+        size: 30 
+      }),
+    }).catch(e => {
+      console.error('[POST /api/scans] Failed to trigger first batch:', e);
+      // Don't throw - scan is created, processing can be retried manually
+    });
+  } catch (e) {
+    console.error('[POST /api/scans] Error in processFirstBatch:', e);
+    // Don't throw - scan is created, processing can be retried manually
+  }
 }
 
 /* GET: list scans (robust: only minimal columns) */
@@ -52,6 +85,9 @@ export async function POST(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const isCron = url.searchParams.get('cron') === '1' || url.searchParams.has('key');
+
+    // Get the Bello-Mandator header for passing to process endpoint
+    const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
 
     const body = await req.json().catch(() => ({}));
 
@@ -125,6 +161,10 @@ export async function POST(req: NextRequest) {
     `;
 
     const scanId = ins.rows[0].id as number;
+
+    // Trigger first batch processing in the background
+    // This kickstarts the scan without blocking the response
+    processFirstBatch(scanId, belloMandator);
 
     return NextResponse.json({
       scanId,
