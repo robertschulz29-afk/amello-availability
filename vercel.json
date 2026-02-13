@@ -5,10 +5,6 @@
       "schedule": "* * * * *"
     }
   ]
-"$schema": "https://openapi.vercel.sh/vercel.json",
-  "git": {
-    "deploymentEnabled": {
-      "dev": false
-    }
+
   
 }
