@@ -16,10 +16,8 @@ import {
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { theme, toggleTheme } = useTheme();
-  const isDark = theme === 'dark';
   const [isHovered, setIsHovered] = useState(false);
 
   const buttonStyle = {
