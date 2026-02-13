@@ -14,7 +14,7 @@ export const getHeaderStyle = (isDark: boolean): CSSProperties => ({
   borderBottom: `1px solid ${isDark ? '#30363d' : '#e0e0e0'}`,
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'flex-end',
+  //justifyContent: 'flex-end',
   padding: '0 20px',
   boxSizing: 'border-box',
   flexShrink: 0,
