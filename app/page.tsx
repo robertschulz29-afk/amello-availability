@@ -245,6 +245,21 @@ export default function Page() {
   React.useEffect(() => { loadHotels(); loadScans(); }, [loadHotels, loadScans]);
   React.useEffect(() => { if (selectedScanId != null) loadScanById(selectedScanId); }, [selectedScanId, loadScanById]);
 
+  // Stop scan
+  const stopScan = React.useCallback(async (scanId: number) => {
+    if (!confirm(`Are you sure you want to stop scan #${scanId}?`)) return;
+    try {
+      await fetchJSON(`/api/scans/${scanId}/stop`, {
+        method: 'POST',
+      });
+      // Reload scans to reflect cancelled status
+      await loadScans();
+      if (selectedScanId === scanId) await loadScanById(scanId);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to stop scan');
+    }
+  }, [loadScans, loadScanById, selectedScanId]);
+
   // Derived
   const dates = matrix?.dates ?? [];
   const hotelsByCode = React.useMemo(() => {
@@ -301,7 +316,7 @@ export default function Page() {
       <h1 className="mb-4">Availability Overview</h1>
       
       {/* Scan Selection */}
-      <div className="mb-3">
+      <div className="mb-3 d-flex gap-2 align-items-center">
         <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
           {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
             <option key={s.id} value={s.id}>
@@ -309,6 +324,15 @@ export default function Page() {
             </option>
           ))}
         </select>
+        {selectedScanId && scans.find(s => s.id === selectedScanId)?.status === 'running' && (
+          <button 
+            className="btn btn-danger"
+            onClick={() => stopScan(selectedScanId)}
+            title="Stop this running scan"
+          >
+            Stop Scan
+          </button>
+        )}
       </div>
 
       {/* Scan Parameters */}
