@@ -73,24 +73,40 @@ describe('Process Next Endpoint', () => {
       const payload = {
         scanId: scan.id,
         startIndex: scan.done_cells,
-        size: 30,
+        size: 100,
       };
       
       expect(payload.scanId).toBe(123);
       expect(payload.startIndex).toBe(60);
-      expect(payload.size).toBe(30);
+      expect(payload.size).toBe(100);
     });
 
-    it('should process batches of 30 cells', () => {
+    it('should process batches of 100 cells', () => {
       const scan = { id: 456, done_cells: 0, total_cells: 1000 };
       
       const payload = {
         scanId: scan.id,
         startIndex: scan.done_cells,
-        size: 30,
+        size: 100,
       };
       
-      expect(payload.size).toBe(30);
+      expect(payload.size).toBe(100);
+    });
+    
+    it('should support processing up to 3 scans in parallel', () => {
+      // Simulating the LIMIT 3 query
+      const scans = [
+        { id: 1, status: 'running', done_cells: 50, total_cells: 100 },
+        { id: 2, status: 'running', done_cells: 0, total_cells: 100 },
+        { id: 3, status: 'running', done_cells: 75, total_cells: 100 },
+        { id: 4, status: 'running', done_cells: 10, total_cells: 100 },
+      ];
+      
+      // SQL query with LIMIT 3
+      const selectedScans = scans.slice(0, 3);
+      
+      expect(selectedScans).toHaveLength(3);
+      expect(selectedScans.map(s => s.id)).toEqual([1, 2, 3]);
     });
   });
 

@@ -38,6 +38,7 @@ async function processNextScan(req: NextRequest) {
   
   try {
     // Find scans with status='running' and done_cells < total_cells
+    // Now selecting up to 3 scans for parallel processing
     console.log('[process-next] Querying for running scans...');
     const runningScans = await sql`
       SELECT id, done_cells, total_cells 
@@ -45,7 +46,7 @@ async function processNextScan(req: NextRequest) {
       WHERE status = 'running' 
         AND done_cells < total_cells
       ORDER BY scanned_at ASC
-      LIMIT 1
+      LIMIT 3
     `;
     
     console.log('[process-next] Query complete. Found:', runningScans.rows.length, 'scans');
@@ -57,16 +58,6 @@ async function processNextScan(req: NextRequest) {
         processed: 0,
       });
     }
-    
-    const scan = runningScans.rows[0];
-    const scanId = scan.id as number;
-    const doneCells = scan.done_cells as number;
-    const totalCells = scan.total_cells as number;
-    
-    console.log('[process-next] ===== SCAN FOUND =====');
-    console.log('[process-next] Scan ID:', scanId);
-    console.log('[process-next] Progress:', doneCells, '/', totalCells);
-    console.log('[process-next] Remaining:', totalCells - doneCells, 'cells');
     
     // Get the Bello-Mandator header, with fallback to default
     const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
@@ -81,54 +72,83 @@ async function processNextScan(req: NextRequest) {
     console.log('[process-next] NEXTAUTH_URL:', process.env.NEXTAUTH_URL || 'NOT SET');
     console.log('[process-next] VERCEL_URL:', process.env.VERCEL_URL || 'NOT SET');
     
-    // Process next batch
-    console.log('[process-next] Calling /api/scans/process...');
-    const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Bello-Mandator': belloMandator,
-      },
-      body: JSON.stringify({ 
-        scanId, 
-        startIndex: doneCells, 
-        size: 30 
-      }),
+    // Process all found scans in parallel using Promise.allSettled
+    console.log('[process-next] ===== PARALLEL PROCESSING =====');
+    console.log('[process-next] Processing', runningScans.rows.length, 'scans in parallel');
+    
+    const processingPromises = runningScans.rows.map(async (scan) => {
+      const scanId = scan.id as number;
+      const doneCells = scan.done_cells as number;
+      const totalCells = scan.total_cells as number;
+      
+      console.log('[process-next] --- Processing Scan', scanId, '---');
+      console.log('[process-next] Progress:', doneCells, '/', totalCells);
+      console.log('[process-next] Remaining:', totalCells - doneCells, 'cells');
+      
+      // Process next batch with increased size (100 instead of 30)
+      console.log('[process-next] Calling /api/scans/process for scan', scanId);
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Bello-Mandator': belloMandator,
+        },
+        body: JSON.stringify({ 
+          scanId, 
+          startIndex: doneCells, 
+          size: 100 
+        }),
+      });
+      
+      console.log('[process-next] Response received for scan', scanId, ':', response.status, response.statusText);
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error('[process-next] ❌ PROCESSING FAILED for scan', scanId);
+        console.error('[process-next] Status:', response.status);
+        console.error('[process-next] Error:', errorText);
+        throw new Error(`Processing failed for scan ${scanId}: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      
+      console.log('[process-next] --- Scan', scanId, 'Result ---');
+      console.log('[process-next] Processed:', result.processed || 0, 'cells');
+      console.log('[process-next] Failures:', result.failures || 0);
+      console.log('[process-next] Next Index:', result.nextIndex || doneCells);
+      console.log('[process-next] Done:', result.done ? 'YES' : 'NO');
+      
+      return {
+        scanId,
+        processed: result.processed || 0,
+        nextIndex: result.nextIndex || doneCells,
+        done: result.done || false,
+        total: result.total || totalCells,
+      };
     });
     
-    console.log('[process-next] Response received:', response.status, response.statusText);
+    const results = await Promise.allSettled(processingPromises);
     
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
-      console.error('[process-next] ❌ PROCESSING FAILED');
-      console.error('[process-next] Status:', response.status);
-      console.error('[process-next] Error:', errorText);
-      return NextResponse.json(
-        { 
-          error: 'Processing failed',
-          status: response.status,
-          details: errorText,
-        },
-        { status: 500 }
-      );
-    }
+    // Collect results
+    const successfulScans = results
+      .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+      .map(r => r.value);
+    const failedScans = results
+      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      .map(r => ({ error: r.reason?.message || String(r.reason) }));
     
-    const result = await response.json();
-    
-    console.log('[process-next] ===== PROCESSING RESULT =====');
-    console.log('[process-next] Processed:', result.processed || 0, 'cells');
-    console.log('[process-next] Failures:', result.failures || 0);
-    console.log('[process-next] Next Index:', result.nextIndex || doneCells);
-    console.log('[process-next] Done:', result.done ? 'YES' : 'NO');
-    console.log('[process-next] Total:', result.total || totalCells);
+    console.log('[process-next] ===== PARALLEL PROCESSING COMPLETE =====');
+    console.log('[process-next] Successful scans:', successfulScans.length);
+    console.log('[process-next] Failed scans:', failedScans.length);
+    console.log('[process-next] Total processed cells:', successfulScans.reduce((sum, s) => sum + s.processed, 0));
     console.log('[process-next] ==================== CRON JOB COMPLETE ====================');
     
     return NextResponse.json({
-      scanId,
-      processed: result.processed || 0,
-      nextIndex: result.nextIndex || doneCells,
-      done: result.done || false,
-      total: result.total || totalCells,
+      scans: successfulScans,
+      failures: failedScans,
+      totalProcessed: successfulScans.reduce((sum, s) => sum + s.processed, 0),
+      scansProcessed: successfulScans.length,
+      scansFailed: failedScans.length,
     });
   } catch (e: unknown) {
     console.error('[process-next] ===== FATAL ERROR =====');
