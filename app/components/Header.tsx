@@ -6,11 +6,10 @@ import { useTheme } from '../context/ThemeContext';
 import { getHeaderStyle, headerIconStyle, getToggleButtonStyle } from '../styles/headerStyles';
 
 export function Header() {
-  const isDark = theme === 'dark';
   
 
   return (
-    <header style={getHeaderStyle(isDark)}>
+    <header>
      
       <div style={headerIconStyle}>
         <svg data-testid="amello" fill="none" viewBox="0 0 120 37" overflow="visible" focusable="false" height="45">
