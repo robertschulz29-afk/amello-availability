@@ -4,6 +4,9 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Header } from './components/Header';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { useTheme } from '../context/ThemeContext';
+import { getHeaderStyle, headerIconStyle, getToggleButtonStyle } from '../styles/headerStyles';
+
 import {
   getBodyStyle,
   layoutContainerStyle,
