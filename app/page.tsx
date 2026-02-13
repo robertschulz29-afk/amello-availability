@@ -298,6 +298,8 @@ export default function Page() {
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
       
+      <h1 className="mb-4">Availability Overview</h1>
+      
       {/* Scan Selection */}
       <div className="mb-3">
         <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>

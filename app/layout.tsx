@@ -30,13 +30,13 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
               href="/" 
               style={getDashboardLinkStyle(pathname === '/', isDark)}
             >
-              Dashboard
+              Availability Overview
             </Link>
             <Link 
               href="/status-overview" 
               style={getNavLinkStyle(pathname === '/status-overview', isDark)}
             >
-              Status Overview
+              Scan Setup
             </Link>
             <Link 
               href="/scan-results" 

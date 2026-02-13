@@ -88,6 +88,16 @@ export async function POST(req: NextRequest) {
     if (s.rows.length === 0) return NextResponse.json({ error: 'Scan not found' }, { status: 404 });
     const scan = s.rows[0];
 
+    // Check if scan has been cancelled
+    if (scan.status === 'cancelled') {
+      return NextResponse.json({
+        processed: 0,
+        nextIndex: startIndex,
+        done: true,
+        message: 'Scan has been cancelled',
+      });
+    }
+
     // Build dates (prefer base_checkin/days, else legacy offsets)
     let dates: string[] = [];
 
