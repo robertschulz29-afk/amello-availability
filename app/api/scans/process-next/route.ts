@@ -6,18 +6,33 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * POST /api/scans/process-next
+ * GET /api/scans/process-next
  * 
  * Processes the next batch of any running scan.
- * Intended to be called by a cron job to ensure scans complete even if
- * the initial trigger times out or fails.
+ * Called by Vercel cron job every minute (cron only supports GET).
  * 
  * This endpoint:
  * 1. Finds the oldest running scan with incomplete processing
  * 2. Processes the next batch (30 cells)
  * 3. Returns the processing result
  */
+export async function GET(req: NextRequest) {
+  return processNextScan(req);
+}
+
+/**
+ * POST /api/scans/process-next
+ * 
+ * Same as GET but accessible via POST for manual testing/triggering.
+ */
 export async function POST(req: NextRequest) {
+  return processNextScan(req);
+}
+
+/**
+ * Shared logic for both GET and POST handlers
+ */
+async function processNextScan(req: NextRequest) {
   console.log('[process-next] ==================== CRON JOB INVOKED ====================');
   console.log('[process-next] Timestamp:', new Date().toISOString());
   

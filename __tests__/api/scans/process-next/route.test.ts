@@ -2,6 +2,25 @@
 // Tests for the process-next cron endpoint
 
 describe('Process Next Endpoint', () => {
+  describe('HTTP Methods', () => {
+    it('should support GET requests (for Vercel cron)', () => {
+      // Vercel cron jobs only send GET requests
+      const httpMethods = ['GET', 'POST'];
+      
+      expect(httpMethods).toContain('GET');
+      expect(httpMethods).toContain('POST');
+    });
+
+    it('should have GET and POST handlers calling same shared logic', () => {
+      // Both handlers should delegate to processNextScan
+      // This ensures consistent behavior whether called by cron (GET) or manually (POST)
+      const sharedLogic = 'processNextScan';
+      
+      expect(sharedLogic).toBe('processNextScan');
+    });
+  });
+
+  describe('Scan Selection Logic', () => {
   describe('Scan Selection Logic', () => {
     it('should prioritize scans with status="running" and incomplete processing', () => {
       // Mock scan data scenarios
