@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
       slice.push({ hotelId: h.id, hotelCode: h.code, bookingUrl: h.booking_url, checkIn, checkOut });
     }
 
-    const CONCURRENCY = 4;
+    const CONCURRENCY = 10;
     let i = 0;
     let processed = 0;
     let failures  = 0;
@@ -541,6 +541,45 @@ export async function POST(req: NextRequest) {
     console.log('[process] Done:', done);
     console.log('[process] Duration:', Date.now() - tStart, 'ms');
     console.log('[process] ==================== END ====================');
+    
+    // Chain next batch if scan is not done and not stopping early
+    // This speeds up processing by not waiting for the 1-minute cron job
+    // Note: Chaining is fire-and-forget and bounded by SOFT_BUDGET_MS/maxDuration
+    // to prevent unbounded resource growth
+    if (!done && !stopEarly) {
+      console.log('[process] ===== CHAINING NEXT BATCH =====');
+      console.log('[process] Scan not done, triggering next batch immediately');
+      console.log('[process] Next batch startIndex:', nextIndex);
+      
+      // Determine the base URL for internal API calls
+      const baseUrl = process.env.NEXTAUTH_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+      const targetUrl = `${baseUrl}/api/scans/process`;
+      
+      console.log('[process] Chaining to:', targetUrl);
+      
+      // Fire and forget - don't await the response
+      // This allows the current request to return immediately
+      // Note: belloMandator is always defined (set at top of function with fallback)
+      fetch(targetUrl, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Bello-Mandator': belloMandator,
+        },
+        body: JSON.stringify({ 
+          scanId, 
+          startIndex: nextIndex, 
+          size: size 
+        }),
+      }).catch(err => {
+        // Log errors but don't throw - this is fire-and-forget
+        console.error('[process] ❌ Chaining error (non-blocking):', err.message || String(err));
+      });
+      
+      console.log('[process] ✓ Next batch triggered in background');
+    } else {
+      console.log('[process] No chaining: done=', done, 'stopEarly=', stopEarly);
+    }
 
     return NextResponse.json({
       processed,
