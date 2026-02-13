@@ -32,12 +32,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
             >
               Availability Overview
             </Link>
-            <Link 
-              href="/status-overview" 
-              style={getNavLinkStyle(pathname === '/status-overview', isDark)}
-            >
-              Scan Setup
-            </Link>
+           
             <Link 
               href="/scan-results" 
               style={getNavLinkStyle(pathname === '/scan-results', isDark)}
@@ -56,6 +51,26 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
             >
               Hotels
             </Link>
+           <Link 
+              href="/status-overview" 
+              style={getNavLinkStyle(pathname === '/status-overview', isDark)}
+            >
+              Scan Setup
+            </Link>
+            <button
+        style={buttonStyle}
+        onClick={toggleTheme}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        aria-label="Toggle dark mode"
+        title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {isDark ? (
+          <i className="fas fa-sun"></i>
+        ) : (
+          <i className="fas fa-moon"></i>
+        )}
+      </button>
           </nav>
 
           {/* Main content area */}
