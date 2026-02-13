@@ -54,6 +54,9 @@ function getPercentage(scan: { done_cells: number; total_cells: number }): numbe
 function formatDateTime(isoString: string): string {
   try {
     const date = new Date(isoString);
+    if (isNaN(date.getTime())) {
+      return isoString;
+    }
     return date.toLocaleString();
   } catch {
     return isoString;
@@ -195,7 +198,7 @@ export default function Page() {
     }, 3000); // Poll every 3 seconds
     
     return () => clearInterval(interval);
-  }, [currentScan?.id, currentScan?.status, loadCurrentScan]);
+  }, [currentScan, loadCurrentScan]);
 
   return (
     <main>
