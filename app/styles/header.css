@@ -1,0 +1,42 @@
+/* app/components/Header.css */
+
+.toggle-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 60px;
+  height: 30px;
+  background: #ddd;
+  border-radius: 15px;
+  cursor: pointer;
+  padding: 0 5px;
+  box-sizing: border-box;
+  transition: background 0.3s;
+}
+
+.toggle-wrapper.dark {
+  background: #555;
+}
+
+.icon {
+  font-size: 18px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.slider {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 26px;
+  height: 26px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.3s, background 0.3s;
+  z-index: 1;
+}
+
+.toggle-wrapper.dark .slider {
+  transform: translateX(30px);
+}
