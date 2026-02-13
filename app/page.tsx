@@ -325,7 +325,13 @@ export default function Page() {
           ))}
         </select>
         {selectedScanId && scans.find(s => s.id === selectedScanId)?.status === 'running' && (
-         
+          <button 
+            className="btn btn-danger"
+            onClick={() => stopScan(selectedScanId)}
+            title="Stop this running scan"
+          >
+            Stop Scan
+          </button>
         )}
       </div>
 
