@@ -52,7 +52,7 @@ function fmtDateTime(dt: string) {
 function getHotelDisplay(
   name: string | null | undefined,
   code: string | null | undefined
-): string {
+) {
   if (name && code) return `${name} (${code})`;
   if (name) return name;
   return code || 'Unknown';
@@ -63,11 +63,8 @@ export default function Page() {
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
 
   const [hotels, setHotels] = React.useState<HotelRow[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = React.useState<number | null>(
-    null
-  );
-  const [hotelSearchTerm, setHotelSearchTerm] =
-    React.useState<string>('');
+  const [selectedHotelId, setSelectedHotelId] = React.useState<number | null>(null);
+  const [hotelSearchTerm, setHotelSearchTerm] = React.useState('');
 
   const [scanDetails, setScanDetails] = React.useState<{
     scanId: number;
@@ -83,59 +80,40 @@ export default function Page() {
   const [loading, setLoading] = React.useState(false);
 
   const loadScans = React.useCallback(async () => {
-    try {
-      const list = await fetchJSON('/api/scans', { cache: 'no-store' });
-      const arr: ScanRow[] = Array.isArray(list) ? list : [];
-      arr.sort(
-        (a, b) =>
-          new Date(b.scanned_at).getTime() -
-          new Date(a.scanned_at).getTime()
-      );
-      setScans(arr);
-      if (arr.length > 0 && selectedScanId == null) {
-        setSelectedScanId(arr[0].id);
-      }
-    } catch (e: any) {
-      setError(e.message || 'Failed to load scans');
+    const list = await fetchJSON('/api/scans', { cache: 'no-store' });
+    const arr: ScanRow[] = Array.isArray(list) ? list : [];
+    arr.sort(
+      (a, b) =>
+        new Date(b.scanned_at).getTime() -
+        new Date(a.scanned_at).getTime()
+    );
+    setScans(arr);
+    if (!selectedScanId && arr.length > 0) {
+      setSelectedScanId(arr[0].id);
     }
   }, [selectedScanId]);
 
   const loadHotels = React.useCallback(async () => {
-    try {
-      const list = await fetchJSON('/api/hotels', {
-        cache: 'no-store',
-      });
-      const arr: HotelRow[] = Array.isArray(list) ? list : [];
-      arr.sort((a, b) => a.name.localeCompare(b.name));
-      setHotels(arr);
-    } catch (e: any) {
-      console.error('Failed to load hotels', e);
-    }
+    const list = await fetchJSON('/api/hotels', { cache: 'no-store' });
+    const arr: HotelRow[] = Array.isArray(list) ? list : [];
+    arr.sort((a, b) => a.name.localeCompare(b.name));
+    setHotels(arr);
   }, []);
 
   const loadScanDetails = React.useCallback(async (scanId: number) => {
-    try {
-      const data = await fetchJSON(`/api/scans/${scanId}`, {
-        cache: 'no-store',
-      });
-      setScanDetails({
-        scanId,
-        scannedAt: String(data?.scannedAt ?? ''),
-        baseCheckIn: data?.baseCheckIn ?? null,
-        days: data?.days ?? null,
-        stayNights: data?.stayNights ?? null,
-        timezone: data?.timezone ?? null,
-      });
-    } catch {
-      setScanDetails(null);
-    }
+    const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
+    setScanDetails({
+      scanId,
+      scannedAt: String(data?.scannedAt ?? ''),
+      baseCheckIn: data?.baseCheckIn ?? null,
+      days: data?.days ?? null,
+      stayNights: data?.stayNights ?? null,
+      timezone: data?.timezone ?? null,
+    });
   }, []);
 
   const loadResults = React.useCallback(async () => {
-    if (selectedScanId == null) {
-      setResults([]);
-      return;
-    }
+    if (!selectedScanId) return;
 
     setLoading(true);
     setError(null);
@@ -151,12 +129,12 @@ export default function Page() {
         params.append('hotelID', selectedHotelId.toString());
       }
 
-      const url = `/api/scan-results?${params.toString()}`;
-      const data: PaginatedResponse = await fetchJSON(url, {
-        cache: 'no-store',
-      });
+      const res: PaginatedResponse = await fetchJSON(
+        `/api/scan-results?${params}`,
+        { cache: 'no-store' }
+      );
 
-      setResults(data.data || []);
+      setResults(res.data || []);
     } catch (e: any) {
       setError(e.message || 'Failed to load results');
       setResults([]);
@@ -165,16 +143,10 @@ export default function Page() {
     }
   }, [selectedScanId, selectedHotelId]);
 
+  React.useEffect(() => { loadScans(); }, [loadScans]);
+  React.useEffect(() => { loadHotels(); }, [loadHotels]);
   React.useEffect(() => {
-    loadScans();
-  }, [loadScans]);
-
-  React.useEffect(() => {
-    loadHotels();
-  }, [loadHotels]);
-
-  React.useEffect(() => {
-    if (selectedScanId != null) {
+    if (selectedScanId) {
       loadScanDetails(selectedScanId);
       loadResults();
     }
@@ -183,58 +155,32 @@ export default function Page() {
   const filteredHotels = React.useMemo(() => {
     if (!hotelSearchTerm.trim()) return hotels;
     const term = hotelSearchTerm.toLowerCase();
-    return hotels.filter(
-      (h) =>
-        h.name.toLowerCase().includes(term) ||
-        h.code.toLowerCase().includes(term) ||
-        h.id.toString().includes(term)
+    return hotels.filter(h =>
+      h.name.toLowerCase().includes(term) ||
+      h.code.toLowerCase().includes(term)
     );
   }, [hotels, hotelSearchTerm]);
 
   // ✅ GROUP BY HOTEL ONLY
   const groupedData = React.useMemo(() => {
-    const grouped: {
-      [hotelId: number]: {
-        hotelName: string;
-        rows: ComparisonRow[];
-      };
-    } = {};
-
+    const grouped: Record<number, ComparisonRow[]> = {};
     for (const row of results) {
-      if (!grouped[row.hotel_id]) {
-        grouped[row.hotel_id] = {
-          hotelName: row.hotel_name,
-          rows: [],
-        };
-      }
-      grouped[row.hotel_id].rows.push(row);
+      grouped[row.hotel_id] ??= [];
+      grouped[row.hotel_id].push(row);
     }
-
     return grouped;
   }, [results]);
 
-  const calculateDifference = (
-    amelloPrice: number | null,
-    bookingPrice: number | null
-  ) => {
-    if (amelloPrice == null || bookingPrice == null) return null;
-    if (bookingPrice === 0 && amelloPrice === 0) return null;
-    if (bookingPrice === 0) {
-      return { diff: amelloPrice, pct: 0 };
-    }
-    const diff = amelloPrice - bookingPrice;
-    const pct = (diff / bookingPrice) * 100;
+  const calculateDifference = (a: number | null, b: number | null) => {
+    if (a == null || b == null || (a === 0 && b === 0)) return null;
+    const diff = a - b;
+    const pct = b !== 0 ? (diff / b) * 100 : 0;
     return { diff, pct };
   };
 
-  const getStatusBadgeClass = (
-    statusAmello: string | null,
-    statusBooking: string | null
-  ) => {
-    if (statusAmello === 'green' && statusBooking === 'green')
-      return 'bg-success';
-    if (statusAmello === 'green' || statusBooking === 'green')
-      return 'bg-warning';
+  const getStatusBadgeClass = (a: string | null, b: string | null) => {
+    if (a === 'green' && b === 'green') return 'bg-success';
+    if (a === 'green' || b === 'green') return 'bg-warning';
     return 'bg-danger';
   };
 
@@ -242,181 +188,114 @@ export default function Page() {
     <main>
       <h1 className="h3 mb-3">Price Comparison</h1>
 
+      {/* Selectors */}
+      <div className="d-flex gap-3 mb-3 flex-wrap">
+        <select
+          className="form-select"
+          style={{ minWidth: 300 }}
+          value={selectedScanId ?? ''}
+          onChange={e => setSelectedScanId(Number(e.target.value))}
+        >
+          {scans.map(s => (
+            <option key={s.id} value={s.id}>
+              #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status}
+            </option>
+          ))}
+        </select>
+
+        <input
+          className="form-control"
+          placeholder="Search hotels..."
+          value={hotelSearchTerm}
+          onChange={e => setHotelSearchTerm(e.target.value)}
+        />
+
+        <select
+          className="form-select"
+          value={selectedHotelId ?? ''}
+          onChange={e =>
+            setSelectedHotelId(e.target.value ? Number(e.target.value) : null)
+          }
+        >
+          <option value="">All Hotels</option>
+          {filteredHotels.map(h => (
+            <option key={h.id} value={h.id}>
+              {getHotelDisplay(h.name, h.code)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Scan parameters */}
+      {scanDetails && (
+        <div className="card mb-3">
+          <div className="card-header">Scan Parameters</div>
+          <div className="card-body small row g-2">
+            <div className="col-md-4"><strong>Scan ID:</strong> {scanDetails.scanId}</div>
+            <div className="col-md-4"><strong>Scanned at:</strong> {fmtDateTime(scanDetails.scannedAt)}</div>
+            <div className="col-md-4"><strong>Timezone:</strong> {scanDetails.timezone}</div>
+            <div className="col-md-4"><strong>Base check-in:</strong> {scanDetails.baseCheckIn}</div>
+            <div className="col-md-4"><strong>Days scanned:</strong> {scanDetails.days}</div>
+            <div className="col-md-4"><strong>Stay nights:</strong> {scanDetails.stayNights}</div>
+          </div>
+        </div>
+      )}
+
       {error && <div className="alert alert-danger">{error}</div>}
 
-      {loading ? (
-        <div className="text-center py-4">
-          <div className="spinner-border" />
-        </div>
-      ) : results.length > 0 ? (
-        <>
-          {Object.entries(groupedData).map(
-            ([hotelId, hotelData]) => (
-              <div key={hotelId} className="mb-4">
-                <h4>{hotelData.hotelName}</h4>
+      {Object.entries(groupedData).map(([hotelId, rows]) => (
+        <div key={hotelId} className="mb-4">
+          <h4>{rows[0].hotel_name}</h4>
 
-                <div className="table-responsive border rounded">
-                  <table className="table table-sm table-striped mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th>Hotel</th>
-                        <th>Check-In</th>
-                        <th>Room Name</th>
-                        <th>Rate Name</th>
-                        <th className="text-end">
-                          Price (Amello)
-                        </th>
-                        <th className="text-end">
-                          Price (Booking.com)
-                        </th>
-                        <th className="text-end">
-                          Difference
-                        </th>
-                        <th className="text-center">
-                          Status
-                        </th>
+          <div className="table-responsive border rounded">
+            <table className="table table-sm table-striped mb-0">
+              <thead className="table-light">
+                <tr>
+                  <th>Hotel</th>
+                  <th>Check-In</th>
+                  <th>Room</th>
+                  <th>Rate</th>
+                  <th className="text-end">Amello</th>
+                  <th className="text-end">Booking</th>
+                  <th className="text-end">Diff</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows
+                  .sort((a, b) => a.check_in_date.localeCompare(b.check_in_date))
+                  .map((r, i) => {
+                    const diff = calculateDifference(r.price_amello, r.price_booking);
+                    return (
+                      <tr key={i}>
+                        <td>{r.hotel_name}</td>
+                        <td>{r.check_in_date}</td>
+                        <td>{r.room_name || '—'}</td>
+                        <td>{r.rate_name || '—'}</td>
+                        <td className="text-end">{r.price_amello != null ? formatPrice(r.price_amello, r.currency) : '—'}</td>
+                        <td className="text-end">{r.price_booking != null ? formatPrice(r.price_booking, r.currency) : '—'}</td>
+                        <td className="text-end">
+                          {diff ? `${diff.diff > 0 ? '+' : ''}${formatPrice(diff.diff, r.currency)}` : '—'}
+                        </td>
+                        <td>
+                          <span className={`badge ${getStatusBadgeClass(r.status_amello, r.status_booking)}`}>
+                            {r.status_amello === 'green' && r.status_booking === 'green'
+                              ? 'Both'
+                              : r.status_amello === 'green'
+                              ? 'Amello'
+                              : r.status_booking === 'green'
+                              ? 'Booking'
+                              : 'None'}
+                          </span>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {hotelData.rows
-                        .sort((a, b) =>
-                          a.check_in_date.localeCompare(
-                            b.check_in_date
-                          )
-                        )
-                        .map((row, idx) => {
-                          const diff =
-                            calculateDifference(
-                              row.price_amello,
-                              row.price_booking
-                            );
-                          const statusClass =
-                            getStatusBadgeClass(
-                              row.status_amello,
-                              row.status_booking
-                            );
-
-                          return (
-                            <tr key={idx}>
-                              <td>{hotelData.hotelName}</td>
-                              <td>{row.check_in_date}</td>
-                              <td>
-                                {row.room_name || '—'}
-                              </td>
-                              <td>
-                                {row.rate_name || '—'}
-                              </td>
-
-                              <td className="text-end">
-                                {row.price_amello !=
-                                null ? (
-                                  <span
-                                    className={
-                                      row.status_amello ===
-                                      'green'
-                                        ? 'text-success'
-                                        : 'text-danger'
-                                    }
-                                  >
-                                    {formatPrice(
-                                      row.price_amello,
-                                      row.currency
-                                    )}
-                                  </span>
-                                ) : (
-                                  <span className="text-muted">
-                                    —
-                                  </span>
-                                )}
-                              </td>
-
-                              <td className="text-end">
-                                {row.price_booking !=
-                                null ? (
-                                  <span
-                                    className={
-                                      row.status_booking ===
-                                      'green'
-                                        ? 'text-success'
-                                        : 'text-danger'
-                                    }
-                                  >
-                                    {formatPrice(
-                                      row.price_booking,
-                                      row.currency
-                                    )}
-                                  </span>
-                                ) : (
-                                  <span className="text-muted">
-                                    —
-                                  </span>
-                                )}
-                              </td>
-
-                              <td className="text-end">
-                                {diff ? (
-                                  <span
-                                    className={
-                                      diff.diff < 0
-                                        ? 'text-success'
-                                        : diff.diff > 0
-                                        ? 'text-danger'
-                                        : ''
-                                    }
-                                  >
-                                    {diff.diff < 0
-                                      ? ''
-                                      : '+'}
-                                    {formatPrice(
-                                      diff.diff,
-                                      row.currency
-                                    )}{' '}
-                                    (
-                                    {diff.pct > 0
-                                      ? '+'
-                                      : ''}
-                                    {diff.pct.toFixed(1)}%)
-                                  </span>
-                                ) : (
-                                  <span className="text-muted">
-                                    —
-                                  </span>
-                                )}
-                              </td>
-
-                              <td className="text-center">
-                                <span
-                                  className={`badge ${statusClass}`}
-                                >
-                                  {row.status_amello ===
-                                    'green' &&
-                                  row.status_booking ===
-                                    'green'
-                                    ? 'Both'
-                                    : row.status_amello ===
-                                      'green'
-                                    ? 'Amello Only'
-                                    : row.status_booking ===
-                                      'green'
-                                    ? 'Booking Only'
-                                    : 'None'}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
-          )}
-        </>
-      ) : (
-        <p className="text-muted">
-          No results found.
-        </p>
-      )}
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </main>
   );
 }
