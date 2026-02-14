@@ -1,6 +1,6 @@
 // app/layout.tsx
 'use client';
-import './styles/styles.css';
+import './styles/styles.module.css';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
