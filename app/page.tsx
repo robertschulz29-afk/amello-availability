@@ -281,7 +281,7 @@ export default function Page() {
     const universe = allCodes.length ? allCodes : hotels.map(h => h.code);
 
     function keyFor(h: Hotel): string {
-      if (groupBy === 'hotel')  return (h.hotel  && h.hotel.trim())  || '(no hotel)';
+      if (groupBy === 'hotel')  return (h.name  && h.name.trim())  || '(no hotel)';
       if (groupBy === 'brand')   return (h.brand   && h.brand.trim())   || '(no brand)';
       if (groupBy === 'region')  return (h.region  && h.region.trim())  || '(no region)';
       if (groupBy === 'country') return (h.country && h.country.trim()) || '(no country)';
