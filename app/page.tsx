@@ -144,7 +144,7 @@ function GroupBarChart({
             const x = xStart + idx * (barWidth + gap);
             const y = yFor(pt.pct);
             const h = (innerPadTop + maxBarArea) - y;
-            const barColor == (pct: number) => {
+            const barColor = (pct: number) => {
                 if (!isFinite(pct)) return '#ccc'; // fallback for invalid numbers
                 if (pct > 75) return '#4caf50'; // green
                 if (pct > 50) return '#ffeb3b'; // yellow
