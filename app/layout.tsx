@@ -2,6 +2,7 @@
 'use client';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import './style.css';
 import { Header } from './components/Header';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import {
