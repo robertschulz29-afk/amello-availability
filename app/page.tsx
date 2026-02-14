@@ -144,13 +144,18 @@ function GroupBarChart({
             const x = xStart + idx * (barWidth + gap);
             const y = yFor(pt.pct);
             const h = (innerPadTop + maxBarArea) - y;
-            const barColor ='#4caf50';
+            const barColor == (pct: number) => {
+                if (!isFinite(pct)) return '#ccc'; // fallback for invalid numbers
+                if (pct > 75) return '#4caf50'; // green
+                if (pct > 50) return '#ffeb3b'; // yellow
+                return '#f44336'; // red
+              };
             return (
               <g key={pt.date}>
                 <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
-                <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill="currentColor" fillOpacity="0.25" />
+                <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill={{getBarColor(pt.pct)} fillOpacity="0.25" />
                 {idx % labelEvery === 0 && (
-                  <text x={x + barWidth/2} y={height - labelYOffset} textAnchor="start" fontSize="10" fill={barColor} fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - labelYOffset})`}>
+                  <text x={x + barWidth/2} y={height - labelYOffset} textAnchor="start" fontSize="10" fill="currentColor" fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - labelYOffset})`}>
                     {pt.date}
                   </text>
                 )}
