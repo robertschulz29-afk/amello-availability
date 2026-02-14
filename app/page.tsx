@@ -114,7 +114,8 @@ function GroupBarChart({
   const minWidthForSeries = series.length * (barWidth + gap) + 40;
   const width = Math.max(containerWidth, minWidthForSeries);
   const xStart = 20;
-  const averagAvailability = series.greens/series.total;
+  const greensArray = series.map(pt => pt.greens)
+  const averagAvailability = greensArray.length/series.length;
   const headerColor = (averageAvailability: number) => {
                 if (!isFinite(averageAvailability)) return '#ccc'; // fallback for invalid numbers
                 if (averageAvailability > 75) return '#4caf50'; // green
