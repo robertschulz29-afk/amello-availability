@@ -1,4 +1,4 @@
-nav {flex-direction: column;
+:global(nav) {flex-direction: column;
   height: 100vh;
   display: flex;}
 
