@@ -133,7 +133,7 @@ function GroupBarChart({
     <div className="card mb-3">
       <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
         <span><strong>{title}</strong></span>
-        <span className="small text-muted">Avg:{averagAvailability} </span>
+        <span className="small text-muted">Avg:{averageAvailability} </span>
                 <span className="small text-muted">Avg:{headerColor()} </span>
       </div>
       <div className="card-body" style={{ overflowX: 'auto' }} ref={containerRef}>
