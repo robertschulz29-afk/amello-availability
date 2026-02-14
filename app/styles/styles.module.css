@@ -1,7 +1,3 @@
-:global(nav) {flex-direction: column;
-  height: 100vh;
-  display: flex;}
-
 .alert-red{background-color: red;}
 .alert-yellow{background-color: yellow;}
 .alert-green{background-color: green;}
