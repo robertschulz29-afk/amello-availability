@@ -115,12 +115,12 @@ function GroupBarChart({
   const width = Math.max(containerWidth, minWidthForSeries);
   const xStart = 20;
   const greensArray = series.map(pt => pt.greens)
-  const averageAvailability = greensArray.length/series.length*100;
+  const averageAvailability = greensArray.length/series.length;
   const headerColor = () => {
                 if (!isFinite(averageAvailability)) return '#alert-basic'; // fallback for invalid numbers
                 if (averageAvailability > 75) return 'alert-green'; // green
                 if (averageAvailability > 50) return 'alert-yellow'; // yellow
-                return 'allert-red'; // red
+                return 'alert-red'; // red
               };
   const yFor = (pct: number) => innerPadTop + (100 - Math.max(0, Math.min(100, pct))) / 100 * maxBarArea;
   const labelEvery = series.length > 120 ? 10
