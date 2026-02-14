@@ -114,9 +114,7 @@ function GroupBarChart({
   const minWidthForSeries = series.length * (barWidth + gap) + 40;
   const width = Math.max(containerWidth, minWidthForSeries);
   const xStart = 20;
-  const averagAvailability = 20;
-  const minAvailability = 20;
-  const maxAvailability = 20;
+  const averagAvailability = series.green / series.total *100;
   const yFor = (pct: number) => innerPadTop + (100 - Math.max(0, Math.min(100, pct))) / 100 * maxBarArea;
   const labelEvery = series.length > 120 ? 10
                    : series.length > 80 ? 6
@@ -129,8 +127,6 @@ function GroupBarChart({
       <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
         <span><strong>{title}</strong></span>
         <span className="small text-muted">Avg:{averagAvailability} </span>
-        <span className="small text-muted">Min:{minAvailability} </span>
-        <span className="small text-muted">Max:{maxAvailability} </span>
       </div>
       <div className="card-body" style={{ overflowX: 'auto' }} ref={containerRef}>
         <svg width={width} height={height} role="img" aria-label={`${title} green percentage chart`}>
@@ -153,7 +149,7 @@ function GroupBarChart({
             return (
               <g key={pt.date}>
                 <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
-                <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill={getBarColor(pt.pct)} fillOpacity="0.25" />
+                <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill={barColor(pt.pct)} fillOpacity="0.25" />
                 {idx % labelEvery === 0 && (
                   <text x={x + barWidth/2} y={height - labelYOffset} textAnchor="start" fontSize="10" fill="currentColor" fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - labelYOffset})`}>
                     {pt.date}
