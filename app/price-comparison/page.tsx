@@ -331,11 +331,9 @@ export default function Page() {
         <>
           {Object.entries(groupedData).map(([hotelId, hotelData]) => (
             <div key={hotelId} className="mb-4">
-              <h4 className="mb-3">{hotelData.hotelName} (ID: {hotelId})</h4>
               
               {Object.entries(hotelData.dates).sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => (
                 <div key={date} className="mb-3">
-                  <h5 className="mb-2">Check-in: {date}</h5>
                   <div className="table-responsive border rounded">
                     <table className="table table-sm table-striped mb-0">
                       <thead className="table-light">
