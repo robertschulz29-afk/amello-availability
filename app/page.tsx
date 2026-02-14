@@ -150,7 +150,7 @@ function GroupBarChart({
                 <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
                 <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill="currentColor" fillOpacity="0.25" />
                 {idx % labelEvery === 0 && (
-                  <text x={x + barWidth/2} y={height - labelYOffset} textAnchor="start" fontSize="10" fill={barColor}" fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - labelYOffset})`}>
+                  <text x={x + barWidth/2} y={height - labelYOffset} textAnchor="start" fontSize="10" fill={barColor} fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - labelYOffset})`}>
                     {pt.date}
                   </text>
                 )}
