@@ -131,7 +131,7 @@ function GroupBarChart({
 
   return (
     <div className="card mb-3">
-      <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3 {headerColor()}">
+      <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3 ${headerColor()}">
         <span><strong>{title}</strong></span>
         <span className="small text-muted">Avg:{averageAvailability} </span>
                 
