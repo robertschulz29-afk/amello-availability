@@ -340,6 +340,9 @@ export default function Page() {
                     <table className="table table-sm table-striped mb-0">
                       <thead className="table-light">
                         <tr>
+                          
+                          <th>Hotel</th>
+                          <th>Check-In Date</th>
                           <th>Room Name</th>
                           <th>Rate Name</th>
                           <th className="text-end">Price (Amello)</th>
@@ -355,6 +358,8 @@ export default function Page() {
                           
                           return (
                             <tr key={idx}>
+                              <td>{hotelData.hotelName}</td>
+                              <td>{date}</td>
                               <td>{row.room_name || '—'}</td>
                               <td>{row.rate_name || '—'}</td>
                               <td className="text-end">
