@@ -269,7 +269,7 @@ export default function Page() {
                     return (
                       <tr key={i}>
                         <td>{r.hotel_name}</td>
-                        <td>{r.check_in_date..split(' ')[0]}</td>
+                        <td>{r.check_in_date.split(' ')[0]}</td>
                         <td>{r.room_name || '—'}</td>
                         <td>{r.rate_name || '—'}</td>
                         <td className="text-end">{r.price_amello != null ? formatPrice(r.price_amello, r.currency) : '—'}</td>
