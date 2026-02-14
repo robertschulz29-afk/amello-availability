@@ -259,6 +259,7 @@ export default function Page() {
                   <table className="table table-sm table-striped mb-0">
                     <thead className="table-light">
                       <tr>
+                        <th>Hotel</th>
                         <th>Check-In</th>
                         <th>Room Name</th>
                         <th>Rate Name</th>
@@ -297,6 +298,7 @@ export default function Page() {
 
                           return (
                             <tr key={idx}>
+                              <td>{hotelData.hotelName}</td>
                               <td>{row.check_in_date}</td>
                               <td>
                                 {row.room_name || '—'}
