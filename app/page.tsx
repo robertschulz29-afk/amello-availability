@@ -115,12 +115,12 @@ function GroupBarChart({
   const width = Math.max(containerWidth, minWidthForSeries);
   const xStart = 20;
   const greensArray = series.map(pt => pt.greens)
-  const averageAvailability = greensArray.length/series.length;
+  const averageAvailability = greensArray.length/series.length*100;
   const headerColor = () => {
-                if (!isFinite(averageAvailability)) return '#ccc'; // fallback for invalid numbers
-                if (averageAvailability > 75) return '#4caf50'; // green
-                if (averageAvailability > 50) return '#ffeb3b'; // yellow
-                return '#f44336'; // red
+                if (!isFinite(averageAvailability)) return '#alert-basic'; // fallback for invalid numbers
+                if (averageAvailability > 75) return 'alert-green'; // green
+                if (averageAvailability > 50) return 'alert-yellow'; // yellow
+                return 'allert-red'; // red
               };
   const yFor = (pct: number) => innerPadTop + (100 - Math.max(0, Math.min(100, pct))) / 100 * maxBarArea;
   const labelEvery = series.length > 120 ? 10
@@ -131,10 +131,10 @@ function GroupBarChart({
 
   return (
     <div className="card mb-3">
-      <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3 {headerColor()}">
         <span><strong>{title}</strong></span>
         <span className="small text-muted">Avg:{averageAvailability} </span>
-                <span className="small text-muted">Avg:{headerColor()} </span>
+                
       </div>
       <div className="card-body" style={{ overflowX: 'auto' }} ref={containerRef}>
         <svg width={width} height={height} role="img" aria-label={`${title} green percentage chart`}>
