@@ -331,7 +331,9 @@ export default function Page() {
               });
 
               const validPcts = series.map(s => s.pct).filter(p => typeof p === 'number' && isFinite(p));
-              
+              const avg = validPcts.length > 0 ? validPcts.reduce((a,b)=>a+b,0)/validPcts.length : null;
+              const min = validPcts.length > 0 ? Math.min(...validPcts) : null;
+              const max = validPcts.length > 0 ? Math.max(...validPcts) : null;
 
               return (
                 <div key={g.label} className="mb-4">
