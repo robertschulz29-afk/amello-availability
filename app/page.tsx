@@ -125,9 +125,9 @@ function GroupBarChart({
     <div className="card mb-3">
       <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
         <span><strong>{title}</strong></span>
-        <span className="small text-muted">Avg: {avg != null ? `${avg.toFixed(1)}%` : '—'}</span>
-        <span className="small text-muted">Min: {min != null ? `${min.toFixed(1)}%` : '—'}</span>
-        <span className="small text-muted">Max: {max != null ? `${max.toFixed(1)}%` : '—'}</span>
+        <span className="small text-muted">Avg: </span>
+        <span className="small text-muted">Min: </span>
+        <span className="small text-muted">Max: </span>
       </div>
       <div className="card-body" style={{ overflowX: 'auto' }} ref={containerRef}>
         <svg width={width} height={height} role="img" aria-label={`${title} green percentage chart`}>
@@ -331,9 +331,7 @@ export default function Page() {
               });
 
               const validPcts = series.map(s => s.pct).filter(p => typeof p === 'number' && isFinite(p));
-              const avg = validPcts.length > 0 ? validPcts.reduce((a,b)=>a+b,0)/validPcts.length : null;
-              const min = validPcts.length > 0 ? Math.min(...validPcts) : null;
-              const max = validPcts.length > 0 ? Math.max(...validPcts) : null;
+              
 
               return (
                 <div key={g.label} className="mb-4">
