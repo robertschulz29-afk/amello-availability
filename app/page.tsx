@@ -114,7 +114,13 @@ function GroupBarChart({
   const minWidthForSeries = series.length * (barWidth + gap) + 40;
   const width = Math.max(containerWidth, minWidthForSeries);
   const xStart = 20;
-  const averagAvailability = series.green / series.total *100;
+  const averagAvailability = series.greens/series.total;
+  const headerColor = (averageAvailability: number) => {
+                if (!isFinite(averageAvailability)) return '#ccc'; // fallback for invalid numbers
+                if (averageAvailability > 75) return '#4caf50'; // green
+                if (averageAvailability > 50) return '#ffeb3b'; // yellow
+                return '#f44336'; // red
+              };
   const yFor = (pct: number) => innerPadTop + (100 - Math.max(0, Math.min(100, pct))) / 100 * maxBarArea;
   const labelEvery = series.length > 120 ? 10
                    : series.length > 80 ? 6
@@ -127,6 +133,7 @@ function GroupBarChart({
       <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
         <span><strong>{title}</strong></span>
         <span className="small text-muted">Avg:{averagAvailability} </span>
+                <span className="small text-muted">Avg:{headerColor} </span>
       </div>
       <div className="card-body" style={{ overflowX: 'auto' }} ref={containerRef}>
         <svg width={width} height={height} role="img" aria-label={`${title} green percentage chart`}>
