@@ -1,5 +1,6 @@
 // app/layout.tsx
 'use client';
+import './globals.css';
 import './styles/styles.module.css';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
