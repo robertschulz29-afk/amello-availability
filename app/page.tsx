@@ -116,7 +116,7 @@ function GroupBarChart({
   const xStart = 20;
   const greensArray = series.map(pt => pt.greens)
   const averagAvailability = greensArray.length/series.length;
-  const headerColor = (averageAvailability: number) => {
+  const headerColor = () => {
                 if (!isFinite(averageAvailability)) return '#ccc'; // fallback for invalid numbers
                 if (averageAvailability > 75) return '#4caf50'; // green
                 if (averageAvailability > 50) return '#ffeb3b'; // yellow
