@@ -330,14 +330,15 @@ export default function Page() {
       ) : results.length > 0 ? (
         <>
           {Object.entries(groupedData).map(([hotelId, hotelData]) => (
-            <div key={hotelId} className="mb-4">
-               <div className="table-responsive border rounded">
+            <div key={hotelId} className="mb-4">  
+              {Object.entries(hotelData.dates).sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => (
+                <div key={date} className="mb-3">
+                  <div className="table-responsive border rounded">
                     <table className="table table-sm table-striped mb-0">
                       <thead className="table-light">
                         <tr>
-                          
                           <th>Hotel</th>
-                          <th>Check-In Date</th>
+                          <th>Check-In</th>
                           <th>Room Name</th>
                           <th>Rate Name</th>
                           <th className="text-end">Price (Amello)</th>
@@ -347,9 +348,6 @@ export default function Page() {
                         </tr>
                       </thead>
                       <tbody>
-              {Object.entries(hotelData.dates).sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => (
-                <div key={date} className="mb-3">
-                 
                         {rows.map((row, idx) => {
                           const diff = calculateDifference(row.price_amello, row.price_booking);
                           const statusClass = getStatusBadgeClass(row.status_amello, row.status_booking);
