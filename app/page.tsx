@@ -22,6 +22,12 @@ type ResultsMatrix = {
   results: Record<string, Record<string, 'green' | 'red'>>;
 };
 
+function addDaysISO(dateString: string, days: number) {
+  const d = new Date(dateString);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function fmtDateTime(dt: string) {
   try { return new Date(dt).toLocaleString(); } catch { return dt; }
 }
@@ -189,7 +195,7 @@ export default function Page() {
   const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
 
   // Grouping
-  type GroupBy = 'none'|'brand'|'region'|'country';
+  type GroupBy = 'none'|'hotel'|'brand'|'region'|'country';
   const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
 
   // Load hotels
@@ -275,6 +281,7 @@ export default function Page() {
     const universe = allCodes.length ? allCodes : hotels.map(h => h.code);
 
     function keyFor(h: Hotel): string {
+      if (groupBy === 'hotel')  return (h.hotel  && h.hotel.trim())  || '(no hotel)';
       if (groupBy === 'brand')   return (h.brand   && h.brand.trim())   || '(no brand)';
       if (groupBy === 'region')  return (h.region  && h.region.trim())  || '(no region)';
       if (groupBy === 'country') return (h.country && h.country.trim()) || '(no country)';
@@ -334,7 +341,7 @@ const currentIndex = React.useMemo(
           <div className="card-body small">
             <div className="row g-2">
               <div className="col-sm-6 col-md-3"><strong>Scan Date:</strong> {fmtDateTime(matrix.scannedAt)}</div>
-              <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong> {matrix.baseCheckIn ?? '—'}</div>
+              <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong> {matrix.baseCheckIn? addDaysISO(matrix.baseCheckIn, matrix.stayNights ?? 0): '—'} to </div>
               <div className="col-sm-6 col-md-3"><strong>Days Scanned:</strong> {matrix.days ?? '—'}</div>
               <div className="col-sm-6 col-md-3"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
             </div>
@@ -347,14 +354,13 @@ const currentIndex = React.useMemo(
 
       {/* History navigation + grouping controls */}
       <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
-        <div className="d-flex flex-wrap align-items-center gap-2">
-            <button className="btn btn-outline-secondary" onClick={async()=>{ await loadScans(); if (selectedScanId!=null) await loadScanById(selectedScanId); }} disabled={selectedScanId==null}>Refresh</button>
-        </div>
+       
 
         <div className="ms-auto d-flex align-items-center gap-2">
           <label className="form-label mb-0">Group by:</label>
           <select className="form-select" value={groupBy} onChange={e => setGroupBy(e.target.value as any)}>
             <option value="none">None</option>
+            <option value="hotel">Hotel</option>
             <option value="brand">Brand</option>
             <option value="region">Region</option>
             <option value="country">Country</option>
