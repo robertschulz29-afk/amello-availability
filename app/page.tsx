@@ -8,7 +8,7 @@ type Hotel = { id: number; name: string; code: string; brand?: string; region?: 
 type ScanRow = {
   id: number; scanned_at: string;
   stay_nights: number; total_cells: number; done_cells: number;
-  status: 'queued'|'running'|'done'|'error';
+  status: 'queued' | 'running' | 'done' | 'error';
 };
 type ResultsMatrix = {
   scanId: number;
@@ -57,7 +57,7 @@ function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) 
   return (
     <div className="card mb-3" style={{ backgroundColor: bgColor, color: textColor }}>
       <div className="card-body text-center">
-        <h5 className="card-title mb-2" style={{ color: textColor }}>Availability overview</h5>
+        <h5 className="card-title mb-2" style={{ color: textColor }}>Average Availability</h5>
         <h2 className="mb-0" style={{ fontSize: '2.5rem', fontWeight: 'bold', color: textColor }}>
           {typeof score === 'number' && isFinite(score) ? `${score.toFixed(1)}%` : '—'}
         </h2>
@@ -66,7 +66,7 @@ function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) 
   );
 }
 
-/** --- Small SVG bar chart (no external deps) --- */
+/** --- Small SVG bar chart --- */
 function GroupBarChart({
   title,
   series,
@@ -114,34 +114,36 @@ function GroupBarChart({
   const minWidthForSeries = series.length * (barWidth + gap) + 40;
   const width = Math.max(containerWidth, minWidthForSeries);
   const xStart = 20;
-  const greensArray = series.map(pt => pt.greens)
-  const averageAvailability = greensArray.length/series.length;
+
+  const averageAvailability = avg !== null ? parseFloat(avg.toFixed(2)) : 0;
+  
   const headerColor = () => {
-                if (!isFinite(averageAvailability)) return '#alert-basic'; // fallback for invalid numbers
-                if (averageAvailability > 75) return 'alert-green'; // green
-                if (averageAvailability > 50) return 'alert-yellow'; // yellow
-                return 'alert-red'; // red
-              };
+    if (!isFinite(averageAvailability)) return 'alert-basic';
+    if (averageAvailability > 85) return 'alert-green';
+    if (averageAvailability > 50) return 'alert-yellow';
+    return 'alert-red';
+  };
+
   const yFor = (pct: number) => innerPadTop + (100 - Math.max(0, Math.min(100, pct))) / 100 * maxBarArea;
   const labelEvery = series.length > 120 ? 10
-                   : series.length > 80 ? 6
-                   : series.length > 50 ? 4
-                   : series.length > 25 ? 2
-                   : 1;
+    : series.length > 80 ? 6
+      : series.length > 50 ? 4
+        : series.length > 25 ? 2
+          : 1;
 
   return (
     <div className="card mb-3">
-      <div className={`card-header d-flex justify-content-between align-items-center flex-wrap gap-3 ${headerColor()}`}>
+      <div className={`card-header d-flex justify-content-between align-items-center flex-wrap gap-3`}>
         <span><strong>{title}</strong></span>
-        <span className="small text-muted">Avg:{averageAvailability} </span>
-                
+        <h2 className="mb-0">Average: {averageAvailability}%</h2>
       </div>
+      <div className={`${headerColor()}`} style={{ height: '4px' }}></div>
       <div className="card-body" style={{ overflowX: 'auto' }} ref={containerRef}>
-        <svg width={width} height={height} role="img" aria-label={`${title} green percentage chart`}>
-          {[25,50,75].map((p) => (
+        <svg width={width} height={height} role="img" aria-label={`${title} availability chart`}>
+          {[25, 50, 75].map((p) => (
             <g key={`grid-${p}`}>
               <line x1={0} y1={yFor(p)} x2={width} y2={yFor(p)} stroke="currentColor" strokeOpacity="0.1" />
-              <text x={4} y={yFor(p) - 2} fontSize="10" fill="currentColor" fillOpacity="0.6">{p}%</text>
+              <text x={4} y={yFor(p) - 2} fontSize="10" fill="currentColor" fillOpacity="0.9">{p}%</text>
             </g>
           ))}
           {series.map((pt, idx) => {
@@ -149,17 +151,17 @@ function GroupBarChart({
             const y = yFor(pt.pct);
             const h = (innerPadTop + maxBarArea) - y;
             const barColor = (pct: number) => {
-                if (!isFinite(pct)) return '#ccc'; // fallback for invalid numbers
-                if (pct > 75) return '#4caf50'; // green
-                if (pct > 50) return '#ffeb3b'; // yellow
-                return '#f44336'; // red
-              };
+              if (!isFinite(pct)) return '#ccc';
+              if (pct > 75) return '#4caf50';
+              if (pct > 50) return '#ffeb3b';
+              return '#f44336';
+            };
             return (
               <g key={pt.date}>
                 <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
                 <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill={barColor(pt.pct)} fillOpacity="0.25" />
                 {idx % labelEvery === 0 && (
-                  <text x={x + barWidth/2} y={height - labelYOffset} textAnchor="start" fontSize="10" fill="currentColor" fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - labelYOffset})`}>
+                  <text x={x + barWidth / 2} y={height - labelYOffset} textAnchor="start" fontSize="10" fill="currentColor" fillOpacity="0.7" transform={`rotate(45 ${x + barWidth / 2} ${height - labelYOffset})`}>
                     {pt.date}
                   </text>
                 )}
@@ -180,24 +182,27 @@ export default function Page() {
   const [error, setError] = React.useState<string | null>(null);
   const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
 
-  type GroupBy = 'none'|'hotel'|'brand'|'region'|'country';
+  type GroupBy = 'none' | 'hotel' | 'brand' | 'region' | 'country';
+  type SortOrder = 'none' | 'asc' | 'desc';
+
   const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
+  const [sortOrder, setSortOrder] = React.useState<SortOrder>('none');
 
   const loadHotels = React.useCallback(async () => {
     try {
       const data = await fetchJSON('/api/hotels', { cache: 'no-store' });
       setHotels(Array.isArray(data) ? data : []);
-    } catch (e:any) {}
+    } catch (e: any) { }
   }, []);
 
   const loadScans = React.useCallback(async () => {
     try {
       const list = await fetchJSON('/api/scans', { cache: 'no-store' });
       const arr: ScanRow[] = Array.isArray(list) ? list : [];
-      arr.sort((a,b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
+      arr.sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
       setScans(arr);
       if (arr.length > 0 && selectedScanId == null) setSelectedScanId(arr[0].id);
-    } catch (e:any) { setError(e.message || 'Failed to load scans'); }
+    } catch (e: any) { setError(e.message || 'Failed to load scans'); }
   }, [selectedScanId]);
 
   const loadScanById = React.useCallback(async (scanId: number) => {
@@ -205,7 +210,7 @@ export default function Page() {
     try {
       const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
       const safeDates: string[] = Array.isArray(data?.dates) ? data.dates : [];
-      const safeResults: Record<string, Record<string, 'green'|'red'>> =
+      const safeResults: Record<string, Record<string, 'green' | 'red'>> =
         data && typeof data.results === 'object' && data.results !== null ? data.results : {};
       setMatrix({
         scanId,
@@ -218,7 +223,7 @@ export default function Page() {
         dates: safeDates,
         results: safeResults
       });
-    } catch (e:any) {
+    } catch (e: any) {
       setError(e.message || 'Failed to load scan');
     } finally { setLoading(false); }
   }, []);
@@ -231,21 +236,21 @@ export default function Page() {
     const map = new Map<string, Hotel>(); for (const h of hotels) map.set(h.code, h); return map;
   }, [hotels]);
 
-  type Group = { label: string; codes: string[] };
   const groups = React.useMemo(() => {
-    const gmap = new Map<string, string[]>(); 
+    const gmap = new Map<string, string[]>();
     const byCode = hotelsByCode;
     const allCodes = Object.keys(matrix?.results ?? {});
     const universe = allCodes.length ? allCodes : hotels.map(h => h.code);
 
     function keyFor(h: Hotel): string {
-      if (groupBy === 'hotel')  return (h.name  && h.name.trim())  || '(no hotel)';
-      if (groupBy === 'brand')   return (h.brand   && h.brand.trim())   || '(no brand)';
-      if (groupBy === 'region')  return (h.region  && h.region.trim())  || '(no region)';
+      if (groupBy === 'hotel') return (h.name && h.name.trim()) || '(no hotel)';
+      if (groupBy === 'brand') return (h.brand && h.brand.trim()) || '(no brand)';
+      if (groupBy === 'region') return (h.region && h.region.trim()) || '(no region)';
       if (groupBy === 'country') return (h.country && h.country.trim()) || '(no country)';
       return 'All Hotels';
     }
 
+    // Populate Group Map
     for (const code of universe) {
       const h = byCode.get(code);
       const label = h ? keyFor(h) : 'All Hotels';
@@ -254,50 +259,53 @@ export default function Page() {
       gmap.set(label, arr);
     }
 
+    // Convert to array and calculate average per group for sorting
     const out = Array.from(gmap.entries()).map(([label, codes]) => {
-      codes.sort((a,b) => {
-        const ha = byCode.get(a), hb = byCode.get(b);
-        const na = ha?.name || a, nb = hb?.name || b;
-        return na.localeCompare(nb);
+      let totalGreens = 0;
+      let totalCells = 0;
+
+      codes.forEach(code => {
+        const hotelRes = matrix?.results?.[code] || {};
+        Object.values(hotelRes).forEach(val => {
+          if (val === 'green') { totalGreens++; totalCells++; }
+          else if (val === 'red') { totalCells++; }
+        });
       });
-      return { label, codes };
+
+      const avg = totalCells > 0 ? (totalGreens / totalCells) * 100 : 0;
+      return { label, codes, avg };
     });
-    out.sort((a,b) => a.label.localeCompare(b.label));
+
+    // Handle Sorting
+    if (sortOrder === 'none') {
+      out.sort((a, b) => a.label.localeCompare(b.label));
+    } else {
+      out.sort((a, b) => sortOrder === 'asc' ? a.avg - b.avg : b.avg - a.avg);
+    }
+
     return out;
-  }, [groupBy, hotels, hotelsByCode, matrix]);
+  }, [groupBy, sortOrder, hotels, hotelsByCode, matrix]);
 
   const currentIndex = React.useMemo(
     () => (selectedScanId != null ? scans.findIndex(s => s.id === selectedScanId) : -1),
     [scans, selectedScanId]
   );
-  const onPrev = () => { if (currentIndex < 0) return; const nextIdx = currentIndex + 1; if (nextIdx < scans.length) setSelectedScanId(scans[nextIdx].id); };
-  const onNext = () => { if (currentIndex <= 0) return; const nextIdx = currentIndex - 1; if (nextIdx >= 0) setSelectedScanId(scans[nextIdx].id); };
 
   return (
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
-      
-      <h1 className="mb-4">Availability Overview</h1>
-      
-      {/* Scan Selection */}
-      <div className="mb-3 d-flex gap-2 align-items-center">
-        <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
-          {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
-            <option key={s.id} value={s.id}>
-              #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
-            </option>
-          ))}
-        </select>
-        {selectedScanId && scans.find(s => s.id === selectedScanId)?.status === 'running' && (
-          <button 
-            className="btn btn-danger"
-            onClick={() => stopScan(selectedScanId)}
-            title="Stop this running scan"
-          >
-            Stop Scan
-          </button>
-        )}
-      </div>
+        <h1 className="mb-4">Availability Overview</h1>
+
+        {/* Scan Selection */}
+        <div className="mb-3 d-flex gap-2 align-items-center">
+          <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
+            {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
+              <option key={s.id} value={s.id}>
+                #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* Scan Parameters */}
         {matrix && (
@@ -306,7 +314,7 @@ export default function Page() {
             <div className="card-body small">
               <div className="row g-2">
                 <div className="col-sm-6 col-md-3"><strong>Scan Date:</strong> {fmtDateTime(matrix.scannedAt)}</div>
-                <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong> {matrix.baseCheckIn ? addDaysISO(matrix.baseCheckIn, matrix.stayNights ?? 0) : '—'}</div>
+                <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong>{matrix.baseCheckIn ? (`${matrix.baseCheckIn} to ${addDaysISO(matrix.baseCheckIn, matrix.days ?? 0)}`) : ('—')}</div>
                 <div className="col-sm-6 col-md-3"><strong>Days Scanned:</strong> {matrix.days ?? '—'}</div>
                 <div className="col-sm-6 col-md-3"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
               </div>
@@ -316,16 +324,25 @@ export default function Page() {
 
         <AvailabilityOverviewTile matrix={matrix} />
 
-        {/* Grouping controls */}
-        <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
-          <div className="ms-auto d-flex align-items-center gap-2">
-            <label className="form-label mb-0">Group by:</label>
+        {/* Grouping and Sorting controls */}
+        <div className="d-flex flex-wrap gap-3 align-items-center mb-4">
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0 fw-bold text-nowrap">Group by:</label>
             <select className="form-select" value={groupBy} onChange={e => setGroupBy(e.target.value as any)}>
               <option value="none">None</option>
               <option value="hotel">Hotel</option>
               <option value="brand">Brand</option>
               <option value="region">Region</option>
               <option value="country">Country</option>
+            </select>
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0 fw-bold text-nowrap">Sort by Avg. Availability:</label>
+            <select className="form-select" value={sortOrder} onChange={e => setSortOrder(e.target.value as any)}>
+              <option value="none">None (Alphabetical)</option>
+              <option value="asc">Ascending (Low to High)</option>
+              <option value="desc">Descending (High to Low)</option>
             </select>
           </div>
         </div>
@@ -353,20 +370,24 @@ export default function Page() {
                 return { date: d, pct, greens, total };
               });
 
-              const validPcts = series.map(s => s.pct).filter(p => typeof p === 'number' && isFinite(p));
-              const avg = validPcts.length > 0 ? validPcts.reduce((a,b)=>a+b,0)/validPcts.length : null;
-              const min = validPcts.length > 0 ? Math.min(...validPcts) : null;
-              const max = validPcts.length > 0 ? Math.max(...validPcts) : null;
-
               return (
                 <div key={g.label} className="mb-4">
-                  <GroupBarChart title={g.label} series={series} avg={avg} min={min} max={max} height={220} barWidth={12} gap={5} />
+                  <GroupBarChart 
+                    title={g.label} 
+                    series={series} 
+                    avg={g.avg} 
+                    min={null} 
+                    max={null} 
+                    height={220} 
+                    barWidth={12} 
+                    gap={5} 
+                  />
                 </div>
               );
             })}
           </>
         ) : (
-          <p className="text-muted">No results.</p>
+          !loading && <p className="text-muted">No results found for this scan.</p>
         )}
       </div>
     </main>
