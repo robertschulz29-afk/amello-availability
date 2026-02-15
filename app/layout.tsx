@@ -4,7 +4,7 @@ import './globals.css';
 import './styles/styles.module.css';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { useState } from 'react';
+import './style.css';
 import { Header } from './components/Header';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import {

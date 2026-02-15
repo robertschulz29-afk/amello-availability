@@ -276,18 +276,28 @@ export default function Page() {
   return (
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
-        <h1 className="mb-4">Availability Overview</h1>
-
-        {/* Scan Selection */}
-        <div className="mb-3 d-flex gap-2 align-items-center">
-          <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
-            {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
-              <option key={s.id} value={s.id}>
-                #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
-              </option>
-            ))}
-          </select>
-        </div>
+      
+      <h1 className="mb-4">Availability Overview</h1>
+      
+      {/* Scan Selection */}
+      <div className="mb-3 d-flex gap-2 align-items-center">
+        <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
+          {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
+            <option key={s.id} value={s.id}>
+              #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
+            </option>
+          ))}
+        </select>
+        {selectedScanId && scans.find(s => s.id === selectedScanId)?.status === 'running' && (
+          <button 
+            className="btn btn-danger"
+            onClick={() => stopScan(selectedScanId)}
+            title="Stop this running scan"
+          >
+            Stop Scan
+          </button>
+        )}
+      </div>
 
         {/* Scan Parameters */}
         {matrix && (
