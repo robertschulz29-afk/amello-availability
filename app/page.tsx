@@ -22,50 +22,38 @@ type ResultsMatrix = {
   results: Record<string, Record<string, 'green' | 'red'>>;
 };
 
+function addDaysISO(dateString: string, days: number) {
+  const d = new Date(dateString);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function fmtDateTime(dt: string) {
   try { return new Date(dt).toLocaleString(); } catch { return dt; }
 }
 
 /** --- Availability Overview Tile --- */
-/**
- * Displays the overall availability score for a scan.
- * Score represents the percentage of green (available) results across all hotels and dates.
- * Calculation: (count of green cells / total cells with results) * 100
- */
 function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) {
   const score = React.useMemo(() => {
     if (!matrix || !matrix.results) return null;
-    
-    let availableCells = 0;  // Count of green (available) results
-    let totalCells = 0;      // Total cells with scan results
-    
-    // Count all green results across all hotels and dates
-    // Only 'green' and 'red' are valid result types in the system
+    let availableCells = 0;
+    let totalCells = 0;
     for (const hotelResults of Object.values(matrix.results)) {
       for (const result of Object.values(hotelResults)) {
         if (result === 'green') availableCells++;
         if (result === 'green' || result === 'red') totalCells++;
       }
     }
-    
     if (totalCells === 0) return null;
     return (availableCells / totalCells) * 100;
   }, [matrix]);
-  
+
   if (score === null) return null;
-  
-  // Determine color based on score
-  let bgColor = '#ffc107'; // amber/yellow (60-80%)
+  let bgColor = '#ffc107'; // amber
   let textColor = '#000';
-  
-  if (score > 80) {
-    bgColor = '#28a745'; // green
-    textColor = '#fff';
-  } else if (score < 60) {
-    bgColor = '#dc3545'; // red
-    textColor = '#fff';
-  }
-  
+  if (score > 80) { bgColor = '#28a745'; textColor = '#fff'; }
+  else if (score < 60) { bgColor = '#dc3545'; textColor = '#fff'; }
+
   return (
     <div className="card mb-3" style={{ backgroundColor: bgColor, color: textColor }}>
       <div className="card-body text-center">
@@ -81,13 +69,19 @@ function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) 
 /** --- Small SVG bar chart (no external deps) --- */
 function GroupBarChart({
   title,
-  series,       // [{ date, pct, greens, total }]
-  height = 220, // px
+  series,
+  avg,
+  min,
+  max,
+  height = 220,
   barWidth = 14,
   gap = 6,
 }: {
   title: string;
   series: Array<{ date: string; pct: number; greens: number; total: number }>;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
   height?: number;
   barWidth?: number;
   gap?: number;
@@ -97,19 +91,14 @@ function GroupBarChart({
 
   React.useEffect(() => {
     const updateWidth = () => {
-      if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth);
-      }
+      if (containerRef.current) setContainerWidth(containerRef.current.clientWidth);
     };
     updateWidth();
-    
-    // Debounce resize events for better performance
     let timeoutId: NodeJS.Timeout;
     const debouncedUpdate = () => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(updateWidth, 100);
     };
-    
     window.addEventListener('resize', debouncedUpdate);
     return () => {
       clearTimeout(timeoutId);
@@ -118,32 +107,34 @@ function GroupBarChart({
   }, []);
 
   const innerPadTop = 16;
-  const labelYOffset = 60; // Distance from bottom for rotated labels
-  const labelGap = 15; // Gap between bars and labels
+  const labelYOffset = 60;
+  const labelGap = 15;
   const innerPadBottom = labelYOffset + labelGap;
   const maxBarArea = height - innerPadTop - innerPadBottom;
-
-  // Calculate width to fill container, but respect minimum based on series length
   const minWidthForSeries = series.length * (barWidth + gap) + 40;
   const width = Math.max(containerWidth, minWidthForSeries);
   const xStart = 20;
-
-  const yFor = (pct: number) => {
-    const clamped = Math.max(0, Math.min(100, pct));
-    return innerPadTop + (100 - clamped) / 100 * maxBarArea;
-  };
-
+  const greensArray = series.map(pt => pt.greens)
+  const averageAvailability = greensArray.length/series.length;
+  const headerColor = () => {
+                if (!isFinite(averageAvailability)) return '#alert-basic'; // fallback for invalid numbers
+                if (averageAvailability > 75) return 'alert-green'; // green
+                if (averageAvailability > 50) return 'alert-yellow'; // yellow
+                return 'alert-red'; // red
+              };
+  const yFor = (pct: number) => innerPadTop + (100 - Math.max(0, Math.min(100, pct))) / 100 * maxBarArea;
   const labelEvery = series.length > 120 ? 10
-                     : series.length > 80 ? 6
-                     : series.length > 50 ? 4
-                     : series.length > 25 ? 2
-                     : 1;
+                   : series.length > 80 ? 6
+                   : series.length > 50 ? 4
+                   : series.length > 25 ? 2
+                   : 1;
 
   return (
     <div className="card mb-3">
-      <div className="card-header d-flex justify-content-between align-items-center">
-        <span>{title}</span>
-        <span className="small text-muted">Green % by day</span>
+      <div className={`card-header d-flex justify-content-between align-items-center flex-wrap gap-3 ${headerColor()}`}>
+        <span><strong>{title}</strong></span>
+        <span className="small text-muted">Avg:{averageAvailability} </span>
+                
       </div>
       <div className="card-body" style={{ overflowX: 'auto' }} ref={containerRef}>
         <svg width={width} height={height} role="img" aria-label={`${title} green percentage chart`}>
@@ -157,10 +148,16 @@ function GroupBarChart({
             const x = xStart + idx * (barWidth + gap);
             const y = yFor(pt.pct);
             const h = (innerPadTop + maxBarArea) - y;
+            const barColor = (pct: number) => {
+                if (!isFinite(pct)) return '#ccc'; // fallback for invalid numbers
+                if (pct > 75) return '#4caf50'; // green
+                if (pct > 50) return '#ffeb3b'; // yellow
+                return '#f44336'; // red
+              };
             return (
               <g key={pt.date}>
                 <title>{`${pt.date}: ${isFinite(pt.pct) ? Math.round(pt.pct) : 0}% (${pt.greens}/${pt.total})`}</title>
-                <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill="currentColor" fillOpacity="0.25" />
+                <rect x={x} y={y} width={barWidth} height={isFinite(h) ? h : 0} fill={barColor(pt.pct)} fillOpacity="0.25" />
                 {idx % labelEvery === 0 && (
                   <text x={x + barWidth/2} y={height - labelYOffset} textAnchor="start" fontSize="10" fill="currentColor" fillOpacity="0.7" transform={`rotate(45 ${x + barWidth/2} ${height - labelYOffset})`}>
                     {pt.date}
@@ -176,33 +173,23 @@ function GroupBarChart({
 }
 
 export default function Page() {
-  // Hotels
   const [hotels, setHotels] = React.useState<Hotel[]>([]);
-
-  // Scans
   const [scans, setScans] = React.useState<ScanRow[]>([]);
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
-
-  // Progress/results
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
 
-  // Grouping
-  type GroupBy = 'none'|'brand'|'region'|'country';
+  type GroupBy = 'none'|'hotel'|'brand'|'region'|'country';
   const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
 
-  // Load hotels
   const loadHotels = React.useCallback(async () => {
     try {
       const data = await fetchJSON('/api/hotels', { cache: 'no-store' });
       setHotels(Array.isArray(data) ? data : []);
-    } catch (e:any) {
-      // Silently fail for dashboard
-    }
+    } catch (e:any) {}
   }, []);
 
-  // Load scans list
   const loadScans = React.useCallback(async () => {
     try {
       const list = await fetchJSON('/api/scans', { cache: 'no-store' });
@@ -210,15 +197,11 @@ export default function Page() {
       arr.sort((a,b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
       setScans(arr);
       if (arr.length > 0 && selectedScanId == null) setSelectedScanId(arr[0].id);
-    } catch (e:any) {
-      setError(e.message || 'Failed to load scans');
-    }
+    } catch (e:any) { setError(e.message || 'Failed to load scans'); }
   }, [selectedScanId]);
 
-  // Load one scan by id
   const loadScanById = React.useCallback(async (scanId: number) => {
-    setLoading(true);
-    setError(null); setMatrix(null);
+    setLoading(true); setError(null); setMatrix(null);
     try {
       const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
       const safeDates: string[] = Array.isArray(data?.dates) ? data.dates : [];
@@ -237,44 +220,26 @@ export default function Page() {
       });
     } catch (e:any) {
       setError(e.message || 'Failed to load scan');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
   React.useEffect(() => { loadHotels(); loadScans(); }, [loadHotels, loadScans]);
   React.useEffect(() => { if (selectedScanId != null) loadScanById(selectedScanId); }, [selectedScanId, loadScanById]);
 
-  // Stop scan
-  const stopScan = React.useCallback(async (scanId: number) => {
-    if (!confirm(`Are you sure you want to stop scan #${scanId}?`)) return;
-    try {
-      await fetchJSON(`/api/scans/${scanId}/stop`, {
-        method: 'POST',
-      });
-      // Reload scans to reflect cancelled status
-      await loadScans();
-      if (selectedScanId === scanId) await loadScanById(scanId);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to stop scan');
-    }
-  }, [loadScans, loadScanById, selectedScanId]);
-
-  // Derived
   const dates = matrix?.dates ?? [];
   const hotelsByCode = React.useMemo(() => {
     const map = new Map<string, Hotel>(); for (const h of hotels) map.set(h.code, h); return map;
   }, [hotels]);
 
-  // Grouping
   type Group = { label: string; codes: string[] };
   const groups = React.useMemo(() => {
-    const gmap = new Map<string, string[]>(); // groupLabel -> hotelCodes[]
+    const gmap = new Map<string, string[]>(); 
     const byCode = hotelsByCode;
     const allCodes = Object.keys(matrix?.results ?? {});
     const universe = allCodes.length ? allCodes : hotels.map(h => h.code);
 
     function keyFor(h: Hotel): string {
+      if (groupBy === 'hotel')  return (h.name  && h.name.trim())  || '(no hotel)';
       if (groupBy === 'brand')   return (h.brand   && h.brand.trim())   || '(no brand)';
       if (groupBy === 'region')  return (h.region  && h.region.trim())  || '(no region)';
       if (groupBy === 'country') return (h.country && h.country.trim()) || '(no country)';
@@ -301,7 +266,6 @@ export default function Page() {
     return out;
   }, [groupBy, hotels, hotelsByCode, matrix]);
 
-  // Scan navigation
   const currentIndex = React.useMemo(
     () => (selectedScanId != null ? scans.findIndex(s => s.id === selectedScanId) : -1),
     [scans, selectedScanId]
@@ -335,87 +299,75 @@ export default function Page() {
         )}
       </div>
 
-      {/* Scan Parameters */}
-      {matrix ? (
-        <div className="card mb-3">
-          <div className="card-header">Scan Parameters</div>
-          <div className="card-body small">
-            <div className="row g-2">
-              <div className="col-sm-6 col-md-3"><strong>Scan Date:</strong> {fmtDateTime(matrix.scannedAt)}</div>
-              <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong> {matrix.baseCheckIn ?? '—'}</div>
-              <div className="col-sm-6 col-md-3"><strong>Days Scanned:</strong> {matrix.days ?? '—'}</div>
-              <div className="col-sm-6 col-md-3"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
+        {/* Scan Parameters */}
+        {matrix && (
+          <div className="card mb-3">
+            <div className="card-header">Scan Parameters</div>
+            <div className="card-body small">
+              <div className="row g-2">
+                <div className="col-sm-6 col-md-3"><strong>Scan Date:</strong> {fmtDateTime(matrix.scannedAt)}</div>
+                <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong> {matrix.baseCheckIn ? addDaysISO(matrix.baseCheckIn, matrix.stayNights ?? 0) : '—'}</div>
+                <div className="col-sm-6 col-md-3"><strong>Days Scanned:</strong> {matrix.days ?? '—'}</div>
+                <div className="col-sm-6 col-md-3"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
+              </div>
             </div>
           </div>
-        </div>
-      ) : null}
-      
-      {/* Availability Overview Tile */}
-      <AvailabilityOverviewTile matrix={matrix} />
+        )}
 
-      {/* History navigation + grouping controls */}
-      <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
-        <div className="d-flex flex-wrap align-items-center gap-2">
-          <button className="btn btn-outline-secondary" onClick={() => scans.length && setSelectedScanId(scans[0].id)} disabled={scans.length === 0}>Newest</button>
-          <button className="btn btn-outline-secondary" onClick={onPrev} disabled={!scans.length}>Prev</button>
-          <button className="btn btn-outline-secondary" onClick={onNext} disabled={!scans.length}>Next</button>
-          <button className="btn btn-outline-secondary" onClick={async()=>{ await loadScans(); if (selectedScanId!=null) await loadScanById(selectedScanId); }} disabled={selectedScanId==null}>Refresh</button>
-        </div>
+        <AvailabilityOverviewTile matrix={matrix} />
 
-        <div className="ms-auto d-flex align-items-center gap-2">
-          <label className="form-label mb-0">Group by:</label>
-          <select className="form-select" value={groupBy} onChange={e => setGroupBy(e.target.value as any)}>
-            <option value="none">None</option>
-            <option value="brand">Brand</option>
-            <option value="region">Region</option>
-            <option value="country">Country</option>
-          </select>
-        </div>
-      </div>
-
-      {error ? <div className="alert alert-danger">{error}</div> : null}
-
-      {/* Loading spinner */}
-      {loading ? (
-        <div className="text-center my-5">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
+        {/* Grouping controls */}
+        <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
+          <div className="ms-auto d-flex align-items-center gap-2">
+            <label className="form-label mb-0">Group by:</label>
+            <select className="form-select" value={groupBy} onChange={e => setGroupBy(e.target.value as any)}>
+              <option value="none">None</option>
+              <option value="hotel">Hotel</option>
+              <option value="brand">Brand</option>
+              <option value="region">Region</option>
+              <option value="country">Country</option>
+            </select>
           </div>
-          <div className="mt-2 text-muted">Loading scan data...</div>
         </div>
-      ) : null}
 
-      {/* Grouped chart per group (no tables) */}
-      {!loading && dates.length > 0 && groups.length > 0 ? (
-        <>
-          {groups.map(g => {
-            const series = (matrix?.dates ?? []).map(d => {
-              let greens = 0, total = 0;
-              for (const code of g.codes) {
-                const v = matrix?.results?.[code]?.[d];
-                if (v === 'green') { greens++; total++; }
-                else if (v === 'red') { total++; }
-              }
-              const pct = total > 0 ? (greens / total) * 100 : 0;
-              return { date: d, pct, greens, total };
-            });
+        {error && <div className="alert alert-danger">{error}</div>}
 
-            return (
-              <div key={g.label} className="mb-4">
-                <GroupBarChart
-                  title={g.label}
-                  series={series}
-                  height={220}
-                  barWidth={12}
-                  gap={5}
-                />
-              </div>
-            );
-          })}
-        </>
-      ) : (
-        <p className="text-muted">No results.</p>
-      )}
+        {loading ? (
+          <div className="text-center my-5">
+            <div className="spinner-border text-primary" role="status"><span className="visually-hidden">Loading...</span></div>
+            <div className="mt-2 text-muted">Loading scan data...</div>
+          </div>
+        ) : null}
+
+        {!loading && dates.length > 0 && groups.length > 0 ? (
+          <>
+            {groups.map(g => {
+              const series = dates.map(d => {
+                let greens = 0, total = 0;
+                for (const code of g.codes) {
+                  const v = matrix?.results?.[code]?.[d];
+                  if (v === 'green') { greens++; total++; }
+                  else if (v === 'red') { total++; }
+                }
+                const pct = total > 0 ? (greens / total) * 100 : 0;
+                return { date: d, pct, greens, total };
+              });
+
+              const validPcts = series.map(s => s.pct).filter(p => typeof p === 'number' && isFinite(p));
+              const avg = validPcts.length > 0 ? validPcts.reduce((a,b)=>a+b,0)/validPcts.length : null;
+              const min = validPcts.length > 0 ? Math.min(...validPcts) : null;
+              const max = validPcts.length > 0 ? Math.max(...validPcts) : null;
+
+              return (
+                <div key={g.label} className="mb-4">
+                  <GroupBarChart title={g.label} series={series} avg={avg} min={min} max={max} height={220} barWidth={12} gap={5} />
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <p className="text-muted">No results.</p>
+        )}
       </div>
     </main>
   );
