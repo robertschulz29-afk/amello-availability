@@ -7,7 +7,7 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 // Use ONLY a full connection string (Supabase pooled URL)
 // Prefer DATABASE_URL; fall back to POSTGRES_URL if you kept that env.
 const connectionString =
-  process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  process.env.POSTGRES_URL;
 
 if (!connectionString) {
   throw new Error('Missing DATABASE_URL (or POSTGRES_URL) env var');
