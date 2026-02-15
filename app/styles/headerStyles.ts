@@ -9,7 +9,7 @@ import { CSSProperties } from 'react';
 // Header bar styles with theme support
 export const getHeaderStyle = (isDark: boolean): CSSProperties => ({
   width: '100%',
-  height: '70px',
+  height: '50px',
   backgroundColor: isDark ? '#161b22' : '#f8f9fa',
   borderBottom: `1px solid ${isDark ? '#30363d' : '#e0e0e0'}`,
   display: 'flex',
