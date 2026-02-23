@@ -1,8 +1,9 @@
-// app/page.tsx (Dashboard - Results only)
 'use client';
 
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
+import { getToggleButtonGroupStyle } from './styles/headerStyles';
+import { getToggleButtonStyle } from './styles/headerStyles';
 
 type Hotel = { id: number; name: string; code: string; brand?: string; region?: string; country?: string };
 type ScanRow = {
@@ -10,16 +11,37 @@ type ScanRow = {
   stay_nights: number; total_cells: number; done_cells: number;
   status: 'queued' | 'running' | 'done' | 'error';
 };
+
+type FullSetEntry = {
+  scan_id: number;
+  hotel_id: number;
+  hotel_name: string;
+  check_in_date: string;
+  status: string;
+  source: string;
+  response_json: any;
+};
+
 type ResultsMatrix = {
   scanId: number;
   scannedAt: string;
   baseCheckIn: string | null;
-  fixedCheckout: string | null;
   days: number | null;
   stayNights: number | null;
   timezone: string | null;
   dates: string[];
   results: Record<string, Record<string, 'green' | 'red'>>;
+  prices: Record<string, Record<string, number | null>>;
+  fullSet: FullSetEntry[];
+};
+
+type PriceRow = {
+  date: string;
+  hotelName: string;
+  roomType: string;
+  rateType: string;
+  price: number;
+  currency: string;
 };
 
 function addDaysISO(dateString: string, days: number) {
@@ -32,7 +54,82 @@ function fmtDateTime(dt: string) {
   try { return new Date(dt).toLocaleString(); } catch { return dt; }
 }
 
-/** --- Availability Overview Tile --- */
+function normalizeDateToYMD(d: string): string {
+  const m = String(d ?? '').match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : d;
+}
+
+function deriveFromFullSet(fullSet: FullSetEntry[], hotelsByCode: Map<string, Hotel>) {
+  const datesSet = new Set<string>();
+  const results: Record<string, Record<string, 'green' | 'red'>> = {};
+  const prices: Record<string, Record<string, number | null>> = {};
+
+  const codeById = new Map<number, string>();
+  for (const [code, hotel] of hotelsByCode.entries()) {
+    codeById.set(hotel.id, code);
+  }
+
+  for (const row of fullSet) {
+    const code = codeById.get(row.hotel_id);
+    if (!code) continue;
+    const checkIn = normalizeDateToYMD(row.check_in_date);
+    datesSet.add(checkIn);
+    (results[code] ||= {})[checkIn] = row.status === 'green' ? 'green' : 'red';
+    if (row.status === 'green' && row.source === 'amello' && row.response_json) {
+      const rooms = row.response_json?.rooms ?? [];
+      let lowestPrice: number | null = null;
+      for (const room of rooms) {
+        for (const rate of room.rates ?? []) {
+          if (rate.price != null && (lowestPrice === null || rate.price < lowestPrice)) {
+            lowestPrice = rate.price;
+          }
+        }
+      }
+      (prices[code] ||= {})[checkIn] = lowestPrice;
+    }
+  }
+
+  const dates = Array.from(datesSet).sort();
+  return { dates, results, prices };
+}
+
+function extractPriceRows(fullSet: FullSetEntry[], codes: Set<string>, hotelsByCode: Map<string, Hotel>): PriceRow[] {
+  const codeById = new Map<number, string>();
+  for (const [code, hotel] of hotelsByCode.entries()) {
+    codeById.set(hotel.id, code);
+  }
+
+  const bestByDate = new Map<string, PriceRow>();
+
+  for (const entry of fullSet) {
+    if (entry.source !== 'amello' || entry.status !== 'green' || !entry.response_json) continue;
+    const code = codeById.get(entry.hotel_id);
+    if (!code || !codes.has(code)) continue;
+
+    const date = normalizeDateToYMD(entry.check_in_date);
+    const rooms = entry.response_json?.rooms ?? [];
+
+    for (const room of rooms) {
+      for (const rate of room.rates ?? []) {
+        if (rate.price == null) continue;
+        const existing = bestByDate.get(date);
+        if (!existing || rate.price < existing.price) {
+          bestByDate.set(date, {
+            date,
+            hotelName: entry.hotel_name,
+            roomType: room.name ?? '',
+            rateType: rate.name ?? '',
+            price: rate.price,
+            currency: rate.currency ?? 'EUR',
+          });
+        }
+      }
+    }
+  }
+
+  return Array.from(bestByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) {
   const score = React.useMemo(() => {
     if (!matrix || !matrix.results) return null;
@@ -49,7 +146,7 @@ function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) 
   }, [matrix]);
 
   if (score === null) return null;
-  let bgColor = '#ffc107'; // amber
+  let bgColor = '#ffc107';
   let textColor = '#000';
   if (score > 80) { bgColor = '#28a745'; textColor = '#fff'; }
   else if (score < 60) { bgColor = '#dc3545'; textColor = '#fff'; }
@@ -66,22 +163,12 @@ function AvailabilityOverviewTile({ matrix }: { matrix: ResultsMatrix | null }) 
   );
 }
 
-/** --- Small SVG bar chart --- */
 function GroupBarChart({
-  title,
-  series,
-  avg,
-  min,
-  max,
-  height = 220,
-  barWidth = 14,
-  gap = 6,
+  title, series, avg, height = 220, barWidth = 14, gap = 6,
 }: {
   title: string;
   series: Array<{ date: string; pct: number; greens: number; total: number }>;
   avg: number | null;
-  min: number | null;
-  max: number | null;
   height?: number;
   barWidth?: number;
   gap?: number;
@@ -95,15 +182,9 @@ function GroupBarChart({
     };
     updateWidth();
     let timeoutId: NodeJS.Timeout;
-    const debouncedUpdate = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(updateWidth, 100);
-    };
+    const debouncedUpdate = () => { clearTimeout(timeoutId); timeoutId = setTimeout(updateWidth, 100); };
     window.addEventListener('resize', debouncedUpdate);
-    return () => {
-      clearTimeout(timeoutId);
-      window.removeEventListener('resize', debouncedUpdate);
-    };
+    return () => { clearTimeout(timeoutId); window.removeEventListener('resize', debouncedUpdate); };
   }, []);
 
   const innerPadTop = 16;
@@ -114,9 +195,8 @@ function GroupBarChart({
   const minWidthForSeries = series.length * (barWidth + gap) + 40;
   const width = Math.max(containerWidth, minWidthForSeries);
   const xStart = 20;
-
   const averageAvailability = avg !== null ? parseFloat(avg.toFixed(2)) : 0;
-  
+
   const headerColor = () => {
     if (!isFinite(averageAvailability)) return 'alert-basic';
     if (averageAvailability > 85) return 'alert-green';
@@ -125,15 +205,11 @@ function GroupBarChart({
   };
 
   const yFor = (pct: number) => innerPadTop + (100 - Math.max(0, Math.min(100, pct))) / 100 * maxBarArea;
-  const labelEvery = series.length > 120 ? 10
-    : series.length > 80 ? 6
-      : series.length > 50 ? 4
-        : series.length > 25 ? 2
-          : 1;
+  const labelEvery = series.length > 120 ? 10 : series.length > 80 ? 6 : series.length > 50 ? 4 : series.length > 25 ? 2 : 1;
 
   return (
     <div className="card mb-3">
-      <div className={`card-header d-flex justify-content-between align-items-center flex-wrap gap-3`}>
+      <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
         <span><strong>{title}</strong></span>
         <h2 className="mb-0">Average: {averageAvailability}%</h2>
       </div>
@@ -174,6 +250,168 @@ function GroupBarChart({
   );
 }
 
+/** Heatmap: rows = hotels, columns = dates */
+function GroupHeatmap({
+  title,
+  avg,
+  codes,
+  dates,
+  results,
+  hotelsByCode,
+}: {
+  title: string;
+  avg: number | null;
+  codes: string[];
+  dates: string[];
+  results: Record<string, Record<string, 'green' | 'red'>>;
+  hotelsByCode: Map<string, Hotel>;
+}) {
+  const CELL_W = 14;
+  const CELL_H = 16;
+  const LABEL_W = 200;
+  const DATE_LABEL_H = 60;
+  const GAP = 1;
+
+  const averageAvailability = avg !== null ? parseFloat(avg.toFixed(2)) : 0;
+
+  const headerColor = () => {
+    if (!isFinite(averageAvailability)) return 'alert-basic';
+    if (averageAvailability > 85) return 'alert-green';
+    if (averageAvailability > 50) return 'alert-yellow';
+    return 'alert-red';
+  };
+
+  const labelEvery = dates.length > 120 ? 10 : dates.length > 80 ? 6 : dates.length > 50 ? 4 : dates.length > 25 ? 2 : 1;
+
+  const svgWidth = LABEL_W + dates.length * (CELL_W + GAP);
+  const svgHeight = DATE_LABEL_H + codes.length * (CELL_H + GAP);
+
+  const cellColor = (code: string, date: string) => {
+    const v = results[code]?.[date];
+    if (v === 'green') return '#4caf50';
+    if (v === 'red') return '#f44336';
+    return '#e0e0e0';
+  };
+
+  return (
+    <div className="card mb-3">
+      <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <span><strong>{title}</strong></span>
+        <h2 className="mb-0">Average: {averageAvailability}%</h2>
+      </div>
+      <div className={`${headerColor()}`} style={{ height: '4px' }}></div>
+      <div className="card-body" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '500px' }}>
+        <svg width={svgWidth} height={svgHeight}>
+          {/* Date labels */}
+          {dates.map((date, dIdx) => {
+            if (dIdx % labelEvery !== 0) return null;
+            const x = LABEL_W + dIdx * (CELL_W + GAP) + CELL_W / 2;
+            return (
+              <text
+                key={date}
+                x={x}
+                y={DATE_LABEL_H - 4}
+                fontSize="10"
+                fill="currentColor"
+                fillOpacity="0.7"
+                textAnchor="start"
+                transform={`rotate(-45 ${x} ${DATE_LABEL_H - 4})`}
+              >
+                {date}
+              </text>
+            );
+          })}
+
+          {/* Hotel rows */}
+          {codes.map((code, hIdx) => {
+            const hotel = hotelsByCode.get(code);
+            const y = DATE_LABEL_H + hIdx * (CELL_H + GAP);
+            return (
+              <g key={code}>
+                {/* Hotel name label */}
+                <text
+                  x={LABEL_W - 4}
+                  y={y + CELL_H / 2 + 4}
+                  fontSize="11"
+                  fill="currentColor"
+                  fillOpacity="0.8"
+                  textAnchor="end"
+                >
+                  {hotel?.name ?? code}
+                </text>
+                {/* Date cells */}
+                {dates.map((date, dIdx) => {
+                  const x = LABEL_W + dIdx * (CELL_W + GAP);
+                  const v = results[code]?.[date];
+                  return (
+                    <rect
+                      key={date}
+                      x={x}
+                      y={y}
+                      width={CELL_W}
+                      height={CELL_H}
+                      fill={cellColor(code, date)}
+                      fillOpacity={v ? 0.8 : 0.2}
+                      rx={2}
+                    >
+                      <title>{`${hotel?.name ?? code} — ${date}: ${v ?? 'no data'}`}</title>
+                    </rect>
+                  );
+                })}
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* Legend */}
+        <div className="d-flex gap-3 mt-2 small" style={{ paddingLeft: LABEL_W }}>
+          <span><span style={{ display: 'inline-block', width: 12, height: 12, background: '#4caf50', borderRadius: 2, opacity: 0.8, marginRight: 4 }} />Available</span>
+          <span><span style={{ display: 'inline-block', width: 12, height: 12, background: '#f44336', borderRadius: 2, opacity: 0.8, marginRight: 4 }} />Unavailable</span>
+          <span><span style={{ display: 'inline-block', width: 12, height: 12, background: '#e0e0e0', borderRadius: 2, opacity: 0.2, marginRight: 4 }} />No data</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PriceTable({ rows }: { rows: PriceRow[] }) {
+  if (rows.length === 0) return (
+    <div className="text-muted small mb-3 ps-1">No price data available for this group.</div>
+  );
+  return (
+    <div className="card mb-4">
+      <div className="card-body p-0">
+        <div style={{ overflowX: 'auto' }}>
+          <table className="table table-sm table-striped table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Hotel</th>
+                <th>Room Type</th>
+                <th>Rate Type</th>
+                <th className="text-end">Lowest Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr key={i}>
+                  <td className="text-nowrap">{row.date}</td>
+                  <td>{row.hotelName}</td>
+                  <td>{row.roomType || '—'}</td>
+                  <td>{row.rateType || '—'}</td>
+                  <td className="text-end text-nowrap">
+                    {row.price.toLocaleString('de-DE', { style: 'currency', currency: row.currency })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Page() {
   const [hotels, setHotels] = React.useState<Hotel[]>([]);
   const [scans, setScans] = React.useState<ScanRow[]>([]);
@@ -181,6 +419,7 @@ export default function Page() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
+  const [vizMode, setVizMode] = React.useState<'bar' | 'heatmap'>('heatmap');
 
   type GroupBy = 'none' | 'hotel' | 'brand' | 'region' | 'country';
   type SortOrder = 'none' | 'asc' | 'desc';
@@ -188,11 +427,20 @@ export default function Page() {
   const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
   const [sortOrder, setSortOrder] = React.useState<SortOrder>('none');
 
+  const hotelsByCode = React.useMemo(() => {
+    const map = new Map<string, Hotel>();
+    for (const h of hotels) map.set(h.code, h);
+    return map;
+  }, [hotels]);
+
+  const hotelsByCodeRef = React.useRef(hotelsByCode);
+  React.useEffect(() => { hotelsByCodeRef.current = hotelsByCode; }, [hotelsByCode]);
+
   const loadHotels = React.useCallback(async () => {
     try {
       const data = await fetchJSON('/api/hotels', { cache: 'no-store' });
       setHotels(Array.isArray(data) ? data : []);
-    } catch (e: any) { }
+    } catch (e: any) {}
   }, []);
 
   const loadScans = React.useCallback(async () => {
@@ -201,27 +449,27 @@ export default function Page() {
       const arr: ScanRow[] = Array.isArray(list) ? list : [];
       arr.sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
       setScans(arr);
-      if (arr.length > 0 && selectedScanId == null) setSelectedScanId(arr[0].id);
+      setSelectedScanId(prev => prev ?? (arr.length > 0 ? arr[0].id : null));
     } catch (e: any) { setError(e.message || 'Failed to load scans'); }
-  }, [selectedScanId]);
+  }, []);
 
   const loadScanById = React.useCallback(async (scanId: number) => {
     setLoading(true); setError(null); setMatrix(null);
     try {
       const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
-      const safeDates: string[] = Array.isArray(data?.dates) ? data.dates : [];
-      const safeResults: Record<string, Record<string, 'green' | 'red'>> =
-        data && typeof data.results === 'object' && data.results !== null ? data.results : {};
+      const fullSet: FullSetEntry[] = Array.isArray(data?.fullSet) ? data.fullSet : [];
+      const { dates, results, prices } = deriveFromFullSet(fullSet, hotelsByCodeRef.current);
       setMatrix({
         scanId,
         scannedAt: String(data?.scannedAt ?? ''),
         baseCheckIn: data?.baseCheckIn ?? null,
-        fixedCheckout: data?.fixedCheckout ?? null,
         days: data?.days ?? null,
         stayNights: data?.stayNights ?? null,
         timezone: data?.timezone ?? null,
-        dates: safeDates,
-        results: safeResults
+        dates,
+        results,
+        prices,
+        fullSet,
       });
     } catch (e: any) {
       setError(e.message || 'Failed to load scan');
@@ -232,9 +480,6 @@ export default function Page() {
   React.useEffect(() => { if (selectedScanId != null) loadScanById(selectedScanId); }, [selectedScanId, loadScanById]);
 
   const dates = matrix?.dates ?? [];
-  const hotelsByCode = React.useMemo(() => {
-    const map = new Map<string, Hotel>(); for (const h of hotels) map.set(h.code, h); return map;
-  }, [hotels]);
 
   const groups = React.useMemo(() => {
     const gmap = new Map<string, string[]>();
@@ -250,7 +495,6 @@ export default function Page() {
       return 'All Hotels';
     }
 
-    // Populate Group Map
     for (const code of universe) {
       const h = byCode.get(code);
       const label = h ? keyFor(h) : 'All Hotels';
@@ -259,24 +503,21 @@ export default function Page() {
       gmap.set(label, arr);
     }
 
-    // Convert to array and calculate average per group for sorting
     const out = Array.from(gmap.entries()).map(([label, codes]) => {
       let totalGreens = 0;
       let totalCells = 0;
-
       codes.forEach(code => {
         const hotelRes = matrix?.results?.[code] || {};
-        Object.values(hotelRes).forEach(val => {
-          if (val === 'green') { totalGreens++; totalCells++; }
-          else if (val === 'red') { totalCells++; }
+        dates.forEach(d => {
+          const val = hotelRes[d];
+          if (val === 'green') totalGreens++;
+          totalCells++;
         });
       });
-
       const avg = totalCells > 0 ? (totalGreens / totalCells) * 100 : 0;
       return { label, codes, avg };
     });
 
-    // Handle Sorting
     if (sortOrder === 'none') {
       out.sort((a, b) => a.label.localeCompare(b.label));
     } else {
@@ -284,12 +525,7 @@ export default function Page() {
     }
 
     return out;
-  }, [groupBy, sortOrder, hotels, hotelsByCode, matrix]);
-
-  const currentIndex = React.useMemo(
-    () => (selectedScanId != null ? scans.findIndex(s => s.id === selectedScanId) : -1),
-    [scans, selectedScanId]
-  );
+  }, [groupBy, sortOrder, hotels, hotelsByCode, matrix, dates]);
 
   return (
     <main>
@@ -314,7 +550,7 @@ export default function Page() {
             <div className="card-body small">
               <div className="row g-2">
                 <div className="col-sm-6 col-md-3"><strong>Scan Date:</strong> {fmtDateTime(matrix.scannedAt)}</div>
-                <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong>{matrix.baseCheckIn ? (`${matrix.baseCheckIn} to ${addDaysISO(matrix.baseCheckIn, matrix.days ?? 0)}`) : ('—')}</div>
+                <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong>{matrix.baseCheckIn ? (`${matrix.baseCheckIn} to ${addDaysISO(matrix.baseCheckIn, (matrix.days ?? 0) - 1)}`) : ('—')}</div>
                 <div className="col-sm-6 col-md-3"><strong>Days Scanned:</strong> {matrix.days ?? '—'}</div>
                 <div className="col-sm-6 col-md-3"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
               </div>
@@ -324,7 +560,7 @@ export default function Page() {
 
         <AvailabilityOverviewTile matrix={matrix} />
 
-        {/* Grouping and Sorting controls */}
+        {/* Controls */}
         <div className="d-flex flex-wrap gap-3 align-items-center mb-4">
           <div className="d-flex align-items-center gap-2">
             <label className="form-label mb-0 fw-bold text-nowrap">Group by:</label>
@@ -336,7 +572,6 @@ export default function Page() {
               <option value="country">Country</option>
             </select>
           </div>
-
           <div className="d-flex align-items-center gap-2">
             <label className="form-label mb-0 fw-bold text-nowrap">Sort by Avg. Availability:</label>
             <select className="form-select" value={sortOrder} onChange={e => setSortOrder(e.target.value as any)}>
@@ -344,6 +579,24 @@ export default function Page() {
               <option value="asc">Ascending (Low to High)</option>
               <option value="desc">Descending (High to Low)</option>
             </select>
+          </div>
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0 fw-bold text-nowrap">Visualization:</label>
+            <div style={getToggleButtonGroupStyle(false)}>
+             
+              <button
+  style={getToggleButtonStyle(false, vizMode === 'heatmap')}
+  onClick={() => setVizMode('heatmap')}
+>
+  Heatmap
+</button>
+<button
+  style={getToggleButtonStyle(false, vizMode === 'bar')}
+  onClick={() => setVizMode('bar')}
+>
+  Bar Chart
+</button>
+            </div>
           </div>
         </div>
 
@@ -359,29 +612,43 @@ export default function Page() {
         {!loading && dates.length > 0 && groups.length > 0 ? (
           <>
             {groups.map(g => {
-              const series = dates.map(d => {
-                let greens = 0, total = 0;
-                for (const code of g.codes) {
-                  const v = matrix?.results?.[code]?.[d];
-                  if (v === 'green') { greens++; total++; }
-                  else if (v === 'red') { total++; }
-                }
-                const pct = total > 0 ? (greens / total) * 100 : 0;
-                return { date: d, pct, greens, total };
-              });
+              const priceRows = extractPriceRows(
+                matrix?.fullSet ?? [],
+                new Set(g.codes),
+                hotelsByCode,
+              );
 
               return (
                 <div key={g.label} className="mb-4">
-                  <GroupBarChart 
-                    title={g.label} 
-                    series={series} 
-                    avg={g.avg} 
-                    min={null} 
-                    max={null} 
-                    height={220} 
-                    barWidth={12} 
-                    gap={5} 
-                  />
+                  {vizMode === 'bar' ? (
+                    <GroupBarChart
+                      title={g.label}
+                      series={dates.map(d => {
+                        let greens = 0, total = 0;
+                        for (const code of g.codes) {
+                          const v = matrix?.results?.[code]?.[d];
+                          if (v === 'green') { greens++; total++; }
+                          else { total++; }
+                        }
+                        const pct = total > 0 ? (greens / total) * 100 : 0;
+                        return { date: d, pct, greens, total };
+                      })}
+                      avg={g.avg}
+                      height={220}
+                      barWidth={12}
+                      gap={5}
+                    />
+                  ) : (
+                    <GroupHeatmap
+                      title={g.label}
+                      avg={g.avg}
+                      codes={g.codes}
+                      dates={dates}
+                      results={matrix?.results ?? {}}
+                      hotelsByCode={hotelsByCode}
+                    />
+                  )}
+                  <PriceTable rows={priceRows} />
                 </div>
               );
             })}
