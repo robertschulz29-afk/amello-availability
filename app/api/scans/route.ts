@@ -55,7 +55,7 @@ async function processFirstBatch(scanId: number, belloMandator: string) {
       body: JSON.stringify({ 
         scanId, 
         startIndex: 0, 
-        size: 30 
+        size: 50 
       }),
     });
     
