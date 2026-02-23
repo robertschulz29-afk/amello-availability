@@ -29,14 +29,27 @@ export const headerIconStyle: CSSProperties = {
 };
 
 // Dark mode toggle button styles
-export const getToggleButtonStyle = (isDark: boolean): CSSProperties => ({
-  marginRight: '20px',
-  backgroundColor: 'transparent',
+export const getToggleButtonStyle = (isDark: boolean, active = false): CSSProperties => ({
   border: 'none',
+  borderLeft: `2px solid`,
   cursor: 'pointer',
-  fontSize: '20px',
-  color: isDark ? '#e0e0e0' : '#333',
-  padding: '8px 12px',
+  fontSize: '1rem',
+  padding: '12px 12px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  transition: 'all 0.2s ease',
+  backgroundColor: active? (isDark ? '#485648' : '#0b0b0b')  // active: blue for both modes
+  : (isDark ? '#2d333b' : '#f0f0f0'),
+  color: active ? '#ffffff' : 'inherit',
+  fontWeight: active ? '600' : '400',
+});
+
+export const getToggleButtonGroupStyle = (isDark: boolean): CSSProperties => ({
+  border: '1px solid',
+  color: isDark ? '#ffffff' : '#30363d',
+  backgroundColor: isDark ? '#30363d' : '#ffffff',
+  cursor: 'pointer',
   borderRadius: '4px',
   display: 'flex',
   alignItems: 'center',
