@@ -1,52 +1,58 @@
-// lib/db.ts
-import { Pool } from 'pg';
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Accept managed cert chains in serverless (server-only code)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+/**
+ * Create Supabase client once (singleton)
+ * Uses service role key for server-side access.
+ */
+const supabase: SupabaseClient = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
-// Use ONLY a full connection string (Supabase pooled URL)
-// Prefer DATABASE_URL; fall back to POSTGRES_URL if you kept that env.
-const connectionString =
-  process.env.DATABASE_URL || process.env.POSTGRES_URL;
-
-if (!connectionString) {
-  throw new Error('Missing DATABASE_URL (or POSTGRES_URL) env var');
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable");
 }
 
-// Proactively remove per-field envs so pg cannot fall back to wrong host
-for (const k of [
-  'PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE',
-  'POSTGRES_HOST', 'POSTGRES_PORT', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DATABASE',
-  'POSTGRES_URL_NON_POOLING', 'POSTGRES_PRISMA_URL'
-]) {
-  if (process.env[k]) delete (process.env as any)[k];
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY environment variable");
 }
 
-const pool = new Pool({
-  connectionString,
-  ssl: { rejectUnauthorized: false }, // critical for managed PG in serverless
-});
+/**
+ * Generic table query helper
+ */
+export async function getAll<T = any>(table: string) {
+  const { data, error } = await supabase.from(table).select("*");
 
-// Keep the template tag API you already use
-type Primitive = string | number | boolean | null | Date;
+  if (error) {
+    throw error;
+  }
 
-export async function sql<T = any>(
-  strings: TemplateStringsArray,
-  ...values: Primitive[]
-): Promise<{ rows: T[]; rowCount: number }> {
-  const text = strings.reduce(
-    (acc, cur, i) => acc + cur + (i < values.length ? `$${i + 1}` : ''),
-    ''
-  );
-  const res = await pool.query({ text, values });
-  return { rows: res.rows as T[], rowCount: res.rowCount ?? 0 };
+  return data as T[];
 }
 
-// Export a query function for dynamic queries
-export async function query<T = any>(
-  text: string,
-  values: any[]
-): Promise<{ rows: T[]; rowCount: number }> {
-  const res = await pool.query({ text, values });
-  return { rows: res.rows as T[], rowCount: res.rowCount ?? 0 };
+/**
+ * Generic filtered query helper
+ */
+export async function getWhere<T = any>(
+  table: string,
+  column: string,
+  value: any
+) {
+  const { data, error } = await supabase
+    .from(table)
+    .select("*")
+    .eq(column, value);
+
+  if (error) {
+    throw error;
+  }
+
+  return data as T[];
+}
+
+/**
+ * Expose raw client for advanced queries when needed
+ */
+export function getClient(): SupabaseClient {
+  return supabase;
 }
