@@ -1,3 +1,100 @@
-:global(nav) {flex-direction: column;
+.alert-red{background-color: red; width: 100% ; height:1rem;}
+.alert-yellow{background-color: rgb(255, 193, 7); width: 100% ; height:1rem;}
+.alert-green{background-color: green; width: 100% ; height:1rem;}
+
+nav {flex-direction: column;
   height: 100vh;
   display: flex;}
+
+.hotelList{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+}
+.hotelListCard {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #ddd;
+  border-radius: 3rem 3rem 0rem 0rem;
+  margin-bottom: 20px;
+  width: 30%;
+}
+
+.hotelListCardImageContainerImage {
+  border-radius: 3rem 3rem 0rem 0rem;
+}
+
+.hotelListCardImageContainer {
+  position: relative;
+  margin-bottom: 0%;
+}
+
+.hotelListCardImageContainer::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.7));
+  border-radius: 3rem 3rem 0 0;
+  pointer-events: none;
+}
+
+.hotelListCardImageContainerImage {
+  display: block;
+  width: 100%;
+  border-radius: 3rem 3rem 0 0;
+}
+
+.hotelListCardImageContainerName {
+  position: absolute;
+  bottom: 12px;
+  left: 16px;
+  right: 16px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1.6rem;
+  z-index: 1;
+  pointer-events: none;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.hotelListCardImageActions {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 2;
+}
+
+.hotelListCardActionBtn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: #333;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.hotelListCardActionBtn:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+.hotelListCardActionDelete:hover {
+  background: #dc3545;
+  color: #fff;
+}
+
+@media (max-width: 768px) {
+  .hotelListCard {
+    width: 100%;
+  }
+}

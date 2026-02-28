@@ -79,6 +79,15 @@ const getActiveNavLinkStyle = (isDark: boolean): CSSProperties => ({
   fontWeight: '500'
 });
 
+
+export const getHeatMapToggleStyle = (isDark: boolean): CSSProperties => ({
+
+  backgroundColor: isDark ? '#161b22' : '#f0f0f0',
+  borderLeft: '3px solid #ffffff',
+  color: '#ffffff',
+  fontWeight: '500'
+});
+
 // Dashboard link style function
 export function getDashboardLinkStyle(isActive: boolean, isDark: boolean): CSSProperties {
   return isActive ? getActiveNavLinkStyle(isDark) : getBaseNavLinkStyle(isDark);

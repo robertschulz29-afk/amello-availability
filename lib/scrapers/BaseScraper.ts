@@ -70,7 +70,7 @@ export abstract class BaseScraper {
     await this.rateLimiter.waitForNextRequest();
 
     // Add random delay to mimic human behavior
-    await randomSleep(100, 500);
+    await randomSleep(100, 200);
 
     // Retry with exponential backoff
     return retry(
@@ -110,7 +110,7 @@ export abstract class BaseScraper {
       {
         maxRetries: this.options.maxRetries,
         baseDelayMs: this.options.retryDelayMs,
-        maxDelayMs: 30000,
+        maxDelayMs: 60000,
         exponentialBackoff: true,
         onRetry: (attempt, error) => {
           console.log(`[BaseScraper] Retry attempt ${attempt} for ${url}: ${error.message}`);

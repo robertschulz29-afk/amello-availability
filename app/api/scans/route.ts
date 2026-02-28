@@ -55,7 +55,7 @@ async function processFirstBatch(scanId: number, belloMandator: string) {
       body: JSON.stringify({ 
         scanId, 
         startIndex: 0, 
-        size: 30 
+        size: 50 
       }),
     });
     
@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Hotels count
-    const countQ = await sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels`;
+    const countQ = await sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable=true AND active=true`;
     const hotelsCount = countQ.rows[0]?.c ?? 0;
     const totalCells = hotelsCount * days;
 

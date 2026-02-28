@@ -69,11 +69,7 @@ export async function POST(req: NextRequest) {
   const tStart = Date.now();
   const SOFT_BUDGET_MS = 40_000;
 
-  // Get the Bello-Mandator header from the incoming request
-  // Middleware ensures this is present, but we default to DEFAULT_BELLO_MANDATOR as fallback
   const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
-  
-  console.log('[process] Bello-Mandator:', belloMandator);
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -93,11 +89,18 @@ export async function POST(req: NextRequest) {
 
     // Load scan parameters
     const s = await sql`
-      SELECT id, base_checkin, days, stay_nights, start_offset, end_offset, total_cells, done_cells, status
+      SELECT id, base_checkin::text as base_checkin, days, stay_nights, start_offset, end_offset, total_cells, done_cells, status
       FROM scans WHERE id = ${scanId}
     `;
     if (s.rows.length === 0) return NextResponse.json({ error: 'Scan not found' }, { status: 404 });
     const scan = s.rows[0];
+
+    // Debug: log raw base_checkin from DB
+    console.log('[process] ===== BASE_CHECKIN DEBUG =====');
+    console.log('[process] base_checkin raw value:', scan.base_checkin);
+    console.log('[process] base_checkin type:', typeof scan.base_checkin);
+    console.log('[process] base_checkin instanceof Date:', scan.base_checkin instanceof Date);
+    console.log('[process] base_checkin toString:', String(scan.base_checkin));
 
     // Check if scan has been cancelled
     if (scan.status === 'cancelled') {
@@ -115,13 +118,17 @@ export async function POST(req: NextRequest) {
     const baseYMD = normalizeYMD((scan as any).base_checkin);
     const daysNum = Number((scan as any).days);
 
+    console.log('[process] ===== DATES DEBUG =====');
+    console.log('[process] baseYMD (after normalizeYMD):', baseYMD);
+    console.log('[process] daysNum:', daysNum);
+
     if (baseYMD && Number.isFinite(daysNum) && daysNum > 0) {
       dates = datesFromBase(baseYMD, daysNum);
     } else {
       // Legacy fallback using offsets relative to "today in Berlin"
       const berlinToday = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
-      }).format(new Date()); // YYYY-MM-DD
+      }).format(new Date());
       const base = ymdToUTC(berlinToday);
 
       const startOff = Number((scan as any).start_offset);
@@ -136,9 +143,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Hotels (include booking_url for parallel Booking.com scanning)
-    const hotels = (await sql`SELECT id, code, booking_url FROM hotels ORDER BY id ASC`).rows as Array<{ id:number; code:string; booking_url:string|null }>;
+    console.log('[process] dates[0]:', dates[0]);
+    console.log('[process] dates[1]:', dates[1]);
+    console.log('[process] dates length:', dates.length);
 
+    // Hotels
+    const hotels = (await sql`SELECT id, code, booking_url FROM hotels WHERE active = true AND bookable = true ORDER BY id ASC`).rows as Array<{ id:number; code:string; booking_url:string|null }>;
 
     // Guard: nothing to do
     if (!hotels.length) {
@@ -170,13 +180,21 @@ export async function POST(req: NextRequest) {
       const dateIdx  = idx % dates.length;
       const h = hotels[hotelIdx];
 
-      const checkIn = dates[dateIdx];                    // already YMD
+      const checkIn = dates[dateIdx];
       const checkInDt = ymdToUTC(checkIn);
       checkInDt.setUTCDate(checkInDt.getUTCDate() + stayNights);
       const checkOut = toYMDUTC(checkInDt);
 
       slice.push({ hotelId: h.id, hotelCode: h.code, bookingUrl: h.booking_url, checkIn, checkOut });
     }
+
+    // Debug: log first 3 slice items
+    console.log('[process] ===== SLICE DEBUG =====');
+    console.log('[process] first 3 slice items:', slice.slice(0, 3).map(s => ({
+      hotelId: s.hotelId,
+      checkIn: s.checkIn,
+      checkOut: s.checkOut,
+    })));
 
     const CONCURRENCY = 4;
     let i = 0;
@@ -186,29 +204,24 @@ export async function POST(req: NextRequest) {
     let bookingFailures = 0;
     let stopEarly = false;
 
-    // Collect Booking.com scan promises to await before returning response
     const bookingPromises: Promise<void>[] = [];
-    // Track metadata for each booking promise for timeout logging
     const bookingPromisesMeta: Array<{ hotelId: number; checkIn: string; checkOut: string }> = [];
 
-    // Initialize Booking.com scraper if needed (lazy initialization)
     let bookingScraper: BookingComScraper | null = null;
-    const BOOKING_INTERNAL_SOURCE_ID = -1; // Negative ID to avoid conflicts with real DB records
+    const BOOKING_INTERNAL_SOURCE_ID = -1;
     
-    // Type guard for checking if scrapedData has rooms property
     const hasRoomsProperty = (data: any): data is { rooms: Array<any> } => {
       return data && typeof data === 'object' && Array.isArray(data.rooms);
     };
     
     const initBookingScraper = () => {
       if (!bookingScraper) {
-        // Create a minimal ScanSource config for Booking.com
         const bookingSource: ScanSource = {
           id: BOOKING_INTERNAL_SOURCE_ID,
           name: 'Booking.com',
           enabled: true,
           base_url: 'https://www.booking.com',
-          css_selectors: null, // We'll parse HTML directly
+          css_selectors: null,
           rate_limit_ms: 2000,
           user_agent_rotation: true,
           created_at: new Date(),
@@ -226,7 +239,7 @@ export async function POST(req: NextRequest) {
         if (idx >= slice.length) break;
         const cell = slice[idx];
 
-        // ============ TUIAmello Scan (unchanged, just add source field) ============
+        // ============ TUIAmello Scan ============
         let status: 'green' | 'red' = 'red';
         let responseJson: any = null;
 
@@ -237,7 +250,7 @@ export async function POST(req: NextRequest) {
             returnDate: cell.checkOut,
             currency: 'EUR',
             roomConfigurations: [
-              { travellers: { id: 1, adultCount: 2, childrenAges: [] } }, // adultCount = 2
+              { travellers: { id: 1, adultCount: 2, childrenAges: [] } },
             ],
             locale: 'de_DE',
           };
@@ -256,11 +269,8 @@ export async function POST(req: NextRequest) {
             const ctype = res.headers.get('content-type') || '';
             if (ctype.includes('application/json')) {
               const j = await res.json();
-              // Extract compact room/rate data instead of storing full response
               const compactData = extractRoomRateData(j);
-              // Add source field
               responseJson = { ...compactData, source: 'amello' };
-              // Check if we have any rooms with rates for status
               status = (compactData.rooms && compactData.rooms.length > 0) ? 'green' : 'red';
             } else {
               status = 'red';
@@ -276,7 +286,6 @@ export async function POST(req: NextRequest) {
           responseJson = { error: String(e), source: 'amello' };
         }
 
-        // Persist TUIAmello cell; ONLY count as processed on success
         try {
           await sql`
             INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json, source)
@@ -290,106 +299,41 @@ export async function POST(req: NextRequest) {
           console.error('[process] DB write error', e, { scanId, hotelId: cell.hotelId, checkIn: cell.checkIn });
         }
 
-        // ============ Booking.com Parallel Scan (NEW) ============
-        // Only scan if hotel has booking_url defined
+        // ============ Booking.com Parallel Scan ============
         if (cell.bookingUrl && cell.bookingUrl.trim()) {
-          // Validate checkout > checkin using simple string comparison
           if (cell.checkOut <= cell.checkIn) {
             console.warn('[process] BOOKING SCAN SKIPPED: Invalid date range', {
               hotelId: cell.hotelId,
               checkIn: cell.checkIn,
               checkOut: cell.checkOut,
-              reason: 'checkOut must be after checkIn'
             });
           } else {
-            // Run Booking.com scan in parallel - collect promise to await later
-            // CRITICAL: Push promise IMMEDIATELY to bookingPromises array to ensure it's tracked
             const bookingPromise = (async () => {
               try {
                 console.log('[process] === BOOKING.COM SCAN STARTED ===');
                 console.log('[process] Hotel ID:', cell.hotelId);
-                console.log('[process] Booking URL:', cell.bookingUrl);
                 console.log('[process] Check-in:', cell.checkIn);
                 console.log('[process] Check-out:', cell.checkOut);
                 
                 const scraper = initBookingScraper();
                 const bookingResult = await scraper.scrape({
-                  hotelCode: cell.bookingUrl!, // Non-null assertion - we already checked it's not null above
+                  hotelCode: cell.bookingUrl!,
                   checkInDate: cell.checkIn,
                   checkOutDate: cell.checkOut,
                   adults: 2,
                   children: 0,
                 });
 
-                console.log('[process] === BOOKING.COM SCAN COMPLETE ===');
-                console.log('[process] Result status:', bookingResult.status);
-                console.log('[process] Has scraped data:', !!bookingResult.scrapedData);
-
-                // Add defensive logging when scrape returns unexpected data
-                if (!bookingResult.scrapedData) {
-                  console.warn('[process] BOOKING WARNING: No scrapedData returned', {
-                    hotelId: cell.hotelId,
-                    checkIn: cell.checkIn,
-                    checkOut: cell.checkOut,
-                    bookingUrl: cell.bookingUrl,
-                    status: bookingResult.status
-                  });
-                } else if (bookingResult.status !== 'green' && bookingResult.status !== 'red') {
-                  const roomCount = hasRoomsProperty(bookingResult.scrapedData) 
-                    ? bookingResult.scrapedData.rooms.length 
-                    : 0;
-                  console.warn('[process] BOOKING WARNING: Unexpected status', {
-                    hotelId: cell.hotelId,
-                    checkIn: cell.checkIn,
-                    checkOut: cell.checkOut,
-                    bookingUrl: cell.bookingUrl,
-                    status: bookingResult.status,
-                    scrapedDataCount: roomCount
-                  });
-                } else if (bookingResult.scrapedData) {
-                  const dataStr = JSON.stringify(bookingResult.scrapedData);
-                  console.log('[process] Scraped data length:', dataStr.length, 'chars');
-                  console.log('[process] Scraped data (truncated):', dataStr.substring(0, 200));
-                }
-
-                // Log booking result details for debugging
-                const roomCount = hasRoomsProperty(bookingResult.scrapedData) 
-                  ? bookingResult.scrapedData.rooms.length 
-                  : 0;
-                console.log('[process] BOOKING RESULT', {
-                  hotelId: cell.hotelId,
-                  checkIn: cell.checkIn,
-                  checkOut: cell.checkOut,
-                  status: bookingResult.status,
-                  scrapedDataCount: roomCount,
-                  bookingUrl: cell.bookingUrl
-                });
-
-                // Normalize booking status to valid values only
                 const validStatuses = new Set(['green', 'red', 'error']);
                 const bookingStatus: 'green' | 'red' | 'error' = 
                   validStatuses.has(bookingResult.status as any) && 
                   (bookingResult.status === 'green' || bookingResult.status === 'red' || bookingResult.status === 'error')
                     ? bookingResult.status
                     : 'red';
-                
-                if (!validStatuses.has(bookingResult.status as any)) {
-                  console.warn('[process] Invalid booking status received:', bookingResult.status, '- defaulting to "red"');
-                }
 
-                // Normalize bookingData - ensure it's an object with rooms array
                 const bookingData = bookingResult.scrapedData && typeof bookingResult.scrapedData === 'object'
                   ? { ...bookingResult.scrapedData, rooms: bookingResult.scrapedData.rooms || [], source: 'booking' }
                   : { rooms: [], source: 'booking' };
-
-                console.log('[process] === DATABASE WRITE PHASE ===');
-                console.log('[process] Scan ID:', scanId);
-                console.log('[process] Hotel ID:', cell.hotelId);
-                console.log('[process] Check-in date:', cell.checkIn);
-                console.log('[process] Normalized status:', bookingStatus);
-                console.log('[process] Source field:', 'booking');
-                console.log('[process] Normalized data rooms count:', bookingData.rooms?.length || 0);
-                console.log('[process] Data structure (truncated):', JSON.stringify(bookingData).substring(0, 100) + '...');
 
                 try {
                   await sql`
@@ -398,72 +342,31 @@ export async function POST(req: NextRequest) {
                     ON CONFLICT (scan_id, hotel_id, source, check_in_date)
                     DO UPDATE SET status = EXCLUDED.status, response_json = EXCLUDED.response_json
                   `;
-                  
-                  console.log('[process] ✓ Database write successful for Booking.com');
                   bookingProcessed++;
                 } catch (dbError: any) {
                   bookingFailures++;
-                  console.error('[process] === DATABASE WRITE FAILED ===');
-                  console.error('[process] DB Error type:', dbError.name || 'Unknown');
-                  console.error('[process] DB Error message:', dbError.message || 'No message');
-                  console.error('[process] DB Error stack:', dbError.stack || 'No stack trace');
-                  console.error('[process] Context:', {
-                    hotelId: cell.hotelId,
-                    checkIn: cell.checkIn,
-                    checkOut: cell.checkOut,
-                    bookingUrl: cell.bookingUrl,
-                    scanId: scanId,
-                  });
+                  console.error('[process] Booking DB write error:', dbError.message);
                 }
               } catch (e: any) {
                 bookingFailures++;
-                console.error('[process] === BOOKING.COM SCAN ERROR (NON-BLOCKING) ===');
-                console.error('[process] Error type:', e.name || 'Unknown');
-                console.error('[process] Error message:', e.message || 'No message');
-                console.error('[process] Error stack:', e.stack || 'No stack trace');
-                console.error('[process] Context:', {
-                  hotelId: cell.hotelId,
-                  checkIn: cell.checkIn,
-                  checkOut: cell.checkOut,
-                  bookingUrl: cell.bookingUrl,
-                  scanId: scanId,
-                });
-                
-                // Store error result for Booking.com - ensure normalized structure
+                console.error('[process] Booking scan error:', e.message);
                 try {
-                  console.log('[process] === STORING ERROR RESULT IN DATABASE ===');
                   const errorData = { 
                     error: e.message || String(e), 
                     rooms: [],
                     source: 'booking',
-                    errorType: e.name || 'Unknown',
-                    stack: e.stack || 'No stack trace',
                   };
-                  console.log('[process] Error data structure:', JSON.stringify(errorData).substring(0, 200));
-                  
                   await sql`
                     INSERT INTO scan_results (scan_id, hotel_id, check_in_date, status, response_json, source)
-                    VALUES (
-                      ${scanId}, 
-                      ${cell.hotelId}, 
-                      ${cell.checkIn}, 
-                      'error',
-                      ${JSON.stringify(errorData)},
-                      'booking'
-                    )
+                    VALUES (${scanId}, ${cell.hotelId}, ${cell.checkIn}, 'error', ${JSON.stringify(errorData)}, 'booking')
                     ON CONFLICT (scan_id, hotel_id, source, check_in_date)
                     DO UPDATE SET status = EXCLUDED.status, response_json = EXCLUDED.response_json
                   `;
-                  console.log('[process] ✓ Error result stored successfully');
                 } catch (dbError: any) {
-                  console.error('[process] === DATABASE ERROR WRITE FAILED ===');
-                  console.error('[process] DB Error type:', dbError.name || 'Unknown');
-                  console.error('[process] DB Error message:', dbError.message || 'No message');
-                  console.error('[process] DB Error stack:', dbError.stack || 'No stack trace');
+                  console.error('[process] Booking error DB write failed:', dbError.message);
                 }
               }
             })();
-            // CRITICAL: Push immediately after creating promise, not after IIFE completes
             bookingPromises.push(bookingPromise);
             bookingPromisesMeta.push({ hotelId: cell.hotelId, checkIn: cell.checkIn, checkOut: cell.checkOut });
           }
@@ -473,51 +376,22 @@ export async function POST(req: NextRequest) {
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-    // Wait for all Booking.com scans to complete before returning response
-    // This ensures database writes finish before serverless function terminates
     if (bookingPromises.length > 0) {
-      console.log('[process] === WAITING FOR BOOKING.COM SCANS ===');
-      console.log('[process] Total booking promises to await:', bookingPromises.length);
-      
+      console.log('[process] Waiting for', bookingPromises.length, 'Booking.com scans...');
       try {
-        // Use a timeout to prevent hanging (25s buffer for Vercel's 30s limit)
         const BOOKING_TIMEOUT_MS = 25_000;
         let timeoutId: NodeJS.Timeout | null = null;
         const timeoutPromise = new Promise<'timeout'>((resolve) => {
-          timeoutId = setTimeout(() => {
-            console.warn('[process] === BOOKING.COM SCANS TIMEOUT ===');
-            console.warn('[process] Timeout after', BOOKING_TIMEOUT_MS, 'ms');
-            console.warn('[process] Total promises started:', bookingPromises.length);
-            console.warn('[process] Pending scans that may not have completed:');
-            bookingPromisesMeta.forEach((meta, idx) => {
-              console.warn(`[process]   - Scan ${idx + 1}: Hotel ${meta.hotelId}, Check-in: ${meta.checkIn}, Check-out: ${meta.checkOut}`);
-            });
-            
-            resolve('timeout');
-          }, BOOKING_TIMEOUT_MS);
+          timeoutId = setTimeout(() => resolve('timeout'), BOOKING_TIMEOUT_MS);
         });
 
         const result = await Promise.race([
-          Promise.allSettled(bookingPromises).then((results) => {
-            // Log how many succeeded vs failed
-            const fulfilled = results.filter(r => r.status === 'fulfilled').length;
-            const rejected = results.filter(r => r.status === 'rejected').length;
-            console.log('[process] === BOOKING.COM SCANS SETTLED ===');
-            console.log('[process] Fulfilled:', fulfilled, 'Rejected:', rejected, 'Total:', results.length);
-            return 'completed' as const;
-          }),
+          Promise.allSettled(bookingPromises).then(() => 'completed' as const),
           timeoutPromise,
         ]);
         
-        // Clear timeout if promises completed first
-        if (timeoutId && result === 'completed') {
-          clearTimeout(timeoutId);
-        }
-        
+        if (timeoutId && result === 'completed') clearTimeout(timeoutId);
         console.log('[process] Booking.com scans result:', result);
-        if (result === 'completed') {
-          console.log('[process] Booking scans - Processed:', bookingProcessed, 'Failures:', bookingFailures);
-        }
       } catch (e) {
         console.error('[process] Error waiting for Booking.com scans:', e);
       }
@@ -540,7 +414,6 @@ export async function POST(req: NextRequest) {
     console.log('[process] Next Index:', nextIndex);
     console.log('[process] Done:', done);
     console.log('[process] Duration:', Date.now() - tStart, 'ms');
-    console.log('[process] ==================== END ====================');
 
     return NextResponse.json({
       processed,

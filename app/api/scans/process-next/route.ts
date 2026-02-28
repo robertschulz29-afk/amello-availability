@@ -92,7 +92,7 @@ async function processNextScan(req: NextRequest) {
       body: JSON.stringify({ 
         scanId, 
         startIndex: doneCells, 
-        size: 30 
+        size: 50 
       }),
     });
     

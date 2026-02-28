@@ -1,23 +1,29 @@
-// app/hotels/page.tsx
 'use client';
 
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
 
-type Hotel = { 
-  id: number; 
-  name: string; 
-  code: string; 
-  brand?: string; 
-  region?: string; 
+type Hotel = {
+  id: number;
+  name: string;
+  code: string;
+  brand?: string;
+  region?: string;
   country?: string;
   booking_url?: string | null;
   tuiamello_url?: string | null;
   expedia_url?: string | null;
+  bookable?: boolean | null;
+  active?: boolean | null;
+  base_image?: string | null;
 };
 
+type SortField = 'name' | 'brand' | 'region';
+type SortDir   = 'asc' | 'desc';
+type FilterBool = 'all' | 'true' | 'false';
+
 function isValidUrl(urlString: string): boolean {
-  if (!urlString.trim()) return true; // Empty URLs are valid (optional)
+  if (!urlString.trim()) return true;
   try {
     const url = new URL(urlString);
     return url.protocol === 'http:' || url.protocol === 'https:';
@@ -30,462 +36,436 @@ const SUCCESS_MESSAGE_TIMEOUT_MS = 5000;
 
 export default function Page() {
   const [hotels, setHotels] = React.useState<Hotel[]>([]);
-  const [hName, setHName] = React.useState('');
-  const [hCode, setHCode] = React.useState('');
-  const [hBrand, setHBrand] = React.useState('');
-  const [hRegion, setHRegion] = React.useState('');
-  const [hCountry, setHCountry] = React.useState('');
-  const [hBookingUrl, setHBookingUrl] = React.useState('');
-  const [hTuiamelloUrl, setHTuiamelloUrl] = React.useState('');
-  const [hExpediaUrl, setHExpediaUrl] = React.useState('');
-  const [hError, setHError] = React.useState<string | null>(null);
-  const [hBusy, setHBusy] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
 
-  // Editing state
-  const [editingId, setEditingId] = React.useState<number | null>(null);
+  const [syncBusy, setSyncBusy] = React.useState(false);
+  const [syncWarnings, setSyncWarnings] = React.useState<string[]>([]);
+
+  const [filterActive,   setFilterActive]   = React.useState<FilterBool>('all');
+  const [filterBookable, setFilterBookable] = React.useState<FilterBool>('all');
+  const [sortField, setSortField] = React.useState<SortField>('name');
+  const [sortDir,   setSortDir]   = React.useState<SortDir>('asc');
+
+  const [editingHotel, setEditingHotel] = React.useState<Hotel | null>(null);
   const [editBrand, setEditBrand] = React.useState('');
   const [editRegion, setEditRegion] = React.useState('');
   const [editCountry, setEditCountry] = React.useState('');
   const [editBookingUrl, setEditBookingUrl] = React.useState('');
   const [editTuiamelloUrl, setEditTuiamelloUrl] = React.useState('');
   const [editExpediaUrl, setEditExpediaUrl] = React.useState('');
+  const [editBookable, setEditBookable] = React.useState(true);
+  const [editActive, setEditActive] = React.useState(true);
   const [editBusy, setEditBusy] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
 
-  // Delete confirmation state
   const [deleteHotel, setDeleteHotel] = React.useState<Hotel | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
-  // Load hotels
   const loadHotels = React.useCallback(async () => {
     try {
-      const data = await fetchJSON('/api/hotels', { cache: 'no-store' });
+      const data = await fetchJSON('/api/hotels', { cache: 'no-store' } as RequestInit);
       setHotels(Array.isArray(data) ? data : []);
-    } catch (e:any) {
-      setHError(e.message || 'Failed to load hotels');
+    } catch (e: any) {
+      setLoadError(e.message || 'Failed to load hotels');
     }
   }, []);
 
   React.useEffect(() => { loadHotels(); }, [loadHotels]);
 
-  // Auto-clear success message after timeout
   React.useEffect(() => {
-    if (successMsg) {
-      const timer = setTimeout(() => setSuccessMsg(null), SUCCESS_MESSAGE_TIMEOUT_MS);
-      return () => clearTimeout(timer);
-    }
+    if (!successMsg) return;
+    const t = setTimeout(() => setSuccessMsg(null), SUCCESS_MESSAGE_TIMEOUT_MS);
+    return () => clearTimeout(t);
   }, [successMsg]);
 
-  // Add hotel
-  const onAddHotel = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setHError(null);
+  const visibleHotels = React.useMemo(() => {
+    let list = [...hotels];
+    if (filterActive !== 'all') {
+      const want = filterActive === 'true';
+      list = list.filter(h => h.active === want);
+    }
+    if (filterBookable !== 'all') {
+      const want = filterBookable === 'true';
+      list = list.filter(h => h.bookable === want);
+    }
+    list.sort((a, b) => {
+      const av = (a[sortField] ?? '').toLowerCase();
+      const bv = (b[sortField] ?? '').toLowerCase();
+      if (av < bv) return sortDir === 'asc' ? -1 :  1;
+      if (av > bv) return sortDir === 'asc' ?  1 : -1;
+      return 0;
+    });
+    return list;
+  }, [hotels, filterActive, filterBookable, sortField, sortDir]);
+
+  const activeCount       = hotels.filter(h => h.active === true).length;
+  const inactiveCount     = hotels.filter(h => h.active === false).length;
+  const bookableCount     = hotels.filter(h => h.bookable === true).length;
+  const nonBookableCount  = hotels.filter(h => h.bookable === false).length;
+  const activeAndBookable = hotels.filter(h => h.active === true && h.bookable === true).length;
+
+  const updateHotelList = async () => {
+    setLoadError(null);
     setSuccessMsg(null);
-    if (!hName.trim() || !hCode.trim()) { setHError('Name and Code are required'); return; }
-    
-    // Validate URLs
-    if (hBookingUrl && !isValidUrl(hBookingUrl)) { setHError('Invalid Booking.com URL'); return; }
-    if (hTuiamelloUrl && !isValidUrl(hTuiamelloUrl)) { setHError('Invalid TUIAmello URL'); return; }
-    if (hExpediaUrl && !isValidUrl(hExpediaUrl)) { setHError('Invalid Expedia URL'); return; }
-    
-    setHBusy(true);
+    setSyncWarnings([]);
+    setSyncBusy(true);
     try {
-      const next = await fetchJSON('/api/hotels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: hName.trim(),
-          code: hCode.trim(),
-          brand: hBrand.trim() || null,
-          region: hRegion.trim() || null,
-          country: hCountry.trim() || null,
-          booking_url: hBookingUrl.trim() || null,
-          tuiamello_url: hTuiamelloUrl.trim() || null,
-          expedia_url: hExpediaUrl.trim() || null,
-        }),
-      });
-      setHotels(Array.isArray(next) ? next : hotels);
-      setHName(''); setHCode(''); setHBrand(''); setHRegion(''); setHCountry('');
-      setHBookingUrl(''); setHTuiamelloUrl(''); setHExpediaUrl('');
-      setSuccessMsg('Hotel added successfully!');
-    } catch (e:any) {
-      setHError(e.message || 'Saving failed');
-    } finally { setHBusy(false); }
+      const result = await fetchJSON('/api/hotels/sync', { method: 'POST' });
+      if (result.error) throw new Error(result.error);
+      setHotels(Array.isArray(result.hotels) ? result.hotels : []);
+      setSyncWarnings(result.errors ?? []);
+      setSuccessMsg(
+        `Sync complete: ${result.synced} hotel${result.synced !== 1 ? 's' : ''} synced` +
+        (result.skipped > 0 ? `, ${result.skipped} skipped` : '') + '.',
+      );
+    } catch (e: any) {
+      setLoadError(e.message || 'Sync failed');
+    } finally {
+      setSyncBusy(false);
+    }
   };
 
-  // Start editing
-  const startEdit = (hotel: Hotel) => {
-    setEditingId(hotel.id);
-    setEditBrand(hotel.brand || '');
-    setEditRegion(hotel.region || '');
-    setEditCountry(hotel.country || '');
-    setEditBookingUrl(hotel.booking_url || '');
-    setEditTuiamelloUrl(hotel.tuiamello_url || '');
-    setEditExpediaUrl(hotel.expedia_url || '');
-    setEditError(null);
-    setSuccessMsg(null);
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
   };
 
-  // Cancel editing
-  const cancelEdit = () => {
-    setEditingId(null);
+  const sortIcon = (field: SortField) => {
+    if (sortField !== field) return ' ↕';
+    return sortDir === 'asc' ? ' ↑' : ' ↓';
+  };
+
+  const openEdit = (hotel: Hotel) => {
+    setEditingHotel(hotel);
+    setEditBrand(hotel.brand ?? '');
+    setEditRegion(hotel.region ?? '');
+    setEditCountry(hotel.country ?? '');
+    setEditBookingUrl(hotel.booking_url ?? '');
+    setEditTuiamelloUrl(hotel.tuiamello_url ?? '');
+    setEditExpediaUrl(hotel.expedia_url ?? '');
+    setEditBookable(hotel.bookable ?? true);
+    setEditActive(hotel.active ?? true);
     setEditError(null);
   };
 
-  // Save edited hotel
-  const saveEdit = async (hotelId: number) => {
+  const closeEdit = () => {
+    if (editBusy) return;
+    setEditingHotel(null);
     setEditError(null);
-    setSuccessMsg(null);
-    
-    // Validate URLs
-    if (editBookingUrl && !isValidUrl(editBookingUrl)) { setEditError('Invalid Booking.com URL'); return; }
-    if (editTuiamelloUrl && !isValidUrl(editTuiamelloUrl)) { setEditError('Invalid TUIAmello URL'); return; }
-    if (editExpediaUrl && !isValidUrl(editExpediaUrl)) { setEditError('Invalid Expedia URL'); return; }
-    
+  };
+
+  const saveEdit = async () => {
+    if (!editingHotel) return;
+    setEditError(null);
+    if (!isValidUrl(editBookingUrl))   { setEditError('Invalid Booking.com URL'); return; }
+    if (!isValidUrl(editTuiamelloUrl)) { setEditError('Invalid TUIAmello URL');   return; }
+    if (!isValidUrl(editExpediaUrl))   { setEditError('Invalid Expedia URL');     return; }
     setEditBusy(true);
     try {
-      const updated = await fetchJSON(`/api/hotels/${hotelId}`, {
+      const updated: Hotel = await fetchJSON(`/api/hotels/${editingHotel.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brand: editBrand.trim() || null,
-          region: editRegion.trim() || null,
-          country: editCountry.trim() || null,
-          booking_url: editBookingUrl.trim() || null,
+          brand:         editBrand.trim()        || null,
+          region:        editRegion.trim()       || null,
+          country:       editCountry.trim()      || null,
+          booking_url:   editBookingUrl.trim()   || null,
           tuiamello_url: editTuiamelloUrl.trim() || null,
-          expedia_url: editExpediaUrl.trim() || null,
+          expedia_url:   editExpediaUrl.trim()   || null,
+          bookable:      editBookable,
+          active:        editActive,
         }),
       });
-      
-      // Update the hotel in the list
-      setHotels(prev => prev.map(h => h.id === hotelId ? updated : h));
-      setEditingId(null);
+      setHotels(prev => prev.map(h => h.id === editingHotel.id ? { ...h, ...updated } : h));
+      setEditingHotel(null);
       setSuccessMsg('Hotel updated successfully!');
-    } catch (e:any) {
+    } catch (e: any) {
       setEditError(e.message || 'Update failed');
-    } finally { setEditBusy(false); }
+    } finally {
+      setEditBusy(false);
+    }
   };
 
-  // Confirm delete
+  const openDelete = (hotel: Hotel) => { setDeleteHotel(hotel); setDeleteError(null); };
+
+  const closeDelete = () => {
+    if (deleteBusy) return;
+    setDeleteHotel(null);
+    setDeleteError(null);
+  };
+
   const confirmDelete = async () => {
     if (!deleteHotel) return;
-    
     setDeleteBusy(true);
-    setHError(null);
-    setSuccessMsg(null);
-    
+    setDeleteError(null);
     try {
-      await fetchJSON(`/api/hotels/${deleteHotel.id}`, {
-        method: 'DELETE',
-      });
-      
-      // Remove hotel from list
+      await fetchJSON(`/api/hotels/${deleteHotel.id}`, { method: 'DELETE' });
       setHotels(prev => prev.filter(h => h.id !== deleteHotel.id));
-      setSuccessMsg(`Hotel "${deleteHotel.name}" deleted successfully!`);
       setDeleteHotel(null);
+      setSuccessMsg(`Hotel "${deleteHotel.name}" deleted successfully!`);
     } catch (e: any) {
-      setHError(e.message || 'Failed to delete hotel');
+      setDeleteError(e.message || 'Failed to delete hotel');
     } finally {
       setDeleteBusy(false);
     }
   };
 
-  // Cancel delete
-  const cancelDelete = () => {
-    setDeleteHotel(null);
-  };
-
   return (
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
-      {/* Success message */}
-      {successMsg && (
-        <div className="alert alert-success alert-dismissible fade show" role="alert">
-          <i className="fa fa-check-circle me-2"></i>{successMsg}
-          <button type="button" className="btn-close" onClick={() => setSuccessMsg(null)}></button>
-        </div>
-      )}
 
-      <div className="card mb-3">
-        <div className="card-header">Add Hotel</div>
-        <div className="card-body">
-          <form onSubmit={onAddHotel}>
-            <div className="row g-3">
-              <div className="col-md-4">
-                <label className="form-label">Name <span className="text-danger">*</span></label>
-                <input className="form-control" value={hName} onChange={e => setHName(e.target.value)} placeholder="Hotel Alpha" />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">Code <span className="text-danger">*</span></label>
-                <input className="form-control" value={hCode} onChange={e => setHCode(e.target.value)} placeholder="ALPHA123" />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">Brand</label>
-                <input className="form-control" value={hBrand} onChange={e => setHBrand(e.target.value)} placeholder="e.g., Amello" />
-              </div>
-            </div>
-            <div className="row g-3 mt-2">
-              <div className="col-md-4">
-                <label className="form-label">Region</label>
-                <input className="form-control" value={hRegion} onChange={e => setHRegion(e.target.value)} placeholder="e.g., Algarve" />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">Country</label>
-                <input className="form-control" value={hCountry} onChange={e => setHCountry(e.target.value)} placeholder="e.g., Portugal" />
-              </div>
-            </div>
-            <div className="row g-3 mt-2">
-              <div className="col-md-4">
-                <label className="form-label">Booking.com URL</label>
-                <input type="url" className="form-control" value={hBookingUrl} onChange={e => setHBookingUrl(e.target.value)} placeholder="https://www.booking.com/..." />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">TUIAmello URL</label>
-                <input type="url" className="form-control" value={hTuiamelloUrl} onChange={e => setHTuiamelloUrl(e.target.value)} placeholder="https://www.tuiamello.com/..." />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">Expedia URL</label>
-                <input type="url" className="form-control" value={hExpediaUrl} onChange={e => setHExpediaUrl(e.target.value)} placeholder="https://www.expedia.com/..." />
-              </div>
-            </div>
-            <div className="row mt-3">
-              <div className="col-md-12">
-                <button className="btn btn-primary" disabled={hBusy}>{hBusy ? 'Saving…' : 'Add hotel'}</button>
-              </div>
-            </div>
-            {hError ? <div className="mt-3 text-danger small">{hError}</div> : null}
-          </form>
-        </div>
-      </div>
+        {successMsg && (
+          <div className="alert alert-success alert-dismissible fade show" role="alert">
+            <i className="fa fa-check-circle me-2"></i>{successMsg}
+            <button type="button" className="btn-close" onClick={() => setSuccessMsg(null)}></button>
+          </div>
+        )}
+        {loadError && (
+          <div className="alert alert-danger alert-dismissible fade show" role="alert">
+            <i className="fa fa-exclamation-circle me-2"></i>{loadError}
+            <button type="button" className="btn-close" onClick={() => setLoadError(null)}></button>
+          </div>
+        )}
+        {syncWarnings.length > 0 && (
+          <div className="alert alert-warning alert-dismissible fade show" role="alert">
+            <strong>{syncWarnings.length} hotel{syncWarnings.length !== 1 ? 's' : ''} could not be fetched:</strong>
+            <ul className="mb-0 mt-1 small">
+              {syncWarnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+            <button type="button" className="btn-close" onClick={() => setSyncWarnings([])}></button>
+          </div>
+        )}
 
-      <div className="card">
-        <div className="card-header">Current Hotels</div>
-        <div className="card-body">
-          {hotels.length === 0 ? <p className="text-muted mb-0">No hotels yet.</p> : (
-            <div className="table-responsive">
-              <table className="table table-sm align-middle">
-                <thead>
-                  <tr>
-                    <th style={{ width: 40 }}>#</th>
-                    <th>Name</th>
-                    <th>Code</th>
-                    <th>Brand</th>
-                    <th>Region</th>
-                    <th>Country</th>
-                    <th>Booking.com</th>
-                    <th>TUIAmello</th>
-                    <th>Expedia</th>
-                    <th style={{ width: 120 }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hotels.map((h,i) => {
-                    const isEditing = editingId === h.id;
-                    return (
-                      <tr key={h.id} className={isEditing ? 'table-active' : ''}>
-                        <td>{i+1}</td>
-                        <td>{h.name}</td>
-                        <td><code>{h.code}</code></td>
-                        <td>
-                          {isEditing ? (
-                            <input 
-                              className="form-control form-control-sm" 
-                              value={editBrand} 
-                              onChange={e => setEditBrand(e.target.value)} 
-                              disabled={editBusy}
-                            />
-                          ) : (h.brand || '')}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input 
-                              className="form-control form-control-sm" 
-                              value={editRegion} 
-                              onChange={e => setEditRegion(e.target.value)} 
-                              disabled={editBusy}
-                            />
-                          ) : (h.region || '')}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input 
-                              className="form-control form-control-sm" 
-                              value={editCountry} 
-                              onChange={e => setEditCountry(e.target.value)} 
-                              disabled={editBusy}
-                            />
-                          ) : (h.country || '')}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input 
-                              type="url"
-                              className="form-control form-control-sm" 
-                              value={editBookingUrl} 
-                              onChange={e => setEditBookingUrl(e.target.value)} 
-                              disabled={editBusy}
-                              placeholder="URL"
-                            />
-                          ) : (
-                            h.booking_url ? (
-                              <a href={h.booking_url} target="_blank" rel="noopener noreferrer" className="text-decoration-none">
-                                <i className="fa fa-external-link"></i> Link
-                              </a>
-                            ) : (
-                              <span className="text-muted">—</span>
-                            )
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input 
-                              type="url"
-                              className="form-control form-control-sm" 
-                              value={editTuiamelloUrl} 
-                              onChange={e => setEditTuiamelloUrl(e.target.value)} 
-                              disabled={editBusy}
-                              placeholder="URL"
-                            />
-                          ) : (
-                            h.tuiamello_url ? (
-                              <a href={h.tuiamello_url} target="_blank" rel="noopener noreferrer" className="text-decoration-none">
-                                <i className="fa fa-external-link"></i> Link
-                              </a>
-                            ) : (
-                              <span className="text-muted">—</span>
-                            )
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input 
-                              type="url"
-                              className="form-control form-control-sm" 
-                              value={editExpediaUrl} 
-                              onChange={e => setEditExpediaUrl(e.target.value)} 
-                              disabled={editBusy}
-                              placeholder="URL"
-                            />
-                          ) : (
-                            h.expedia_url ? (
-                              <a href={h.expedia_url} target="_blank" rel="noopener noreferrer" className="text-decoration-none">
-                                <i className="fa fa-external-link"></i> Link
-                              </a>
-                            ) : (
-                              <span className="text-muted">—</span>
-                            )
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <div className="btn-group btn-group-sm" role="group">
-                              <button 
-                                className="btn btn-success" 
-                                onClick={() => saveEdit(h.id)} 
-                                disabled={editBusy}
-                              >
-                                <i className="fa fa-check"></i> Save
-                              </button>
-                              <button 
-                                className="btn btn-secondary" 
-                                onClick={cancelEdit} 
-                                disabled={editBusy}
-                              >
-                                <i className="fa fa-times"></i> Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="btn-group btn-group-sm" role="group">
-                              <button 
-                                className="btn btn-primary" 
-                                onClick={() => startEdit(h)}
-                                disabled={editingId !== null}
-                              >
-                                <i className="fa fa-edit"></i> Edit
-                              </button>
-                              <button 
-                                className="btn btn-danger" 
-                                onClick={() => setDeleteHotel(h)}
-                                disabled={editingId !== null}
-                              >
-                                <i className="fa fa-trash"></i> Delete
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {editError && (
-                <div className="alert alert-danger mt-2 mb-0" role="alert">
-                  {editError}
-                </div>
-              )}
+        {/* ── Toolbar ──────────────────────────────────────────────────── */}
+        <div className="card mb-3">
+          <div className="card-body d-flex flex-wrap align-items-end gap-3">
+            <div>
+              <label className="form-label fw-semibold mb-1 d-block small">Active</label>
+              <div className="btn-group btn-group-sm" role="group">
+                {(['all', 'true', 'false'] as FilterBool[]).map(v => (
+                  <button key={v} type="button" className={`btn ${filterActive === v ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setFilterActive(v)}>
+                    {v === 'all' ? 'All' : v === 'true' ? 'Yes' : 'No'}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Delete Confirmation Dialog */}
-      {deleteHotel && (
-        <div 
-          className="modal show d-block" 
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) cancelDelete();
-          }}
-        >
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h5 className="modal-title">
-                  <i className="fa fa-exclamation-triangle text-warning me-2"></i>
-                  Confirm Deletion
-                </h5>
-                <button 
-                  type="button" 
-                  className="btn-close" 
-                  onClick={cancelDelete}
-                  disabled={deleteBusy}
-                ></button>
+            <div>
+              <label className="form-label fw-semibold mb-1 d-block small">Bookable</label>
+              <div className="btn-group btn-group-sm" role="group">
+                {(['all', 'true', 'false'] as FilterBool[]).map(v => (
+                  <button key={v} type="button" className={`btn ${filterBookable === v ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setFilterBookable(v)}>
+                    {v === 'all' ? 'All' : v === 'true' ? 'Yes' : 'No'}
+                  </button>
+                ))}
               </div>
-              <div className="modal-body">
-                <p className="mb-2">Are you sure you want to delete this hotel?</p>
-                <div className="alert alert-warning mb-3">
-                  <strong>Hotel Name:</strong> {deleteHotel.name}<br/>
-                  <strong>Hotel Code:</strong> {deleteHotel.code}
-                </div>
-                <p className="text-danger mb-0">
-                  <strong>Warning:</strong> This action cannot be undone. The hotel will be permanently deleted.
-                </p>
+            </div>
+            <div>
+              <label className="form-label fw-semibold mb-1 d-block small">Sort by</label>
+              <div className="btn-group btn-group-sm" role="group">
+                {(['name', 'brand', 'region'] as SortField[]).map(f => (
+                  <button key={f} type="button" className={`btn ${sortField === f ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => toggleSort(f)}>
+                    {f.charAt(0).toUpperCase() + f.slice(1)}{sortIcon(f)}
+                  </button>
+                ))}
               </div>
-              <div className="modal-footer">
-                <button 
-                  type="button" 
-                  className="btn btn-secondary" 
-                  onClick={cancelDelete}
-                  disabled={deleteBusy}
-                >
-                  <i className="fa fa-times me-1"></i>
-                  Cancel
-                </button>
-                <button 
-                  type="button" 
-                  className="btn btn-danger" 
-                  onClick={confirmDelete}
-                  disabled={deleteBusy}
-                >
-                  <i className="fa fa-trash me-1"></i>
-                  {deleteBusy ? 'Deleting...' : 'Delete'}
-                </button>
-              </div>
+            </div>
+            <div className="ms-auto">
+              <button className="btn btn-primary" onClick={updateHotelList} disabled={syncBusy}>
+                {syncBusy
+                  ? <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Syncing…</>
+                  : 'Update Hotel List'
+                }
+              </button>
             </div>
           </div>
         </div>
-      )}
+
+        {/* ── Stats ────────────────────────────────────────────────────── */}
+        <p className="small text-muted mb-3">
+          <strong>Total:</strong> {hotels.length} &nbsp;|&nbsp;
+          <strong>Active:</strong> {activeCount} &nbsp;|&nbsp;
+          <strong>Inactive:</strong> {inactiveCount} &nbsp;|&nbsp;
+          <strong>Bookable:</strong> {bookableCount} &nbsp;|&nbsp;
+          <strong>Non-bookable:</strong> {nonBookableCount} &nbsp;|&nbsp;
+          <strong>Active &amp; Bookable:</strong> {activeAndBookable} &nbsp;|&nbsp;
+          <strong>Showing:</strong> {visibleHotels.length}
+        </p>
+
+        <div className="hotelList">
+          {visibleHotels.length === 0
+            ? <p className="text-muted mb-0">No hotels match the current filters.</p>
+            : visibleHotels.map(h => (
+              <div className="hotelListCard" key={h.id}>
+
+                {/* ── Image with all overlays ── */}
+                <div className="hotelListCardImageContainer">
+                  {h.base_image && (
+                    <img
+                      src={h.base_image}
+                      alt={h.name}
+                      className="hotelListCardImageContainerImage"
+                    />
+                  )}
+
+                  {/* Hotel name — bottom left, above gradient */}
+                  <div className="hotelListCardImageContainerName">{h.name}</div>
+
+                  {/* Action buttons — top right */}
+                  <div className="hotelListCardImageActions">
+                    <button
+                      className="hotelListCardActionBtn"
+                      onClick={() => openEdit(h)}
+                      title="Edit hotel"
+                    >
+                      <i className="fa fa-pencil"></i>
+                    </button>
+                    <button
+                      className="hotelListCardActionBtn hotelListCardActionDelete"
+                      onClick={() => openDelete(h)}
+                      title="Delete hotel"
+                    >
+                      <i className="fa fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="card-body" style={{ display: 'flex' }}>
+                  <table className="table table-sm mb-0" style={{ maxWidth: 400 }}>
+                    <tbody>
+                      <tr><td><strong>Name:</strong></td><td>{h.name || 'N/A'}</td></tr>
+                      <tr><td><strong>Brand:</strong></td><td>{h.brand || 'N/A'}</td></tr>
+                      <tr><td><strong>Code:</strong></td><td>{h.code || 'N/A'}</td></tr>
+                      <tr><td><strong>Region:</strong></td><td>{h.region || 'N/A'}</td></tr>
+                      <tr><td><strong>Country:</strong></td><td>{h.country || 'N/A'}</td></tr>
+                      <tr>
+                        <td><strong>Booking.com URL:</strong></td>
+                        <td>{h.booking_url ? <a href={h.booking_url} target="_blank" rel="noopener noreferrer">{h.booking_url}</a> : 'N/A'}</td>
+                      </tr>
+                      <tr>
+                        <td><strong>TUIAmello URL:</strong></td>
+                        <td>{h.tuiamello_url ? <a href={h.tuiamello_url} target="_blank" rel="noopener noreferrer">{h.tuiamello_url}</a> : 'N/A'}</td>
+                      </tr>
+                      <tr>
+                        <td><strong>Expedia URL:</strong></td>
+                        <td>{h.expedia_url ? <a href={h.expedia_url} target="_blank" rel="noopener noreferrer">{h.expedia_url}</a> : 'N/A'}</td>
+                      </tr>
+                      <tr><td><strong>Bookable:</strong></td><td>{h.bookable == null ? 'N/A' : h.bookable ? 'Yes' : 'No'}</td></tr>
+                      <tr><td><strong>Active:</strong></td><td>{h.active == null ? 'N/A' : h.active ? 'Yes' : 'No'}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+              </div>
+            ))
+          }
+        </div>
+
+        {/* ── Edit Modal ─────────────────────────────────────────────────── */}
+        {editingHotel && (
+          <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={e => { if (e.target === e.currentTarget) closeEdit(); }}>
+            <div className="modal-dialog modal-lg modal-dialog-centered">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">
+                    Edit — {editingHotel.name}&nbsp;
+                    <code className="fs-6 text-muted">{editingHotel.code}</code>
+                  </h5>
+                  <button type="button" className="btn-close" onClick={closeEdit} disabled={editBusy}></button>
+                </div>
+                <div className="modal-body">
+                  <div className="row g-3">
+                    <div className="col-md-4">
+                      <label className="form-label fw-semibold">Brand</label>
+                      <input className="form-control" value={editBrand} onChange={e => setEditBrand(e.target.value)} disabled={editBusy} placeholder="e.g. TUI BLUE" />
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label fw-semibold">Region</label>
+                      <input className="form-control" value={editRegion} onChange={e => setEditRegion(e.target.value)} disabled={editBusy} placeholder="e.g. Algarve" />
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label fw-semibold">Country</label>
+                      <input className="form-control" value={editCountry} onChange={e => setEditCountry(e.target.value)} disabled={editBusy} placeholder="e.g. Portugal" />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label fw-semibold">Booking.com URL</label>
+                      <input type="url" className="form-control" value={editBookingUrl} onChange={e => setEditBookingUrl(e.target.value)} disabled={editBusy} placeholder="https://www.booking.com/…" />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label fw-semibold">TUIAmello URL</label>
+                      <input type="url" className="form-control" value={editTuiamelloUrl} onChange={e => setEditTuiamelloUrl(e.target.value)} disabled={editBusy} placeholder="https://www.tuiamello.com/…" />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label fw-semibold">Expedia URL</label>
+                      <input type="url" className="form-control" value={editExpediaUrl} onChange={e => setEditExpediaUrl(e.target.value)} disabled={editBusy} placeholder="https://www.expedia.com/…" />
+                    </div>
+                    <div className="col-md-6">
+                      <div className="form-check">
+                        <input type="checkbox" className="form-check-input" id="editBookable" checked={editBookable} onChange={e => setEditBookable(e.target.checked)} disabled={editBusy} />
+                        <label className="form-check-label fw-semibold" htmlFor="editBookable">Bookable</label>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="form-check">
+                        <input type="checkbox" className="form-check-input" id="editActive" checked={editActive} onChange={e => setEditActive(e.target.checked)} disabled={editBusy} />
+                        <label className="form-check-label fw-semibold" htmlFor="editActive">Active</label>
+                      </div>
+                    </div>
+                  </div>
+                  {editError && (
+                    <div className="alert alert-danger mt-3 mb-0" role="alert">
+                      <i className="fa fa-exclamation-circle me-2"></i>{editError}
+                    </div>
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={closeEdit} disabled={editBusy}>Cancel</button>
+                  <button type="button" className="btn btn-success" onClick={saveEdit} disabled={editBusy}>
+                    {editBusy ? <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Saving…</> : 'Save changes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Delete Modal ────────────────────────────────────────────────── */}
+        {deleteHotel && (
+          <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={e => { if (e.target === e.currentTarget) closeDelete(); }}>
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">
+                    <i className="fa fa-exclamation-triangle text-warning me-2"></i>
+                    Confirm Deletion
+                  </h5>
+                  <button type="button" className="btn-close" onClick={closeDelete} disabled={deleteBusy}></button>
+                </div>
+                <div className="modal-body">
+                  <p className="mb-2">Are you sure you want to delete this hotel?</p>
+                  <div className="alert alert-warning mb-3">
+                    <strong>Hotel Name:</strong> {deleteHotel.name}<br />
+                    <strong>Hotel Code:</strong> {deleteHotel.code}
+                  </div>
+                  <p className="text-danger mb-0"><strong>Warning:</strong> This action cannot be undone.</p>
+                  {deleteError && <div className="alert alert-danger mt-3 mb-0" role="alert">{deleteError}</div>}
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={closeDelete} disabled={deleteBusy}>Cancel</button>
+                  <button type="button" className="btn btn-danger" onClick={confirmDelete} disabled={deleteBusy}>
+                    {deleteBusy ? <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Deleting…</> : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </main>
   );

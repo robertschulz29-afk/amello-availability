@@ -33,14 +33,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       SELECT
         id,
         scanned_at,
-        base_checkin,
+        base_checkin::text as base_checkin,
         days,
         stay_nights,
         timezone,
         total_cells,
         done_cells,
         status,
-        fixed_checkout
+        fixed_checkout::text as fixed_checkout
       FROM scans
       WHERE id=${scanId}
     `;
@@ -58,16 +58,26 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const hotelById = new Map<number, (typeof hotels)[number]>();
     for (const h of hotels) hotelById.set(h.id, h);
 
-    const rowsQ = await sql`
-      SELECT hotel_id, check_in_date, status, response_json
-      FROM scan_results
-      WHERE scan_id = ${scanId}
+   const rowsQ = await sql`
+  SELECT hotel_id, check_in_date::text as check_in_date, status, response_json, source
+  FROM scan_results
+  WHERE scan_id = ${scanId}
     `;
-    const rows = rowsQ.rows as Array<{ hotel_id:number; check_in_date:any; status:string; response_json:any }>;
+    const rows = rowsQ.rows as Array<{ hotel_id:number; check_in_date:any; status:string; source:string; response_json:any }>;
 
     const datesSet = new Set<string>();
     const results: Record<string, Record<string, 'green'|'red'>> = {};
     const prices: Record<string, Record<string, number | null>> = {};
+    const fullSet: Array<{
+      scan_id: number;
+      hotel_id: number;
+      hotel_name: string;
+      check_in_date: string;
+      status: string;
+      source: string;
+      response_json: any;
+    }> = [];
+
     for (const row of rows) {
       const hotel = hotelById.get(row.hotel_id);
       if (!hotel) continue;
@@ -75,12 +85,24 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       const checkIn = normalizeDateToYMD(row.check_in_date);
       datesSet.add(checkIn);
       (results[code] ||= {})[checkIn] = row.status === 'green' ? 'green' : 'red';
-      
-      // Extract price for green status
-      if (row.status === 'green' && row.response_json) {
+
+      // Extract price for green amello rows only
+      if (row.status === 'green' && row.response_json && row.source === 'amello') {
         (prices[code] ||= {})[checkIn] = extractLowestPriceValue(row.response_json);
       }
+
+      // Build fullSet entry
+      fullSet.push({
+        scan_id: scanId,
+        hotel_id: row.hotel_id,
+        hotel_name: hotel.name,
+        check_in_date: checkIn,
+        status: row.status,
+        source: row.source,
+        response_json: row.source === 'amello' ? row.response_json : null,
+      });
     }
+
     const dates = Array.from(datesSet).sort();
     for (const h of hotels) if (!results[h.code]) results[h.code] = {};
 
@@ -89,7 +111,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       scanId: scan.id,
       scannedAt: scan.scanned_at,
 
-      // parameters (what you asked to show)
+      // parameters
       baseCheckIn: scan.base_checkin ? normalizeDateToYMD(scan.base_checkin) : null,
       fixedCheckout: scan.fixed_checkout ? normalizeDateToYMD(scan.fixed_checkout) : null,
       days: scan.days ?? null,
@@ -102,9 +124,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       status: scan.status ?? null,
 
       // matrix
-      dates,
-      results,
-      prices,
+      //dates,
+      //results,
+      //prices,
+
+      // full raw data
+      fullSet,
     });
   } catch (err:any) {
     console.error('[GET /api/scans/[id]] error', err);

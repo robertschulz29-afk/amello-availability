@@ -128,7 +128,7 @@ export class BookingComScraper extends BaseScraper {
       // Navigate to URL with extended timeout to handle AWS WAF challenges
       await page.goto(url, {
         waitUntil: 'networkidle2',
-        timeout: 30000,
+        timeout: 60000,
       });
 
       console.log('[BookingComScraper] Page loaded, waiting for #available_rooms element...');
@@ -490,7 +490,7 @@ export class BookingComScraper extends BaseScraper {
    * @param priceElement - The price element
    * @returns Price amount and currency, or null if extraction fails
    */
-  private extractPriceFromElement($: any, priceElement: any): { amount: number; currency: string } | null {
+ private extractPriceFromElement($: any, priceElement: any): { amount: number; currency: string } | null {
     try {
       const priceText = $(priceElement).text().trim();
       
@@ -528,39 +528,52 @@ export class BookingComScraper extends BaseScraper {
         .replace(/\b[A-Z]{3}\b/g, '')
         .replace(/[^\d.,]/g, '')
         .trim();
-      
+
       console.log('[BookingComScraper]         Numeric text:', numericText);
       
       // Handle different decimal separators
-      // European format: 1.234,56 -> 1234.56
-      // US format: 1,234.56 -> 1234.56
+      // European format: 1.234,56 -> 123456
+      // US format: 1,234.56 -> 123456
       let normalizedNumber = numericText;
       
       // If contains both comma and period, determine which is decimal separator
       if (normalizedNumber.includes(',') && normalizedNumber.includes('.')) {
         // If period comes after comma, period is decimal separator
         if (normalizedNumber.lastIndexOf('.') > normalizedNumber.lastIndexOf(',')) {
-          normalizedNumber = normalizedNumber.replace(/,/g, '');
+          // e.g. "1,234.56" → remove comma, remove dot → "123456"
+          normalizedNumber = normalizedNumber.replace(/,/g, '').replace('.', '');
         } else {
           // Comma is decimal separator (European format)
-          normalizedNumber = normalizedNumber.replace(/\./g, '').replace(',', '.');
+          // e.g. "1.234,56" → remove dots, remove comma → "123456"
+          normalizedNumber = normalizedNumber.replace(/\./g, '').replace(',', '');
         }
       } else if (normalizedNumber.includes(',')) {
         // Only comma - could be thousands separator or decimal
-        // If more than one comma, it's thousands separator
         const commaCount = (normalizedNumber.match(/,/g) || []).length;
         if (commaCount === 1 && normalizedNumber.split(',')[1].length <= 2) {
           // Single comma with 1-2 digits after = decimal separator
-          normalizedNumber = normalizedNumber.replace(',', '.');
+          // e.g. "1,25" → remove comma → "125"
+          normalizedNumber = normalizedNumber.replace(',', '');
         } else {
-          // Thousands separator
+          // Thousands separator e.g. "1,255" → "1255"
           normalizedNumber = normalizedNumber.replace(/,/g, '');
+        }
+      } else if (normalizedNumber.includes('.')) {
+        // Only dot - could be thousands separator or decimal
+        const dotCount = (normalizedNumber.match(/\./g) || []).length;
+        if (dotCount === 1 && normalizedNumber.split('.')[1].length <= 2) {
+          // Single dot with 1-2 digits after = decimal separator
+          // e.g. "1.25" → remove dot → "125"
+          normalizedNumber = normalizedNumber.replace('.', '');
+        } else {
+          // Thousands separator e.g. "1.255" → "1255"
+          normalizedNumber = normalizedNumber.replace(/\./g, '');
         }
       }
       
       console.log('[BookingComScraper]         Normalized number:', normalizedNumber);
       
-      const amount = parseFloat(normalizedNumber);
+      const amount = parseInt(normalizedNumber, 10);
       
       if (isNaN(amount) || amount <= 0) {
         console.log('[BookingComScraper]         ✗ Invalid amount:', amount);
