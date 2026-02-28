@@ -2,7 +2,6 @@
 // Puppeteer browser instance manager for scraping
 
 import puppeteer, { Browser, Page } from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
 
 /**
  * Simple browser manager for Puppeteer
@@ -16,19 +15,16 @@ export class BrowserManager {
    * Get or create browser instance
    */
   async getBrowser(): Promise<Browser> {
-    // If browser exists and is connected, return it
     if (this.browser && this.browser.connected) {
       return this.browser;
     }
 
-    // If launch is in progress, wait for it
     if (this.launchPromise) {
       return this.launchPromise;
     }
 
-    // Launch new browser
     this.launchPromise = this.launchBrowser();
-    
+
     try {
       this.browser = await this.launchPromise;
       return this.browser;
@@ -39,29 +35,40 @@ export class BrowserManager {
 
   /**
    * Launch a new browser instance
+   * - On Vercel/Lambda: uses @sparticuz/chromium
+   * - Locally: uses the Puppeteer-managed Chrome installation
    */
   private async launchBrowser(): Promise<Browser> {
     console.log('[BrowserManager] Launching Puppeteer browser...');
-    
-    // Detect if we're running in a serverless environment (Vercel/Lambda)
-    const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
-    
+
+    const isServerless = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
     console.log('[BrowserManager] Environment:', isServerless ? 'Serverless (Vercel/Lambda)' : 'Local/Standard');
-    
-    // Get the executable path - for serverless, use without arguments
-    // This allows @sparticuz/chromium to use its internal binaries correctly
+
     let executablePath: string;
-    try {
-      executablePath = await chromium.executablePath();
-      console.log('[BrowserManager] Chromium executable path:', executablePath);
-    } catch (error: any) {
-      console.error('[BrowserManager] Failed to get chromium executable path:', error.message);
-      throw new Error(`Failed to locate Chromium binary: ${error.message}`);
+    let launchArgs: string[];
+
+    if (isServerless) {
+      // Serverless: use @sparticuz/chromium which bundles its own binary
+      const chromium = await import('@sparticuz/chromium');
+      executablePath = await chromium.default.executablePath();
+      launchArgs = chromium.default.args;
+      console.log('[BrowserManager] Chromium executable path (serverless):', executablePath);
+    } else {
+      // Local: use the Chrome installed by `npx puppeteer browsers install chrome`
+      const { executablePath: localPath } = await import('puppeteer');
+      executablePath = localPath();
+      launchArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+      ];
+      console.log('[BrowserManager] Chromium executable path (local):', executablePath);
     }
 
     const browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: executablePath,
+      args: launchArgs,
+      executablePath,
       headless: true,
     });
 
@@ -76,14 +83,12 @@ export class BrowserManager {
     const browser = await this.getBrowser();
     const page = await browser.newPage();
 
-    // Set viewport to mimic real browser
     await page.setViewport({
       width: 1920,
       height: 1080,
       deviceScaleFactor: 1,
     });
 
-    // Set user agent if provided
     if (userAgent) {
       await page.setUserAgent(userAgent);
     }
@@ -114,9 +119,6 @@ export class BrowserManager {
 // Singleton instance for reuse across scraping sessions
 let browserManagerInstance: BrowserManager | null = null;
 
-/**
- * Get shared browser manager instance
- */
 export function getBrowserManager(): BrowserManager {
   if (!browserManagerInstance) {
     browserManagerInstance = new BrowserManager();
@@ -124,9 +126,6 @@ export function getBrowserManager(): BrowserManager {
   return browserManagerInstance;
 }
 
-/**
- * Close shared browser manager instance
- */
 export async function closeBrowserManager(): Promise<void> {
   if (browserManagerInstance) {
     await browserManagerInstance.close();

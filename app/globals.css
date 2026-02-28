@@ -19,6 +19,7 @@ nav {flex-direction: column;
   border-radius: 3rem 3rem 0rem 0rem;
   margin-bottom: 20px;
   width: 30%;
+  overflow: hidden;
 }
 
 .hotelListCardImageContainerImage {
