@@ -21,7 +21,7 @@ for (const k of [
 ]) {
   if (process.env[k]) delete (process.env as any)[k];
 }
-
+console.log("DATABASE_URL:", process.env.DATABASE_URL);
 const pool = new Pool({
   connectionString,
   ssl: { rejectUnauthorized: false }, // critical for managed PG in serverless
