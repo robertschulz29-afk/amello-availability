@@ -139,6 +139,7 @@ export async function POST(): Promise<NextResponse> {
             booking_url, tuiamello_url, expedia_url
      FROM hotels
      ORDER BY name ASC`,
+    [],
   );
 
   return NextResponse.json({
