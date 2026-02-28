@@ -46,15 +46,16 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
               <Link href="/" style={getDashboardLinkStyle(pathname === '/', isDark)}>
                 Portfolio Health
               </Link>
+               <Link href="/price-comparison" style={getNavLinkStyle(pathname === '/price-comparison', isDark)}>
+                Price Comparison
+              </Link>
               <Link href="/status-overview" style={getNavLinkStyle(pathname === '/status-overview', isDark)}>
                 Scan Setup
               </Link>
               <Link href="/scan-results" style={getNavLinkStyle(pathname === '/scan-results', isDark)}>
                 Scan Results
               </Link>
-              <Link href="/price-comparison" style={getNavLinkStyle(pathname === '/price-comparison', isDark)}>
-                Price Comparison
-              </Link>
+             
               <Link href="/hotels" style={getNavLinkStyle(pathname === '/hotels', isDark)}>
                 Hotels
               </Link>
