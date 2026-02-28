@@ -1,58 +1,89 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+// lib/db.ts
+import { Pool } from "pg";
 
 /**
- * Create Supabase client once (singleton)
- * Uses service role key for server-side access.
+ * IMPORTANT:
+ * Keep raw Postgres pool because your app already uses the `sql` tagged helper.
+ * We do NOT switch to Supabase HTTP client — we keep your existing architecture.
  */
-const supabase: SupabaseClient = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable");
-}
-
-if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY environment variable");
-}
 
 /**
- * Generic table query helper
+ * Do NOT disable TLS globally.
+ * If needed, rely on proper SSL config instead.
  */
-export async function getAll<T = any>(table: string) {
-  const { data, error } = await supabase.from(table).select("*");
 
-  if (error) {
-    throw error;
-  }
+// Read connection string from environment
+const connectionString =
+  process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
-  return data as T[];
+if (!connectionString) {
+  throw new Error(
+    "Missing DATABASE_URL or POSTGRES_URL environment variable"
+  );
 }
 
 /**
- * Generic filtered query helper
+ * Create connection pool
+ * SSL enabled for Supabase / managed databases
  */
-export async function getWhere<T = any>(
-  table: string,
-  column: string,
-  value: any
-) {
-  const { data, error } = await supabase
-    .from(table)
-    .select("*")
-    .eq(column, value);
+const pool = new Pool({
+  connectionString,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
 
-  if (error) {
-    throw error;
-  }
+/**
+ * ================================
+ * SQL Tagged Template Helper
+ * ================================
+ *
+ * This preserves your existing API:
+ *
+ * await sql`SELECT * FROM hotels WHERE id = ${id}`
+ */
 
-  return data as T[];
+type Primitive = string | number | boolean | null | Date;
+
+export async function sql<T = any>(
+  strings: TemplateStringsArray,
+  ...values: Primitive[]
+): Promise<{ rows: T[]; rowCount: number }> {
+  const text = strings.reduce(
+    (acc, cur, i) =>
+      acc + cur + (i < values.length ? `$${i + 1}` : ""),
+    ""
+  );
+
+  const res = await pool.query({
+    text,
+    values,
+  });
+
+  return {
+    rows: res.rows as T[],
+    rowCount: res.rowCount ?? 0,
+  };
 }
 
 /**
- * Expose raw client for advanced queries when needed
+ * Optional raw query helper (if needed)
  */
-export function getClient(): SupabaseClient {
-  return supabase;
+export async function query<T = any>(
+  text: string,
+  values: any[] = []
+): Promise<{ rows: T[]; rowCount: number }> {
+  const res = await pool.query({ text, values });
+
+  return {
+    rows: res.rows as T[],
+    rowCount: res.rowCount ?? 0,
+  };
+}
+
+/**
+ * Optional pool export (for advanced use)
+ */
+export function getPool() {
+  return pool;
 }
