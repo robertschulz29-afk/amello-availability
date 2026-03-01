@@ -5,16 +5,13 @@ import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
 
 type Hotel = { id: number; name: string; code: string };
-
 type Mapping = {
   id: number;
   hotel_id: number;
   amello_room: string;
   booking_room: string;
-  created_at: string;
   updated_at: string;
 };
-
 type RoomData = {
   mappings: Mapping[];
   amelloRooms: string[];
@@ -24,6 +21,7 @@ type RoomData = {
 export default function Page() {
   const [hotels, setHotels] = React.useState<Hotel[]>([]);
   const [selectedHotelId, setSelectedHotelId] = React.useState<number | null>(null);
+  const [hotelSearch, setHotelSearch] = React.useState('');
   const [roomData, setRoomData] = React.useState<RoomData | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -34,22 +32,27 @@ export default function Page() {
   const [newBooking, setNewBooking] = React.useState('');
   const [saving, setSaving] = React.useState(false);
 
-  // Edit state: mapping id -> { amello, booking }
+  // Edit state
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [editAmello, setEditAmello] = React.useState('');
   const [editBooking, setEditBooking] = React.useState('');
   const [editSaving, setEditSaving] = React.useState(false);
 
-  const [hotelSearch, setHotelSearch] = React.useState('');
-
-  // Load hotels
+  // Load hotels on mount; also check for ?hotelId= in URL
   React.useEffect(() => {
     fetchJSON('/api/hotels', { cache: 'no-store' })
       .then((data: any) => {
         const arr: Hotel[] = Array.isArray(data) ? data : [];
         arr.sort((a, b) => a.name.localeCompare(b.name));
         setHotels(arr);
-        if (arr.length > 0) setSelectedHotelId(arr[0].id);
+        // Pre-select from URL param if present
+        const params = new URLSearchParams(window.location.search);
+        const urlHotelId = params.get('hotelId');
+        if (urlHotelId) {
+          setSelectedHotelId(Number(urlHotelId));
+        } else if (arr.length > 0) {
+          setSelectedHotelId(arr[0].id);
+        }
       })
       .catch(() => setError('Failed to load hotels'));
   }, []);
@@ -78,10 +81,10 @@ export default function Page() {
     }
   }, [selectedHotelId, loadRoomData]);
 
-  // Auto-dismiss success
+  // Auto-dismiss success message
   React.useEffect(() => {
     if (!successMsg) return;
-    const t = setTimeout(() => setSuccessMsg(null), 4000);
+    const t = setTimeout(() => setSuccessMsg(null), 3500);
     return () => clearTimeout(t);
   }, [successMsg]);
 
@@ -95,7 +98,6 @@ export default function Page() {
 
   const selectedHotel = hotels.find(h => h.id === selectedHotelId);
 
-  // ── Add mapping ────────────────────────────────────────────────────────────
   const addMapping = async () => {
     if (!newAmello || !newBooking || !selectedHotelId) return;
     setSaving(true);
@@ -117,7 +119,6 @@ export default function Page() {
     }
   };
 
-  // ── Delete mapping ─────────────────────────────────────────────────────────
   const deleteMapping = async (id: number) => {
     if (!selectedHotelId) return;
     if (!confirm('Delete this mapping?')) return;
@@ -130,14 +131,12 @@ export default function Page() {
     }
   };
 
-  // ── Start edit ─────────────────────────────────────────────────────────────
   const startEdit = (m: Mapping) => {
     setEditingId(m.id);
     setEditAmello(m.amello_room);
     setEditBooking(m.booking_room);
   };
 
-  // ── Save edit ──────────────────────────────────────────────────────────────
   const saveEdit = async () => {
     if (!editingId || !selectedHotelId) return;
     setEditSaving(true);
@@ -161,38 +160,43 @@ export default function Page() {
   return (
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
-        <h1 className="mb-4">Room Name Mappings</h1>
+        <div className="d-flex align-items-center gap-3 mb-4 flex-wrap">
+          <h1 className="mb-0">Room Name Mappings</h1>
+          <a href="/price-comparison" className="btn btn-outline-secondary btn-sm ms-auto">
+            ← Back to Price Comparison
+          </a>
+        </div>
         <p className="text-muted mb-4">
-          Map Amello room names to Booking.com room names per hotel so they can be compared side-by-side in the Price Comparison page.
+          Map Amello room names to Booking.com room names per hotel. Mappings are used in the Price Comparison page to match rooms across sources.
         </p>
 
         {successMsg && (
-          <div className="alert alert-success alert-dismissible fade show">
+          <div className="alert alert-success alert-dismissible">
             {successMsg}
-            <button type="button" className="btn-close" onClick={() => setSuccessMsg(null)}></button>
+            <button className="btn-close" onClick={() => setSuccessMsg(null)}></button>
           </div>
         )}
         {error && (
-          <div className="alert alert-danger alert-dismissible fade show">
+          <div className="alert alert-danger alert-dismissible">
             {error}
-            <button type="button" className="btn-close" onClick={() => setError(null)}></button>
+            <button className="btn-close" onClick={() => setError(null)}></button>
           </div>
         )}
 
-        {/* ── Hotel selector ──────────────────────────────────────────────── */}
+        {/* Hotel selector */}
         <div className="card mb-4">
           <div className="card-header fw-semibold">Select Hotel</div>
           <div className="card-body d-flex gap-3 flex-wrap">
             <input
               className="form-control"
-              style={{ maxWidth: 280 }}
+              style={{ maxWidth: 260 }}
               placeholder="Search hotels…"
               value={hotelSearch}
               onChange={e => setHotelSearch(e.target.value)}
             />
             <select
               className="form-select"
-              style={{ maxWidth: 400 }}
+              style={{ maxWidth: 420 }}
               value={selectedHotelId ?? ''}
               onChange={e => setSelectedHotelId(Number(e.target.value))}
             >
@@ -212,64 +216,60 @@ export default function Page() {
 
         {!loading && roomData && selectedHotel && (
           <>
-            {/* ── Add new mapping ─────────────────────────────────────────── */}
+            {/* Add new mapping */}
             <div className="card mb-4">
               <div className="card-header fw-semibold">
-                Add Mapping — <span className="text-muted fw-normal">{selectedHotel.name}</span>
+                Add Mapping — <span className="fw-normal text-muted">{selectedHotel.name}</span>
               </div>
               <div className="card-body">
                 <div className="row g-3 align-items-end">
                   <div className="col-md-5">
                     <label className="form-label fw-semibold">Amello Room Name</label>
-                    {roomData.amelloRooms.length > 0 ? (
+                    {roomData.amelloRooms.length > 0 && (
                       <select
-                        className="form-select"
+                        className="form-select mb-1"
                         value={newAmello}
                         onChange={e => setNewAmello(e.target.value)}
                         disabled={saving}
                       >
-                        <option value="">— select or type below —</option>
-                        {roomData.amelloRooms.map(r => (
-                          <option key={r} value={r}>{r}</option>
-                        ))}
+                        <option value="">— pick from scan data —</option>
+                        {roomData.amelloRooms.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
-                    ) : null}
+                    )}
                     <input
-                      className="form-control mt-1"
+                      className="form-control"
                       placeholder="Or type manually…"
                       value={newAmello}
                       onChange={e => setNewAmello(e.target.value)}
                       disabled={saving}
                     />
                     {roomData.amelloRooms.length === 0 && (
-                      <div className="form-text text-warning">No Amello rooms found in scan data for this hotel yet.</div>
+                      <div className="form-text text-warning">No Amello rooms found in scan data yet.</div>
                     )}
                   </div>
 
                   <div className="col-md-5">
                     <label className="form-label fw-semibold">Booking.com Room Name</label>
-                    {roomData.bookingRooms.length > 0 ? (
+                    {roomData.bookingRooms.length > 0 && (
                       <select
-                        className="form-select"
+                        className="form-select mb-1"
                         value={newBooking}
                         onChange={e => setNewBooking(e.target.value)}
                         disabled={saving}
                       >
-                        <option value="">— select or type below —</option>
-                        {roomData.bookingRooms.map(r => (
-                          <option key={r} value={r}>{r}</option>
-                        ))}
+                        <option value="">— pick from scan data —</option>
+                        {roomData.bookingRooms.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
-                    ) : null}
+                    )}
                     <input
-                      className="form-control mt-1"
+                      className="form-control"
                       placeholder="Or type manually…"
                       value={newBooking}
                       onChange={e => setNewBooking(e.target.value)}
                       disabled={saving}
                     />
                     {roomData.bookingRooms.length === 0 && (
-                      <div className="form-text text-warning">No Booking.com rooms found in scan data for this hotel yet.</div>
+                      <div className="form-text text-warning">No Booking.com rooms found in scan data yet.</div>
                     )}
                   </div>
 
@@ -281,15 +281,14 @@ export default function Page() {
                     >
                       {saving
                         ? <><span className="spinner-border spinner-border-sm me-1"></span>Saving…</>
-                        : '+ Add'
-                      }
+                        : '+ Add'}
                     </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* ── Existing mappings ────────────────────────────────────────── */}
+            {/* Existing mappings */}
             <div className="card">
               <div className="card-header fw-semibold d-flex justify-content-between align-items-center">
                 <span>Saved Mappings</span>
@@ -304,8 +303,8 @@ export default function Page() {
                       <tr>
                         <th>Amello Room</th>
                         <th>Booking.com Room</th>
-                        <th className="text-muted small">Last updated</th>
-                        <th style={{ width: 120 }}></th>
+                        <th className="text-muted small">Updated</th>
+                        <th style={{ width: 100 }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -314,42 +313,42 @@ export default function Page() {
                           {editingId === m.id ? (
                             <>
                               <td>
-                                <select
-                                  className="form-select form-select-sm"
-                                  value={editAmello}
-                                  onChange={e => setEditAmello(e.target.value)}
-                                  disabled={editSaving}
-                                >
-                                  {roomData.amelloRooms.map(r => (
-                                    <option key={r} value={r}>{r}</option>
-                                  ))}
-                                  {!roomData.amelloRooms.includes(editAmello) && (
-                                    <option value={editAmello}>{editAmello}</option>
-                                  )}
-                                </select>
+                                {roomData.amelloRooms.length > 0 && (
+                                  <select
+                                    className="form-select form-select-sm mb-1"
+                                    value={editAmello}
+                                    onChange={e => setEditAmello(e.target.value)}
+                                    disabled={editSaving}
+                                  >
+                                    {roomData.amelloRooms.map(r => <option key={r} value={r}>{r}</option>)}
+                                    {!roomData.amelloRooms.includes(editAmello) && (
+                                      <option value={editAmello}>{editAmello}</option>
+                                    )}
+                                  </select>
+                                )}
                                 <input
-                                  className="form-control form-control-sm mt-1"
+                                  className="form-control form-control-sm"
                                   value={editAmello}
                                   onChange={e => setEditAmello(e.target.value)}
                                   disabled={editSaving}
                                 />
                               </td>
                               <td>
-                                <select
-                                  className="form-select form-select-sm"
-                                  value={editBooking}
-                                  onChange={e => setEditBooking(e.target.value)}
-                                  disabled={editSaving}
-                                >
-                                  {roomData.bookingRooms.map(r => (
-                                    <option key={r} value={r}>{r}</option>
-                                  ))}
-                                  {!roomData.bookingRooms.includes(editBooking) && (
-                                    <option value={editBooking}>{editBooking}</option>
-                                  )}
-                                </select>
+                                {roomData.bookingRooms.length > 0 && (
+                                  <select
+                                    className="form-select form-select-sm mb-1"
+                                    value={editBooking}
+                                    onChange={e => setEditBooking(e.target.value)}
+                                    disabled={editSaving}
+                                  >
+                                    {roomData.bookingRooms.map(r => <option key={r} value={r}>{r}</option>)}
+                                    {!roomData.bookingRooms.includes(editBooking) && (
+                                      <option value={editBooking}>{editBooking}</option>
+                                    )}
+                                  </select>
+                                )}
                                 <input
-                                  className="form-control form-control-sm mt-1"
+                                  className="form-control form-control-sm"
                                   value={editBooking}
                                   onChange={e => setEditBooking(e.target.value)}
                                   disabled={editSaving}
@@ -357,18 +356,10 @@ export default function Page() {
                               </td>
                               <td></td>
                               <td>
-                                <button
-                                  className="btn btn-sm btn-success me-1"
-                                  onClick={saveEdit}
-                                  disabled={editSaving}
-                                >
+                                <button className="btn btn-sm btn-success me-1" onClick={saveEdit} disabled={editSaving}>
                                   {editSaving ? <span className="spinner-border spinner-border-sm"></span> : <i className="fa fa-check"></i>}
                                 </button>
-                                <button
-                                  className="btn btn-sm btn-secondary"
-                                  onClick={() => setEditingId(null)}
-                                  disabled={editSaving}
-                                >
+                                <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)} disabled={editSaving}>
                                   <i className="fa fa-times"></i>
                                 </button>
                               </td>
@@ -377,22 +368,12 @@ export default function Page() {
                             <>
                               <td>{m.amello_room}</td>
                               <td>{m.booking_room}</td>
-                              <td className="text-muted small">
-                                {new Date(m.updated_at).toLocaleDateString()}
-                              </td>
+                              <td className="text-muted small">{new Date(m.updated_at).toLocaleDateString()}</td>
                               <td>
-                                <button
-                                  className="btn btn-sm btn-outline-secondary me-1"
-                                  onClick={() => startEdit(m)}
-                                  title="Edit"
-                                >
+                                <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => startEdit(m)} title="Edit">
                                   <i className="fa fa-pencil"></i>
                                 </button>
-                                <button
-                                  className="btn btn-sm btn-outline-danger"
-                                  onClick={() => deleteMapping(m.id)}
-                                  title="Delete"
-                                >
+                                <button className="btn btn-sm btn-outline-danger" onClick={() => deleteMapping(m.id)} title="Delete">
                                   <i className="fa fa-trash"></i>
                                 </button>
                               </td>

@@ -52,6 +52,9 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
               <Link href="/status-overview" style={getNavLinkStyle(pathname === '/status-overview', isDark)}>
                 Scan Setup
               </Link>
+              <Link href="/room-mappings" style={getNavLinkStyle(pathname === '/room-mappings', isDark)}>
+                Room Mappings
+              </Link>
               <Link href="/scan-results" style={getNavLinkStyle(pathname === '/scan-results', isDark)}>
                 Scan Results
               </Link>
