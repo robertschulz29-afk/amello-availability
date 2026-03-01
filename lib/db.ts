@@ -1,18 +1,6 @@
 // lib/db.ts
 import { Pool } from "pg";
 
-/**
- * IMPORTANT:
- * Keep raw Postgres pool because your app already uses the `sql` tagged helper.
- * We do NOT switch to Supabase HTTP client — we keep your existing architecture.
- */
-
-/**
- * Do NOT disable TLS globally.
- * If needed, rely on proper SSL config instead.
- */
-
-// Read connection string from environment
 const connectionString =
   process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
@@ -22,26 +10,13 @@ if (!connectionString) {
   );
 }
 
-/**
- * Create connection pool
- * SSL enabled for Supabase / managed databases
- */
 const pool = new Pool({
   connectionString,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: { rejectUnauthorized: false },
+  // Vercel serverless: each function instance should hold at most 1 connection.
+  // Transaction-mode pgBouncer (port 6543) does not support prepared statements.
+  max: 1,
 });
-
-/**
- * ================================
- * SQL Tagged Template Helper
- * ================================
- *
- * This preserves your existing API:
- *
- * await sql`SELECT * FROM hotels WHERE id = ${id}`
- */
 
 type Primitive = string | number | boolean | null | Date;
 
@@ -50,15 +25,12 @@ export async function sql<T = any>(
   ...values: Primitive[]
 ): Promise<{ rows: T[]; rowCount: number }> {
   const text = strings.reduce(
-    (acc, cur, i) =>
-      acc + cur + (i < values.length ? `$${i + 1}` : ""),
+    (acc, cur, i) => acc + cur + (i < values.length ? `$${i + 1}` : ""),
     ""
   );
 
-  const res = await pool.query({
-    text,
-    values,
-  });
+  // name: undefined disables prepared statements, required for pgBouncer transaction mode
+  const res = await pool.query({ text, values, name: undefined });
 
   return {
     rows: res.rows as T[],
@@ -66,14 +38,11 @@ export async function sql<T = any>(
   };
 }
 
-/**
- * Optional raw query helper (if needed)
- */
 export async function query<T = any>(
   text: string,
   values: any[] = []
 ): Promise<{ rows: T[]; rowCount: number }> {
-  const res = await pool.query({ text, values });
+  const res = await pool.query({ text, values, name: undefined });
 
   return {
     rows: res.rows as T[],
@@ -81,9 +50,6 @@ export async function query<T = any>(
   };
 }
 
-/**
- * Optional pool export (for advanced use)
- */
 export function getPool() {
   return pool;
 }
