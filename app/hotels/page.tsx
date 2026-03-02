@@ -244,6 +244,7 @@ export default function Page() {
 
         {/* ── Toolbar ──────────────────────────────────────────────────── */}
         <div className="card mb-3">
+          
           <div className="card-body d-flex flex-wrap align-items-end gap-3">
             <div>
               <label className="form-label fw-semibold mb-1 d-block small">Active</label>
@@ -263,6 +264,7 @@ export default function Page() {
                     {v === 'all' ? 'All' : v === 'true' ? 'Yes' : 'No'}
                   </button>
                 ))}
+                
               </div>
             </div>
             <div>
@@ -282,7 +284,16 @@ export default function Page() {
                   : 'Update Hotel List'
                 }
               </button>
+              
             </div>
+            <button
+                  className="btn btn-outline-secondary"
+                  onClick={() => {
+                    window.open(`/api/hotels/export/?format=long`, '_blank');
+                  }}
+                >
+                  Export CSV
+                </button>
           </div>
         </div>
 

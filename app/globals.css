@@ -6,6 +6,9 @@ nav {flex-direction: column;
   height: 100vh;
   display: flex;}
 
+.ungroupedList .hotelListCard{
+  width: 100%;
+  }
 .hotelList{
   display: flex;
   flex-wrap: wrap;

@@ -127,8 +127,8 @@ export class BookingComScraper extends BaseScraper {
 
       // Navigate to URL with extended timeout to handle AWS WAF challenges
       await page.goto(url, {
-        waitUntil: 'networkidle2',
-        timeout: 60000,
+        waitUntil: 'domcontentloaded',
+        timeout: 90000,
       });
 
       console.log('[BookingComScraper] Page loaded, waiting for #available_rooms element...');
