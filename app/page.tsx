@@ -325,7 +325,6 @@ function GroupHeatmap({
             );
           })}
         </svg>
-       
       </div>
     </div>
   );
@@ -578,7 +577,7 @@ export default function Page() {
           </div>
         ) : null}
 
-        <div className="hotelList">
+        <div className={groupBy === 'none' ? 'ungroupedList' : 'hotelList'}>
           {!loading && dates.length > 0 && groups.length > 0 ? (
             <>
               {groups.map(g => {

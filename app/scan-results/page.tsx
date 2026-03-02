@@ -300,6 +300,16 @@ export default function Page() {
               <option value="500">500</option>
             </select>
           </div>
+          <button
+                  className="btn btn-outline-primary"
+                  onClick={() => {
+                    if (!selectedScanId) return;
+                    window.open(`/api/scans/${selectedScanId}/export?format=long`, '_blank');
+                  }}
+                  disabled={selectedScanId == null}
+                >
+                  Export CSV
+                </button>
         </div>
 
         {error && <div className="alert alert-danger">{error}</div>}
