@@ -43,12 +43,17 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
           {/* Sidebar - only renders if isSidebarOpen is true */}
           {isSidebarOpen && (
             <nav style={getNavStyle(isDark)}>
+               <h4 style={{ paddingLeft: '1rem' }}>Reports</h4>
               <Link href="/" style={getDashboardLinkStyle(pathname === '/', isDark)}>
-                Portfolio Health
+                Portfolio Health 
               </Link>
                <Link href="/price-comparison" style={getNavLinkStyle(pathname === '/price-comparison', isDark)}>
                 Price Comparison
               </Link>
+              <Link href="/rate-comparison" style={getNavLinkStyle(pathname === '/rate-comparison', isDark)}>
+                Best Available Rate 
+              </Link>
+                <h4 style={{ paddingLeft: '1rem' }}>Setup</h4>
               <Link href="/status-overview" style={getNavLinkStyle(pathname === '/status-overview', isDark)}>
                 Scan Setup
               </Link>
