@@ -34,6 +34,7 @@ async function fetchWithScrapingAnt(url: string): Promise<string> {
     'x-api-key': SCRAPINGANT_API_KEY,
     browser: 'true',        // JS rendering
     wait_for_selector: '#available_rooms', // Wait until room table is in DOM
+    proxy_country: 'DE',
   });
 
   const response = await fetch(`${SCRAPINGANT_URL}?${params}`, {
