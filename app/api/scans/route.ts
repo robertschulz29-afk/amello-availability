@@ -1,3 +1,4 @@
+// app/api/scans/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
@@ -5,114 +6,60 @@ import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/* utils */
 function ymdToUTC(ymd: string): Date {
   const [y, m, d] = ymd.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d));
 }
-function toYMDUTC(d: Date) {
+function toYMDUTC(d: Date): string {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
 }
 function berlinTodayYMD(): string {
-  const fmt = new Intl.DateTimeFormat('en-CA', {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Berlin',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  return fmt.format(new Date()); // YYYY-MM-DD
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+function getBaseUrl(): string {
+  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return 'http://localhost:3000';
 }
 
 /**
- * Trigger the first batch of scan processing in the background
- * This kickstarts the scan without blocking the response
+ * Kicks off the first batch via the orchestrator without blocking scan creation response.
  */
-async function processFirstBatch(scanId: number, belloMandator: string) {
-  try {
-    const baseUrl = process.env.NEXTAUTH_URL || 
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
-    
-    const targetUrl = `${baseUrl}/api/scans/process`;
-    
-    console.log('[processFirstBatch] ==================== START ====================');
-    console.log('[processFirstBatch] Scan ID:', scanId);
-    console.log('[processFirstBatch] Base URL:', baseUrl);
-    console.log('[processFirstBatch] Target URL:', targetUrl);
-    console.log('[processFirstBatch] Bello-Mandator:', belloMandator);
-    console.log('[processFirstBatch] NEXTAUTH_URL:', process.env.NEXTAUTH_URL || 'NOT SET');
-    console.log('[processFirstBatch] VERCEL_URL:', process.env.VERCEL_URL || 'NOT SET');
-    
-    // Fire request and log result (don't await in caller)
-    const fetchPromise = fetch(targetUrl, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Bello-Mandator': belloMandator,
-      },
-      body: JSON.stringify({ 
-        scanId, 
-        startIndex: 0, 
-        size: 50 
-      }),
-    });
-    
-    // Log result but don't block scan creation
-    fetchPromise
-      .then(async (response) => {
-        console.log('[processFirstBatch] ===== RESPONSE RECEIVED =====');
-        console.log('[processFirstBatch] Status:', response.status);
-        console.log('[processFirstBatch] Status Text:', response.statusText);
-        
-        if (!response.ok) {
-          const text = await response.text().catch(() => 'Could not read body');
-          console.error('[processFirstBatch] ❌ REQUEST FAILED');
-          console.error('[processFirstBatch] Status:', response.status);
-          console.error('[processFirstBatch] Body:', text);
-        } else {
-          const result = await response.json().catch(() => ({ error: 'Could not parse JSON' }));
-          console.log('[processFirstBatch] ✅ REQUEST SUCCESS');
-          console.log('[processFirstBatch] Processed:', result.processed || 0);
-          console.log('[processFirstBatch] Next Index:', result.nextIndex || 0);
-          console.log('[processFirstBatch] Done:', result.done || false);
-          console.log('[processFirstBatch] Total:', result.total || 0);
-        }
-        console.log('[processFirstBatch] ==================== END ====================');
-      })
-      .catch(e => {
-        console.error('[processFirstBatch] ===== FETCH ERROR =====');
-        console.error('[processFirstBatch] Error type:', e.name || 'Unknown');
-        console.error('[processFirstBatch] Error message:', e.message || 'No message');
-        console.error('[processFirstBatch] Error stack:', e.stack || 'No stack');
-        console.error('[processFirstBatch] Scan will rely on cron job to continue');
-        console.error('[processFirstBatch] ==================== END ====================');
-      });
-      
-  } catch (e: unknown) {
-    console.error('[processFirstBatch] ===== OUTER ERROR =====');
-    console.error('[processFirstBatch] Error:', e);
-    if (e instanceof Error) {
-      console.error('[processFirstBatch] Message:', e.message);
-      console.error('[processFirstBatch] Stack:', e.stack || 'No stack');
-    } else {
-      console.error('[processFirstBatch] Message:', String(e));
-    }
-  }
+function triggerFirstBatch(scanId: number, belloMandator: string): void {
+  const url = `${getBaseUrl()}/api/scans/process`;
+
+  fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Bello-Mandator': belloMandator,
+    },
+    body: JSON.stringify({ scanId, startIndex: 0, size: 50 }),
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.error('[scans] triggerFirstBatch failed:', res.status, text.slice(0, 200));
+      } else {
+        const result = await res.json().catch(() => ({}));
+        console.log('[scans] triggerFirstBatch success — processed:', result.amello?.processed, '| done:', result.done);
+      }
+    })
+    .catch((e) => console.error('[scans] triggerFirstBatch fetch error:', e.message));
 }
 
-/* GET: list scans (robust: only minimal columns) */
+/* GET: list scans */
 export async function GET() {
   try {
     const { rows } = await sql`
-      SELECT
-        id,
-        scanned_at,
-        stay_nights,
-        total_cells,
-        done_cells,
-        status
+      SELECT id, scanned_at, stay_nights, total_cells, done_cells, status
       FROM scans
       ORDER BY scanned_at DESC
       LIMIT 200
@@ -124,18 +71,15 @@ export async function GET() {
   }
 }
 
-/* POST: create a scan (unchanged logic; populates legacy NOT NULL fields too) */
+/* POST: create a scan */
 export async function POST(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const isCron = url.searchParams.get('cron') === '1' || url.searchParams.has('key');
-
-    // Get the Bello-Mandator header for passing to process endpoint
     const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
-
     const body = await req.json().catch(() => ({}));
 
-    // baseCheckIn (YYYY-MM-DD). Default: Berlin today + 5 days.
+    // baseCheckIn
     let baseCheckIn: string | null =
       typeof body?.baseCheckIn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.baseCheckIn)
         ? body.baseCheckIn
@@ -149,49 +93,38 @@ export async function POST(req: NextRequest) {
     }
 
     const days: number =
-      Number.isFinite(body?.days) && body.days >= 1 && body.days <= 365
-        ? Number(body.days)
-        : 86;
+      Number.isFinite(body?.days) && body.days >= 1 && body.days <= 365 ? Number(body.days) : 86;
 
     const stayNights: number =
       Number.isFinite(body?.stayNights) && body.stayNights >= 1 && body.stayNights <= 30
-        ? Number(body.stayNights)
-        : 7;
+        ? Number(body.stayNights) : 7;
 
-    // Compute fixed_checkout (checkout for the first column)
     const checkoutDt = ymdToUTC(baseCheckIn);
     checkoutDt.setUTCDate(checkoutDt.getUTCDate() + stayNights);
     const fixedCheckout = toYMDUTC(checkoutDt);
 
-    // Satisfy legacy NOT NULL constraints if present
     const startOffset = 0;
     const endOffset = days - 1;
 
-    // Cron idempotency (optional)
+    // Cron idempotency
     if (isCron) {
       const already = await sql<{ id: number }>`
-        SELECT id
-        FROM scans
+        SELECT id FROM scans
         WHERE (scanned_at AT TIME ZONE 'Europe/Berlin')::date = ${berlinToday}::date
           AND status IN ('queued','running','done')
-        ORDER BY id DESC
-        LIMIT 1
+        ORDER BY id DESC LIMIT 1
       `;
       if (already.rows.length > 0) {
-        return NextResponse.json({
-          ok: true,
-          message: 'already ran today',
-          scanId: already.rows[0].id,
-        });
+        return NextResponse.json({ ok: true, message: 'already ran today', scanId: already.rows[0].id });
       }
     }
 
-    // Hotels count
-    const countQ = await sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable=true AND active=true`;
+    const countQ = await sql<{ c: number }>`
+      SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true
+    `;
     const hotelsCount = countQ.rows[0]?.c ?? 0;
     const totalCells = hotelsCount * days;
 
-    // Insert scan (providing legacy fields + new params)
     const ins = await sql`
       INSERT INTO scans (
         fixed_checkout, start_offset, end_offset, stay_nights, timezone,
@@ -206,23 +139,13 @@ export async function POST(req: NextRequest) {
 
     const scanId = ins.rows[0].id as number;
 
-    // Trigger first batch processing in the background
-    // This kickstarts the scan without blocking the response
-    processFirstBatch(scanId, belloMandator);
+    // Kick off first batch asynchronously — don't await
+    triggerFirstBatch(scanId, belloMandator);
 
-    return NextResponse.json({
-      scanId,
-      totalCells,
-      baseCheckIn,
-      days,
-      stayNights,
-      fixedCheckout,
-      startOffset,
-      endOffset,
-    });
+    return NextResponse.json({ scanId, totalCells, baseCheckIn, days, stayNights, fixedCheckout });
+
   } catch (e: any) {
-    const msg = typeof e?.message === 'string' ? e.message : 'failed to create scan';
     console.error('[POST /api/scans] error', e);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: e.message || 'failed to create scan' }, { status: 500 });
   }
 }
