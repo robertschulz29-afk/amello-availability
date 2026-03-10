@@ -1,7 +1,7 @@
 // app/LayoutContent.tsx
 'use client';  
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from './context/ThemeContext';
@@ -25,6 +25,13 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
   // CHANGE: Set initial state to false so it is closed by default
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 300);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
@@ -91,6 +98,32 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
           </div>
         </div>
       </div>
+      {showBackToTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="Back to top"
+          style={{
+            position: 'fixed',
+            bottom: '2rem',
+            right: '2rem',
+            zIndex: 9999,
+            width: '2.5rem',
+            height: '2.5rem',
+            borderRadius: '50%',
+            border: 'none',
+            background: '#0d6efd',
+            color: '#fff',
+            fontSize: '1.1rem',
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <i className="fas fa-chevron-up" />
+        </button>
+      )}
     </div>
   );
 }

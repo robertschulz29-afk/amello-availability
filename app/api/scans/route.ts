@@ -2,20 +2,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
+import { ymdToUTC, toYMDUTC } from '@/lib/scrapers/process-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function ymdToUTC(ymd: string): Date {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-}
-function toYMDUTC(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
-}
 function berlinTodayYMD(): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Berlin',

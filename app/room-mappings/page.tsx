@@ -4,389 +4,510 @@
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
 
-type Hotel = { id: number; name: string; code: string };
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 type Mapping = {
   id: number;
   hotel_id: number;
   amello_room: string;
   booking_room: string;
+  source: 'manual' | 'ai';
+  confidence: number | null;
   updated_at: string;
 };
-type RoomData = {
+
+type HotelData = {
+  id: number;
+  name: string;
+  code: string;
   mappings: Mapping[];
   amelloRooms: string[];
   bookingRooms: string[];
 };
 
-export default function Page() {
-  const [hotels, setHotels] = React.useState<Hotel[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = React.useState<number | null>(null);
-  const [hotelSearch, setHotelSearch] = React.useState('');
-  const [roomData, setRoomData] = React.useState<RoomData | null>(null);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
+type Suggestion = {
+  amello_room: string;
+  booking_room: string;
+  confidence: number;
+  reasoning: string;
+};
 
-  // New mapping form
-  const [newAmello, setNewAmello] = React.useState('');
-  const [newBooking, setNewBooking] = React.useState('');
-  const [saving, setSaving] = React.useState(false);
+// hotelId → (amelloRoom → Suggestion)
+type AllSuggestions = Map<number, Map<string, Suggestion>>;
 
-  // Edit state
-  const [editingId, setEditingId] = React.useState<number | null>(null);
-  const [editAmello, setEditAmello] = React.useState('');
-  const [editBooking, setEditBooking] = React.useState('');
-  const [editSaving, setEditSaving] = React.useState(false);
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-  // Load hotels on mount; also check for ?hotelId= in URL
+function ConfidenceBadge({ confidence }: { confidence: number | null }) {
+  if (confidence == null) return null;
+  const pct = Math.round(confidence * 100);
+  const cls = pct >= 90 ? 'bg-success' : pct >= 75 ? 'bg-warning text-dark' : 'bg-danger';
+  return <span className={`badge ${cls} ms-1`} style={{ fontSize: '0.65rem' }}>{pct}%</span>;
+}
+
+// ── Right-column cell per Amello room ─────────────────────────────────────────
+
+type RoomRowProps = {
+  amelloRoom: string;
+  mapping: Mapping | undefined;
+  suggestion: Suggestion | undefined;
+  bookingRooms: string[];
+  onSave: (amelloRoom: string, bookingRoom: string, source: 'manual' | 'ai', confidence?: number) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
+  onSuggestionUsed: (amelloRoom: string) => void;
+};
+
+function RoomRow({ amelloRoom, mapping, suggestion, bookingRooms, onSave, onDelete, onSuggestionUsed }: RoomRowProps) {
+  const [editing, setEditing] = React.useState(false);
+  const [selected, setSelected] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+
+  const openEdit = () => {
+    setSelected(mapping?.booking_room ?? suggestion?.booking_room ?? '');
+    setEditing(true);
+  };
+
+  const save = async () => {
+    if (!selected) return;
+    setBusy(true);
+    await onSave(amelloRoom, selected, 'manual');
+    setEditing(false);
+    setBusy(false);
+  };
+
+  const acceptAi = async () => {
+    if (!mapping) return;
+    setBusy(true);
+    await onSave(amelloRoom, mapping.booking_room, 'manual');
+    setBusy(false);
+  };
+
+  const confirmSuggestion = async () => {
+    if (!suggestion) return;
+    setBusy(true);
+    await onSave(amelloRoom, suggestion.booking_room, 'ai', suggestion.confidence);
+    onSuggestionUsed(amelloRoom);
+    setBusy(false);
+  };
+
+  const editDropdown = (
+    <div className="d-flex gap-1 align-items-center mt-1">
+      <select
+        className="form-select form-select-sm"
+        value={selected}
+        onChange={e => setSelected(e.target.value)}
+        disabled={busy}
+        style={{ maxWidth: 280 }}
+      >
+        <option value="">— select room —</option>
+        {bookingRooms.map(r => <option key={r} value={r}>{r}</option>)}
+      </select>
+      <button className="btn btn-sm btn-success" onClick={save} disabled={busy || !selected}>
+        {busy ? <span className="spinner-border spinner-border-sm"></span> : '✓'}
+      </button>
+      <button className="btn btn-sm btn-outline-secondary" onClick={() => setEditing(false)} disabled={busy}>✕</button>
+    </div>
+  );
+
+  // Mapped manually
+  if (mapping && mapping.source === 'manual') {
+    return (
+      <td className="align-top py-2">
+        {!editing ? (
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <span className="small">{mapping.booking_room}</span>
+            <span className="badge bg-secondary" style={{ fontSize: '0.6rem' }}>manual</span>
+            <button className="btn btn-outline-secondary ms-auto" style={{ padding: '1px 6px', fontSize: '0.7rem' }} onClick={openEdit}>
+              <i className="fa fa-pencil"></i>
+            </button>
+            <button className="btn btn-outline-danger" style={{ padding: '1px 6px', fontSize: '0.7rem' }} onClick={() => onDelete(mapping.id)}>
+              <i className="fa fa-times"></i>
+            </button>
+          </div>
+        ) : editDropdown}
+      </td>
+    );
+  }
+
+  // Mapped by AI — needs acceptance
+  if (mapping && mapping.source === 'ai') {
+    return (
+      <td className="align-top py-2">
+        {!editing ? (
+          <div>
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              <span className="small">{mapping.booking_room}</span>
+              <span className="badge bg-info text-dark" style={{ fontSize: '0.6rem' }}>AI</span>
+              <ConfidenceBadge confidence={mapping.confidence} />
+            </div>
+            <div className="d-flex gap-1 mt-1">
+              <button className="btn btn-sm btn-success" onClick={acceptAi} disabled={busy}>
+                {busy ? <span className="spinner-border spinner-border-sm"></span> : '✓ Accept'}
+              </button>
+              <button className="btn btn-sm btn-outline-secondary" onClick={openEdit}>Change</button>
+              <button className="btn btn-sm btn-outline-danger" onClick={() => onDelete(mapping.id)}>
+                <i className="fa fa-times"></i>
+              </button>
+            </div>
+          </div>
+        ) : editDropdown}
+      </td>
+    );
+  }
+
+  // Unmapped — with or without AI suggestion
+  return (
+    <td className="align-top py-2">
+      {!editing ? (
+        suggestion ? (
+          <div>
+            <div className="d-flex align-items-center gap-1 flex-wrap">
+              <span className="small text-muted fst-italic">{suggestion.booking_room}</span>
+              <span className="badge bg-info text-dark" style={{ fontSize: '0.6rem' }}>AI suggestion</span>
+              <ConfidenceBadge confidence={suggestion.confidence} />
+            </div>
+            <div className="text-muted fst-italic mb-1" style={{ fontSize: '0.7rem' }}>{suggestion.reasoning}</div>
+            <div className="d-flex gap-1">
+              <button className="btn btn-sm btn-success" onClick={confirmSuggestion} disabled={busy}>
+                {busy ? <span className="spinner-border spinner-border-sm"></span> : '✓ Confirm'}
+              </button>
+              <button className="btn btn-sm btn-outline-secondary" onClick={openEdit}>Change</button>
+            </div>
+          </div>
+        ) : (
+          <button className="btn btn-sm btn-outline-warning" onClick={openEdit}>+ Map room</button>
+        )
+      ) : editDropdown}
+    </td>
+  );
+}
+
+// ── Per-hotel section ─────────────────────────────────────────────────────────
+
+function HotelSection({
+  hotel,
+  suggestions,
+  onMappingChange,
+  onSuggestionUsed,
+}: {
+  hotel: HotelData;
+  suggestions: Map<string, Suggestion>;
+  onMappingChange: () => void;
+  onSuggestionUsed: (hotelId: number, amelloRoom: string) => void;
+}) {
+  const [collapsed, setCollapsed] = React.useState(false);
+  const [msg, setMsg] = React.useState<{ text: string; ok: boolean } | null>(null);
+
   React.useEffect(() => {
-    fetchJSON('/api/hotels', { cache: 'no-store' })
-      .then((data: any) => {
-        const arr: Hotel[] = Array.isArray(data) ? data : [];
-        arr.sort((a, b) => a.name.localeCompare(b.name));
-        setHotels(arr);
-        // Pre-select from URL param if present
-        const params = new URLSearchParams(window.location.search);
-        const urlHotelId = params.get('hotelId');
-        if (urlHotelId) {
-          setSelectedHotelId(Number(urlHotelId));
-        } else if (arr.length > 0) {
-          setSelectedHotelId(arr[0].id);
-        }
-      })
-      .catch(() => setError('Failed to load hotels'));
-  }, []);
+    if (!msg) return;
+    const t = setTimeout(() => setMsg(null), 3000);
+    return () => clearTimeout(t);
+  }, [msg]);
 
-  // Load room data when hotel changes
-  const loadRoomData = React.useCallback(async (hotelId: number) => {
-    setLoading(true);
-    setError(null);
-    setRoomData(null);
+  const mappingByAmello = React.useMemo(() => {
+    const map = new Map<string, Mapping>();
+    for (const m of hotel.mappings) map.set(m.amello_room, m);
+    return map;
+  }, [hotel.mappings]);
+
+  const unmappedCount = hotel.amelloRooms.filter(r => !mappingByAmello.has(r)).length;
+  const aiPendingCount = hotel.mappings.filter(m => m.source === 'ai').length;
+  const pendingSuggestionsCount = hotel.amelloRooms.filter(r => !mappingByAmello.has(r) && suggestions.has(r)).length;
+
+  const handleSave = async (amelloRoom: string, bookingRoom: string, source: 'manual' | 'ai', confidence?: number) => {
     try {
-      const data: RoomData = await fetchJSON(`/api/room-mappings?hotelId=${hotelId}`, { cache: 'no-store' });
-      setRoomData(data);
+      await fetchJSON('/api/room-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hotelId: hotel.id, amelloRoom, bookingRoom, source, confidence: confidence ?? null }),
+      });
+      setMsg({ text: 'Saved.', ok: true });
+      onMappingChange();
     } catch (e: any) {
-      setError(e.message || 'Failed to load room data');
+      setMsg({ text: e.message || 'Failed to save', ok: false });
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Remove this mapping?')) return;
+    try {
+      await fetchJSON(`/api/room-mappings?id=${id}`, { method: 'DELETE' });
+      setMsg({ text: 'Mapping removed.', ok: true });
+      onMappingChange();
+    } catch (e: any) {
+      setMsg({ text: e.message || 'Failed to delete', ok: false });
+    }
+  };
+
+  return (
+    <div className="card mb-3">
+      <div
+        className="card-header d-flex align-items-center gap-2 flex-wrap"
+        style={{ cursor: 'pointer', userSelect: 'none' }}
+        onClick={() => setCollapsed(c => !c)}
+      >
+        <span className="fw-semibold">{hotel.name}</span>
+        <span className="text-muted small">({hotel.code})</span>
+        <div className="ms-auto d-flex align-items-center gap-2 flex-wrap">
+          {unmappedCount > 0 && <span className="badge bg-warning text-dark">{unmappedCount} unmapped</span>}
+          {pendingSuggestionsCount > 0 && <span className="badge bg-info text-dark">{pendingSuggestionsCount} AI suggestions</span>}
+          {aiPendingCount > 0 && <span className="badge bg-info text-dark">{aiPendingCount} AI pending</span>}
+          {unmappedCount === 0 && aiPendingCount === 0 && hotel.amelloRooms.length > 0 && (
+            <span className="badge bg-success">fully mapped</span>
+          )}
+          {hotel.amelloRooms.length === 0 && <span className="badge bg-light text-muted border">no scan data</span>}
+          <span className="text-muted small">{collapsed ? '▼' : '▲'}</span>
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="card-body p-0">
+          {msg && (
+            <div className={`alert py-2 small mb-0 rounded-0 ${msg.ok ? 'alert-success' : 'alert-danger'}`}>
+              {msg.text}
+            </div>
+          )}
+
+          {hotel.amelloRooms.length === 0 ? (
+            <p className="text-muted small m-3">No Amello rooms in scan data yet. Run a scan first.</p>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-sm table-hover mb-0 align-middle">
+                <thead className="table-light">
+                  <tr>
+                    <th style={{ width: '45%' }}>Amello Room</th>
+                    <th>Booking.com Room</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hotel.amelloRooms.map(amelloRoom => (
+                    <tr key={amelloRoom}>
+                      <td className="fw-semibold small align-top py-2">{amelloRoom}</td>
+                      <RoomRow
+                        amelloRoom={amelloRoom}
+                        mapping={mappingByAmello.get(amelloRoom)}
+                        suggestion={suggestions.get(amelloRoom)}
+                        bookingRooms={hotel.bookingRooms}
+                        onSave={handleSave}
+                        onDelete={handleDelete}
+                        onSuggestionUsed={(room) => onSuggestionUsed(hotel.id, room)}
+                      />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function Page() {
+  const [hotels, setHotels] = React.useState<HotelData[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [search, setSearch] = React.useState('');
+
+  // Global AI state
+  const [suggesting, setSuggesting] = React.useState(false);
+  const [suggestProgress, setSuggestProgress] = React.useState<{ done: number; total: number } | null>(null);
+  const [allSuggestions, setAllSuggestions] = React.useState<AllSuggestions>(new Map());
+  const [aiMsg, setAiMsg] = React.useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    try {
+      const data = await fetchJSON('/api/room-mappings', { cache: 'no-store' });
+      setHotels(data.hotels ?? []);
+    } catch (e: any) {
+      setError(e.message || 'Failed to load');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  React.useEffect(() => {
-    if (selectedHotelId != null) {
-      loadRoomData(selectedHotelId);
-      setEditingId(null);
-      setNewAmello('');
-      setNewBooking('');
+  React.useEffect(() => { load(); }, [load]);
+
+  // Run AI for all hotels sequentially so we can show progress
+  const runAiAll = async () => {
+    const eligible = hotels.filter(h => h.amelloRooms.length > 0 && h.bookingRooms.length > 0);
+    if (!eligible.length) return;
+
+    setSuggesting(true);
+    setAiMsg(null);
+    setAllSuggestions(new Map());
+    setSuggestProgress({ done: 0, total: eligible.length });
+
+    let totalSuggestions = 0;
+
+    for (let i = 0; i < eligible.length; i++) {
+      const hotel = eligible[i];
+      try {
+        const result = await fetchJSON('/api/room-mappings/suggest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hotelId: hotel.id }),
+        });
+
+        // Save ALL suggestions (both high and low confidence) to DB immediately
+        const allFromAi = [...(result.suggestions ?? []), ...(result.skipped ?? [])];
+        for (const s of allFromAi) {
+          try {
+            await fetchJSON('/api/room-mappings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                hotelId: hotel.id,
+                amelloRoom: s.amello_room,
+                bookingRoom: s.booking_room,
+                source: 'ai',
+                confidence: s.confidence,
+              }),
+            });
+            totalSuggestions++;
+          } catch {
+            // skip individual save failures silently
+          }
+        }
+      } catch {
+        // skip failed hotels silently
+      }
+      setSuggestProgress({ done: i + 1, total: eligible.length });
     }
-  }, [selectedHotelId, loadRoomData]);
 
-  // Auto-dismiss success message
-  React.useEffect(() => {
-    if (!successMsg) return;
-    const t = setTimeout(() => setSuccessMsg(null), 3500);
-    return () => clearTimeout(t);
-  }, [successMsg]);
+    // Reload all mapping data from DB so newly saved AI mappings appear
+    await load();
 
-  const filteredHotels = React.useMemo(() => {
-    if (!hotelSearch.trim()) return hotels;
-    const term = hotelSearch.toLowerCase();
+    setSuggesting(false);
+    setSuggestProgress(null);
+    setAllSuggestions(new Map());
+    setAiMsg(totalSuggestions > 0
+      ? `AI saved ${totalSuggestions} mapping${totalSuggestions !== 1 ? 's' : ''} to review.`
+      : 'No new suggestions found.');
+  };
+
+  const handleSuggestionUsed = (hotelId: number, amelloRoom: string) => {
+    setAllSuggestions(prev => {
+      const next = new Map(prev);
+      const hotelMap = next.get(hotelId);
+      if (hotelMap) {
+        const updatedHotelMap = new Map(hotelMap);
+        updatedHotelMap.delete(amelloRoom);
+        if (updatedHotelMap.size === 0) next.delete(hotelId);
+        else next.set(hotelId, updatedHotelMap);
+      }
+      return next;
+    });
+  };
+
+  const filtered = React.useMemo(() => {
+    if (!search.trim()) return hotels;
+    const term = search.toLowerCase();
     return hotels.filter(h =>
       h.name.toLowerCase().includes(term) || h.code.toLowerCase().includes(term)
     );
-  }, [hotels, hotelSearch]);
+  }, [hotels, search]);
 
-  const selectedHotel = hotels.find(h => h.id === selectedHotelId);
+  const totalUnmapped = React.useMemo(() =>
+    hotels.reduce((acc, h) => {
+      const mapped = new Set(h.mappings.map(m => m.amello_room));
+      return acc + h.amelloRooms.filter(r => !mapped.has(r)).length;
+    }, 0), [hotels]
+  );
 
-  const addMapping = async () => {
-    if (!newAmello || !newBooking || !selectedHotelId) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await fetchJSON('/api/room-mappings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hotelId: selectedHotelId, amelloRoom: newAmello, bookingRoom: newBooking }),
-      });
-      setNewAmello('');
-      setNewBooking('');
-      setSuccessMsg('Mapping added.');
-      await loadRoomData(selectedHotelId);
-    } catch (e: any) {
-      setError(e.message || 'Failed to add mapping');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const deleteMapping = async (id: number) => {
-    if (!selectedHotelId) return;
-    if (!confirm('Delete this mapping?')) return;
-    try {
-      await fetchJSON(`/api/room-mappings?id=${id}`, { method: 'DELETE' });
-      setSuccessMsg('Mapping deleted.');
-      await loadRoomData(selectedHotelId);
-    } catch (e: any) {
-      setError(e.message || 'Failed to delete');
-    }
-  };
-
-  const startEdit = (m: Mapping) => {
-    setEditingId(m.id);
-    setEditAmello(m.amello_room);
-    setEditBooking(m.booking_room);
-  };
-
-  const saveEdit = async () => {
-    if (!editingId || !selectedHotelId) return;
-    setEditSaving(true);
-    setError(null);
-    try {
-      await fetchJSON(`/api/room-mappings?id=${editingId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amelloRoom: editAmello, bookingRoom: editBooking }),
-      });
-      setEditingId(null);
-      setSuccessMsg('Mapping updated.');
-      await loadRoomData(selectedHotelId);
-    } catch (e: any) {
-      setError(e.message || 'Failed to update');
-    } finally {
-      setEditSaving(false);
-    }
-  };
+  const totalPendingSuggestions = React.useMemo(() =>
+    Array.from(allSuggestions.values()).reduce((acc, m) => acc + m.size, 0),
+    [allSuggestions]
+  );
 
   return (
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
-        <div className="d-flex align-items-center gap-3 mb-4 flex-wrap">
+
+        {/* ── Global header ── */}
+        <div className="d-flex align-items-center gap-3 mb-3 flex-wrap">
           <h1 className="mb-0">Room Name Mappings</h1>
+          {!loading && totalUnmapped > 0 && (
+            <span className="badge bg-warning text-dark fs-6">{totalUnmapped} unmapped total</span>
+          )}
           <a href="/price-comparison" className="btn btn-outline-secondary btn-sm ms-auto">
             ← Back to Price Comparison
           </a>
         </div>
-        <p className="text-muted mb-4">
-          Map Amello room names to Booking.com room names per hotel. Mappings are used in the Price Comparison page to match rooms across sources.
-        </p>
 
-        {successMsg && (
-          <div className="alert alert-success alert-dismissible">
-            {successMsg}
-            <button className="btn-close" onClick={() => setSuccessMsg(null)}></button>
-          </div>
-        )}
-        {error && (
-          <div className="alert alert-danger alert-dismissible">
-            {error}
-            <button className="btn-close" onClick={() => setError(null)}></button>
-          </div>
-        )}
-
-        {/* Hotel selector */}
+        {/* ── Global AI bar ── */}
         <div className="card mb-4">
-          <div className="card-header fw-semibold">Select Hotel</div>
-          <div className="card-body d-flex gap-3 flex-wrap">
-            <input
-              className="form-control"
-              style={{ maxWidth: 260 }}
-              placeholder="Search hotels…"
-              value={hotelSearch}
-              onChange={e => setHotelSearch(e.target.value)}
-            />
-            <select
-              className="form-select"
-              style={{ maxWidth: 420 }}
-              value={selectedHotelId ?? ''}
-              onChange={e => setSelectedHotelId(Number(e.target.value))}
-            >
-              {filteredHotels.map(h => (
-                <option key={h.id} value={h.id}>{h.name} ({h.code})</option>
-              ))}
-            </select>
+          <div className="card-body d-flex align-items-center gap-3 flex-wrap py-2">
+            <div>
+              <span className="fw-semibold">AI Auto-Mapping</span>
+              <span className="text-muted small ms-2">Suggests Booking.com matches for all unmapped Amello rooms across all hotels</span>
+            </div>
+            <div className="ms-auto d-flex align-items-center gap-2">
+              {suggestProgress && (
+                <span className="text-muted small">
+                  {suggestProgress.done} / {suggestProgress.total} hotels…
+                </span>
+              )}
+              {totalPendingSuggestions > 0 && !suggesting && (
+                <span className="badge bg-info text-dark">{totalPendingSuggestions} suggestions pending</span>
+              )}
+              {aiMsg && !suggesting && (
+                <span className="text-muted small fst-italic">{aiMsg}</span>
+              )}
+              <button
+                className="btn btn-primary"
+                onClick={runAiAll}
+                disabled={suggesting || loading}
+              >
+                {suggesting
+                  ? <><span className="spinner-border spinner-border-sm me-1"></span>Running AI…</>
+                  : '✨ Run AI for All Hotels'}
+              </button>
+            </div>
           </div>
+          {suggesting && suggestProgress && (
+            <div className="progress" style={{ height: 3, borderRadius: 0 }}>
+              <div
+                className="progress-bar"
+                style={{ width: `${(suggestProgress.done / suggestProgress.total) * 100}%`, transition: 'width 0.3s' }}
+              ></div>
+            </div>
+          )}
+        </div>
+
+        {error && <div className="alert alert-danger">{error}</div>}
+
+        <div className="mb-3">
+          <input
+            className="form-control"
+            style={{ maxWidth: 320 }}
+            placeholder="Filter hotels…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
         </div>
 
         {loading && (
-          <div className="text-center my-4">
+          <div className="text-center my-5">
             <div className="spinner-border text-primary" role="status"></div>
-            <div className="mt-2 text-muted">Loading room data…</div>
+            <div className="mt-2 text-muted">Loading all room data…</div>
           </div>
         )}
 
-        {!loading && roomData && selectedHotel && (
-          <>
-            {/* Add new mapping */}
-            <div className="card mb-4">
-              <div className="card-header fw-semibold">
-                Add Mapping — <span className="fw-normal text-muted">{selectedHotel.name}</span>
-              </div>
-              <div className="card-body">
-                <div className="row g-3 align-items-end">
-                  <div className="col-md-5">
-                    <label className="form-label fw-semibold">Amello Room Name</label>
-                    {roomData.amelloRooms.length > 0 && (
-                      <select
-                        className="form-select mb-1"
-                        value={newAmello}
-                        onChange={e => setNewAmello(e.target.value)}
-                        disabled={saving}
-                      >
-                        <option value="">— pick from scan data —</option>
-                        {roomData.amelloRooms.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    )}
-                    <input
-                      className="form-control"
-                      placeholder="Or type manually…"
-                      value={newAmello}
-                      onChange={e => setNewAmello(e.target.value)}
-                      disabled={saving}
-                    />
-                    {roomData.amelloRooms.length === 0 && (
-                      <div className="form-text text-warning">No Amello rooms found in scan data yet.</div>
-                    )}
-                  </div>
+        {!loading && filtered.map(hotel => (
+          <HotelSection
+            key={hotel.id}
+            hotel={hotel}
+            suggestions={allSuggestions.get(hotel.id) ?? new Map()}
+            onMappingChange={load}
+            onSuggestionUsed={handleSuggestionUsed}
+          />
+        ))}
 
-                  <div className="col-md-5">
-                    <label className="form-label fw-semibold">Booking.com Room Name</label>
-                    {roomData.bookingRooms.length > 0 && (
-                      <select
-                        className="form-select mb-1"
-                        value={newBooking}
-                        onChange={e => setNewBooking(e.target.value)}
-                        disabled={saving}
-                      >
-                        <option value="">— pick from scan data —</option>
-                        {roomData.bookingRooms.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    )}
-                    <input
-                      className="form-control"
-                      placeholder="Or type manually…"
-                      value={newBooking}
-                      onChange={e => setNewBooking(e.target.value)}
-                      disabled={saving}
-                    />
-                    {roomData.bookingRooms.length === 0 && (
-                      <div className="form-text text-warning">No Booking.com rooms found in scan data yet.</div>
-                    )}
-                  </div>
-
-                  <div className="col-md-2">
-                    <button
-                      className="btn btn-primary w-100"
-                      onClick={addMapping}
-                      disabled={saving || !newAmello || !newBooking}
-                    >
-                      {saving
-                        ? <><span className="spinner-border spinner-border-sm me-1"></span>Saving…</>
-                        : '+ Add'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Existing mappings */}
-            <div className="card">
-              <div className="card-header fw-semibold d-flex justify-content-between align-items-center">
-                <span>Saved Mappings</span>
-                <span className="badge bg-secondary">{roomData.mappings.length}</span>
-              </div>
-              {roomData.mappings.length === 0 ? (
-                <div className="card-body text-muted">No mappings yet for this hotel.</div>
-              ) : (
-                <div className="table-responsive">
-                  <table className="table table-sm table-striped table-hover mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th>Amello Room</th>
-                        <th>Booking.com Room</th>
-                        <th className="text-muted small">Updated</th>
-                        <th style={{ width: 100 }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {roomData.mappings.map(m => (
-                        <tr key={m.id}>
-                          {editingId === m.id ? (
-                            <>
-                              <td>
-                                {roomData.amelloRooms.length > 0 && (
-                                  <select
-                                    className="form-select form-select-sm mb-1"
-                                    value={editAmello}
-                                    onChange={e => setEditAmello(e.target.value)}
-                                    disabled={editSaving}
-                                  >
-                                    {roomData.amelloRooms.map(r => <option key={r} value={r}>{r}</option>)}
-                                    {!roomData.amelloRooms.includes(editAmello) && (
-                                      <option value={editAmello}>{editAmello}</option>
-                                    )}
-                                  </select>
-                                )}
-                                <input
-                                  className="form-control form-control-sm"
-                                  value={editAmello}
-                                  onChange={e => setEditAmello(e.target.value)}
-                                  disabled={editSaving}
-                                />
-                              </td>
-                              <td>
-                                {roomData.bookingRooms.length > 0 && (
-                                  <select
-                                    className="form-select form-select-sm mb-1"
-                                    value={editBooking}
-                                    onChange={e => setEditBooking(e.target.value)}
-                                    disabled={editSaving}
-                                  >
-                                    {roomData.bookingRooms.map(r => <option key={r} value={r}>{r}</option>)}
-                                    {!roomData.bookingRooms.includes(editBooking) && (
-                                      <option value={editBooking}>{editBooking}</option>
-                                    )}
-                                  </select>
-                                )}
-                                <input
-                                  className="form-control form-control-sm"
-                                  value={editBooking}
-                                  onChange={e => setEditBooking(e.target.value)}
-                                  disabled={editSaving}
-                                />
-                              </td>
-                              <td></td>
-                              <td>
-                                <button className="btn btn-sm btn-success me-1" onClick={saveEdit} disabled={editSaving}>
-                                  {editSaving ? <span className="spinner-border spinner-border-sm"></span> : <i className="fa fa-check"></i>}
-                                </button>
-                                <button className="btn btn-sm btn-secondary" onClick={() => setEditingId(null)} disabled={editSaving}>
-                                  <i className="fa fa-times"></i>
-                                </button>
-                              </td>
-                            </>
-                          ) : (
-                            <>
-                              <td>{m.amello_room}</td>
-                              <td>{m.booking_room}</td>
-                              <td className="text-muted small">{new Date(m.updated_at).toLocaleDateString()}</td>
-                              <td>
-                                <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => startEdit(m)} title="Edit">
-                                  <i className="fa fa-pencil"></i>
-                                </button>
-                                <button className="btn btn-sm btn-outline-danger" onClick={() => deleteMapping(m.id)} title="Delete">
-                                  <i className="fa fa-trash"></i>
-                                </button>
-                              </td>
-                            </>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
+        {!loading && filtered.length === 0 && (
+          <p className="text-muted">No hotels match the filter.</p>
         )}
       </div>
     </main>

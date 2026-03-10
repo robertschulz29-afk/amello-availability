@@ -202,6 +202,7 @@ export default function Page() {
 
   return (
     <main>
+      <div style={{ maxWidth: '90%', margin: '0 auto' }}>
       <h1 className="mb-4">Scan Setup</h1>
 
       {/* Current Scan Status Card */}
@@ -288,6 +289,7 @@ export default function Page() {
 
           {/* Error message */}
           {error ? <div className="alert alert-danger">{error}</div> : null}
+      </div>
     </main>
   );
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,7 +10,7 @@ const LOCALE = 'en_DE';
 
 const AMELLO_HEADERS = {
   'Content-Type': 'application/json',
-  'Bello-Mandator': 'amello.en',
+  'Bello-Mandator': DEFAULT_BELLO_MANDATOR,
 };
 
 async function amelloFetch(url: string): Promise<any> {

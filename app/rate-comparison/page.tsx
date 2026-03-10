@@ -14,13 +14,9 @@ type ScanRow = {
   status: 'queued' | 'running' | 'done' | 'error';
 };
 
-type HotelRow = {
-  id: number;
-  name: string;
-  code: string;
-};
+type HotelRow = { id: number; name: string; code: string };
 
-type RateComparisonRow = {
+type RateRow = {
   scan_id: number;
   hotel_id: number;
   hotel_name: string;
@@ -33,44 +29,102 @@ type RateComparisonRow = {
   booking_currency: string | null;
   booking_room_name: string | null;
   booking_rate_name: string | null;
-  price_difference: number | null;
-  percentage_difference: number | null;
+  price_difference: number | null;      // amello − booking
+  percentage_difference: number | null; // (amello − booking) / booking × 100
 };
 
-type PaginatedResponse = {
-  data: RateComparisonRow[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-};
+type SortKey = 'check_in_date' | 'amello_min_price' | 'booking_min_price' | 'price_difference' | 'percentage_difference';
+type SortDir = 'asc' | 'desc';
+type StatusFilter = 'all' | 'amello_only' | 'booking_only' | 'booking_cheaper_gt5' | 'booking_cheaper_lte5' | 'amello_cheaper';
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDateTime(dt: string) {
-  try {
-    return new Date(dt).toLocaleString();
-  } catch {
-    return dt;
-  }
+  try { return new Date(dt).toLocaleString(); } catch { return dt; }
 }
-
 function fmtDate(dt: string) {
-  try {
-    return new Date(dt).toLocaleDateString();
-  } catch {
-    return dt;
+  try { return new Date(dt).toLocaleDateString(); } catch { return dt; }
+}
+function toNum(v: unknown): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
+// ─── pill & row coloring (same logic as price-comparison) ────────────────────
+
+function pillProps(a: number | null, b: number | null): { label: string; className: string; style?: React.CSSProperties } {
+  if (a != null && b == null) return { label: 'Amello only',   className: 'badge bg-primary' };
+  if (a == null && b != null) return { label: 'Booking only',  className: 'badge text-white', style: { background: '#d63384' } };
+  if (a != null && b != null) {
+    const pct = b !== 0 ? ((a - b) / b) * 100 : 0;
+    if (pct > 5)  return { label: 'Booking cheaper', className: 'badge bg-danger' };
+    if (pct > 0)  return { label: 'Booking cheaper', className: 'badge bg-warning text-dark' };
+    return               { label: 'Amello cheaper',  className: 'badge bg-success' };
   }
+  return { label: 'No price', className: 'badge bg-secondary' };
 }
 
-function getHotelDisplay(name: string | null | undefined, code: string | null | undefined) {
-  if (name && code) return `${name} (${code})`;
-  return name || code || 'Unknown';
+function rowBgClass(a: number | null, b: number | null): string {
+  if (a != null && b == null) return 'table-primary';
+  if (a == null && b != null) return 'table-pink';
+  if (a != null && b != null) {
+    const pct = b !== 0 ? ((a - b) / b) * 100 : 0;
+    if (pct > 5)  return 'table-danger';
+    if (pct > 0)  return 'table-warning';
+    return               'table-success';
+  }
+  return '';
 }
 
-function toNumberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+function matchesStatusFilter(row: RateRow, filter: StatusFilter): boolean {
+  const a = row.amello_min_price;
+  const b = row.booking_min_price;
+  if (filter === 'all') return true;
+  if (filter === 'amello_only')        return a != null && b == null;
+  if (filter === 'booking_only')       return a == null && b != null;
+  if (a == null || b == null) return false;
+  const pct = b !== 0 ? ((a - b) / b) * 100 : 0;
+  if (filter === 'booking_cheaper_gt5')  return pct > 5;
+  if (filter === 'booking_cheaper_lte5') return pct > 0 && pct <= 5;
+  if (filter === 'amello_cheaper')       return pct <= 0;
+  return true;
 }
+
+// ─── sort helpers ─────────────────────────────────────────────────────────────
+
+function sortRows(rows: RateRow[], key: SortKey, dir: SortDir): RateRow[] {
+  return [...rows].sort((a, b) => {
+    const av = a[key] ?? (dir === 'asc' ? Infinity : -Infinity);
+    const bv = b[key] ?? (dir === 'asc' ? Infinity : -Infinity);
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+}
+
+// ─── SortTh ───────────────────────────────────────────────────────────────────
+
+function SortTh({ label, col, sort, onSort, className }: {
+  label: string; col: SortKey;
+  sort: { key: SortKey; dir: SortDir };
+  onSort: (k: SortKey) => void;
+  className?: string;
+}) {
+  const active = sort.key === col;
+  return (
+    <th
+      className={`${className ?? ''} user-select-none`}
+      style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+      onClick={() => onSort(col)}
+    >
+      {label}{' '}
+      <i className={`fas fa-sort${active ? (sort.dir === 'asc' ? '-up' : '-down') : ''} text-${active ? 'primary' : 'secondary'} small`} />
+    </th>
+  );
+}
+
+// ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function Page() {
   const [scans, setScans] = React.useState<ScanRow[]>([]);
@@ -80,18 +134,23 @@ export default function Page() {
   const [hotelSearchTerm, setHotelSearchTerm] = React.useState('');
 
   const [scanDetails, setScanDetails] = React.useState<{
-    scanId: number;
-    scannedAt: string;
-    baseCheckIn: string | null;
-    days: number | null;
-    stayNights: number | null;
-    timezone: string | null;
+    scanId: number; scannedAt: string;
+    baseCheckIn: string | null; days: number | null;
+    stayNights: number | null; timezone: string | null;
   } | null>(null);
 
-  const [comparisonData, setComparisonData] = React.useState<RateComparisonRow[]>([]);
-  const [pagination, setPagination] = React.useState({ page: 1, limit: 100, total: 0, totalPages: 0 });
+  const [allRows, setAllRows] = React.useState<RateRow[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+
+  // ── sort & filter state ──────────────────────────────────────────────────
+  const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir }>({ key: 'check_in_date', dir: 'asc' });
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
+
+  const handleSort = (key: SortKey) =>
+    setSort(prev => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
+
+  // ── data loading ──────────────────────────────────────────────────────────
 
   const loadScans = React.useCallback(async () => {
     const list = await fetchJSON('/api/scans', { cache: 'no-store' });
@@ -110,414 +169,273 @@ export default function Page() {
 
   const loadScanDetails = React.useCallback(async (scanId: number) => {
     try {
-      const details = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
+      const d = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
       setScanDetails({
-        scanId: details.id,
-        scannedAt: details.scanned_at,
-        baseCheckIn: details.base_checkin,
-        days: details.days,
-        stayNights: details.stay_nights,
-        timezone: details.timezone,
+        scanId: d.scanId ?? scanId,
+        scannedAt: d.scannedAt ?? '',
+        baseCheckIn: d.baseCheckIn ?? null,
+        days: d.days ?? null,
+        stayNights: d.stayNights ?? null,
+        timezone: d.timezone ?? null,
       });
-    } catch (err: any) {
-      console.error('Failed to load scan details:', err);
-      setScanDetails(null);
-    }
+    } catch { setScanDetails(null); }
   }, []);
 
-  const loadComparisonData = React.useCallback(async (scanId: number, hotelId: number | null, page: number) => {
+  const loadData = React.useCallback(async () => {
+    if (!selectedScanId) return;
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({
-        scanID: String(scanId),
-        page: String(page),
-        limit: String(pagination.limit),
-      });
-      if (hotelId !== null) {
-        params.append('hotelID', String(hotelId));
-      }
-
-      const response: PaginatedResponse = await fetchJSON(`/api/rate-comparison?${params}`, { cache: 'no-store' });
-      const normalizedData = response.data.map((row) => ({
-        ...row,
-        amello_min_price: toNumberOrNull(row.amello_min_price),
-        booking_min_price: toNumberOrNull(row.booking_min_price),
-        price_difference: toNumberOrNull(row.price_difference),
-        percentage_difference: toNumberOrNull(row.percentage_difference),
+      const params = new URLSearchParams({ scanID: String(selectedScanId), limit: '5000' });
+      if (selectedHotelId) params.append('hotelID', String(selectedHotelId));
+      const res = await fetchJSON(`/api/rate-comparison?${params}`, { cache: 'no-store' });
+      const rows: RateRow[] = (res.data ?? []).map((r: any) => ({
+        ...r,
+        amello_min_price:    toNum(r.amello_min_price),
+        booking_min_price:   toNum(r.booking_min_price),
+        price_difference:    toNum(r.price_difference),
+        percentage_difference: toNum(r.percentage_difference),
       }));
-      setComparisonData(normalizedData);
-      setPagination({
-        page: response.page,
-        limit: response.limit,
-        total: response.total,
-        totalPages: response.totalPages,
-      });
-    } catch (err: any) {
-      console.error('Failed to load comparison data:', err);
-      setError(err.message || 'Failed to load comparison data');
-      setComparisonData([]);
+      setAllRows(rows);
+    } catch (e: any) {
+      setError(e.message || 'Failed to load data');
+      setAllRows([]);
     } finally {
       setLoading(false);
     }
-  }, [pagination.limit]);
+  }, [selectedScanId, selectedHotelId]);
 
+  React.useEffect(() => { loadScans(); loadHotels(); }, [loadScans, loadHotels]);
   React.useEffect(() => {
-    loadScans();
-    loadHotels();
-  }, [loadScans, loadHotels]);
+    if (selectedScanId) { loadScanDetails(selectedScanId); loadData(); }
+  }, [selectedScanId, selectedHotelId, loadScanDetails, loadData]);
 
-  React.useEffect(() => {
-    if (selectedScanId !== null) {
-      loadScanDetails(selectedScanId);
-      loadComparisonData(selectedScanId, selectedHotelId, 1);
-    }
-  }, [selectedScanId, selectedHotelId, loadScanDetails, loadComparisonData]);
+  // ── derived data ──────────────────────────────────────────────────────────
 
   const filteredHotels = React.useMemo(() => {
-    if (!hotelSearchTerm) return hotels;
-    const term = hotelSearchTerm.toLowerCase();
-    return hotels.filter(
-      (h) => h.name.toLowerCase().includes(term) || h.code.toLowerCase().includes(term)
-    );
+    if (!hotelSearchTerm.trim()) return hotels;
+    const t = hotelSearchTerm.toLowerCase();
+    return hotels.filter(h => h.name.toLowerCase().includes(t) || h.code.toLowerCase().includes(t));
   }, [hotels, hotelSearchTerm]);
 
-  const handlePageChange = (newPage: number) => {
-    if (selectedScanId !== null && newPage > 0 && newPage <= pagination.totalPages) {
-      loadComparisonData(selectedScanId, selectedHotelId, newPage);
-    }
-  };
+  const filteredRows = React.useMemo(
+    () => allRows.filter(r => matchesStatusFilter(r, statusFilter)),
+    [allRows, statusFilter]
+  );
 
-  // Calculate summary statistics
+  const groupedByHotel = React.useMemo(() => {
+    const map = new Map<number, RateRow[]>();
+    for (const row of filteredRows) {
+      const arr = map.get(row.hotel_id) ?? [];
+      arr.push(row);
+      map.set(row.hotel_id, arr);
+    }
+    // sort each hotel's rows
+    for (const [id, rows] of map) map.set(id, sortRows(rows, sort.key, sort.dir));
+    return map;
+  }, [filteredRows, sort]);
+
   const summary = React.useMemo(() => {
-    const stats = {
-      totalComparisons: comparisonData.length,
-      bothAvailable: 0,
-      amelloOnly: 0,
-      bookingOnly: 0,
-      amelloCheaper: 0,
-      bookingCheaper: 0,
-      samePrice: 0,
-      avgAmello: null as string | null,
-      avgBooking: null as string | null,
+    let amelloOnly = 0, bookingOnly = 0, both = 0, amelloCheaper = 0, bookingCheaper = 0, same = 0;
+    let amelloSum = 0, amelloCount = 0, bookingSum = 0, bookingCount = 0, currency = 'EUR';
+    for (const r of filteredRows) {
+      const a = r.amello_min_price, b = r.booking_min_price;
+      if (a != null && b != null) {
+        both++;
+        const pct = b !== 0 ? ((a - b) / b) * 100 : 0;
+        if (pct > 0) bookingCheaper++; else if (pct < 0) amelloCheaper++; else same++;
+      } else if (a != null) { amelloOnly++; }
+      else if (b != null)   { bookingOnly++; }
+      if (a != null) { amelloSum += a; amelloCount++; if (r.amello_currency) currency = r.amello_currency; }
+      if (b != null) { bookingSum += b; bookingCount++; if (r.booking_currency) currency = r.booking_currency; }
+    }
+    return {
+      total: filteredRows.length, both, amelloOnly, bookingOnly,
+      amelloCheaper, bookingCheaper, same,
+      avgAmello:  amelloCount  > 0 ? formatPrice(amelloSum  / amelloCount,  currency) : null,
+      avgBooking: bookingCount > 0 ? formatPrice(bookingSum / bookingCount, currency) : null,
     };
+  }, [filteredRows]);
 
-    let amelloSum = 0;
-    let amelloCount = 0;
-    let bookingSum = 0;
-    let bookingCount = 0;
-    let currency = 'EUR';
-
-    for (const row of comparisonData) {
-      if (row.amello_min_price !== null && row.booking_min_price !== null) {
-        stats.bothAvailable++;
-        if (row.price_difference! > 0.01) {
-          stats.bookingCheaper++;
-        } else if (row.price_difference! < -0.01) {
-          stats.amelloCheaper++;
-        } else {
-          stats.samePrice++;
-        }
-      } else if (row.amello_min_price !== null) {
-        stats.amelloOnly++;
-      } else if (row.booking_min_price !== null) {
-        stats.bookingOnly++;
-      }
-
-      if (row.amello_min_price !== null) {
-        amelloSum += row.amello_min_price;
-        amelloCount++;
-        if (row.amello_currency) currency = row.amello_currency;
-      }
-      if (row.booking_min_price !== null) {
-        bookingSum += row.booking_min_price;
-        bookingCount++;
-        if (row.booking_currency) currency = row.booking_currency;
-      }
-    }
-
-    if (amelloCount > 0) {
-      stats.avgAmello = formatPrice(amelloSum / amelloCount, currency);
-    }
-    if (bookingCount > 0) {
-      stats.avgBooking = formatPrice(bookingSum / bookingCount, currency);
-    }
-
-    return stats;
-  }, [comparisonData]);
+  // ── render ────────────────────────────────────────────────────────────────
 
   return (
     <main>
-      <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h1 className="h3 mb-0">Rate Comparison</h1>
-      </div>
+      <div style={{ maxWidth: '90%', margin: '0 auto' }}>
 
-      <div className="d-flex gap-3 mb-3 flex-wrap">
-        <select
-          className="form-select"
-          style={{ minWidth: 300 }}
-          value={selectedScanId ?? ''}
-          onChange={(e) => {
-            const val = e.target.value;
-            setSelectedScanId(val ? Number(val) : null);
-          }}
-        >
-          <option value="">All Scans</option>
-          {scans.map((s) => (
-            <option key={s.id} value={s.id}>
-              #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status}
-            </option>
-          ))}
-        </select>
-
-        <input
-          type="text"
-          className="form-control"
-          style={{ maxWidth: 200 }}
-          placeholder="Search hotels..."
-          value={hotelSearchTerm}
-          onChange={(e) => setHotelSearchTerm(e.target.value)}
-        />
-
-        <select
-          className="form-select"
-          style={{ maxWidth: 300 }}
-          value={selectedHotelId ?? ''}
-          onChange={(e) => {
-            const val = e.target.value;
-            setSelectedHotelId(val ? Number(val) : null);
-          }}
-        >
-          <option value="">All Hotels</option>
-          {filteredHotels.map((h) => (
-            <option key={h.id} value={h.id}>
-              {getHotelDisplay(h.name, h.code)}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {scanDetails && (
-        <div className="card mb-3">
-          <div className="card-header">Scan Parameters</div>
-          <div className="card-body small row g-2">
-            <div className="col-md-4"><strong>Scan ID:</strong> {scanDetails.scanId}</div>
-            <div className="col-md-4"><strong>Scanned at:</strong> {fmtDateTime(scanDetails.scannedAt)}</div>
-            <div className="col-md-4"><strong>Timezone:</strong> {scanDetails.timezone}</div>
-            <div className="col-md-4"><strong>Base check-in:</strong> {scanDetails.baseCheckIn ? fmtDate(scanDetails.baseCheckIn) : '—'}</div>
-            <div className="col-md-4"><strong>Days scanned:</strong> {scanDetails.days ?? '—'}</div>
-            <div className="col-md-4"><strong>Stay nights:</strong> {scanDetails.stayNights ?? '—'}</div>
-          </div>
+        <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+          <h1 className="h3 mb-0">Best Available Rate</h1>
         </div>
-      )}
 
-      {/* Summary Statistics */}
-      {comparisonData.length > 0 && (
-        <div className="card mb-3">
-          <div className="card-header">
-            <h5 className="mb-0">Summary Statistics</h5>
+        {/* ── controls ── */}
+        <div className="d-flex gap-3 mb-3 flex-wrap">
+          <select
+            className="form-select"
+            style={{ minWidth: 300 }}
+            value={selectedScanId ?? ''}
+            onChange={e => setSelectedScanId(e.target.value ? Number(e.target.value) : null)}
+          >
+            {scans.map(s => (
+              <option key={s.id} value={s.id}>
+                #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status}
+              </option>
+            ))}
+          </select>
+
+          <input
+            className="form-control"
+            style={{ maxWidth: 200 }}
+            placeholder="Search hotels..."
+            value={hotelSearchTerm}
+            onChange={e => setHotelSearchTerm(e.target.value)}
+          />
+
+          <select
+            className="form-select"
+            style={{ maxWidth: 300 }}
+            value={selectedHotelId ?? ''}
+            onChange={e => setSelectedHotelId(e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">All Hotels</option>
+            {filteredHotels.map(h => (
+              <option key={h.id} value={h.id}>{h.name} ({h.code})</option>
+            ))}
+          </select>
+
+          <select
+            className="form-select"
+            style={{ maxWidth: 230 }}
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+          >
+            <option value="all">All statuses</option>
+            <option value="amello_only">Amello only</option>
+            <option value="booking_only">Booking only</option>
+            <option value="booking_cheaper_gt5">Booking cheaper &gt;5%</option>
+            <option value="booking_cheaper_lte5">Booking cheaper ≤5%</option>
+            <option value="amello_cheaper">Amello cheaper</option>
+          </select>
+        </div>
+
+        {/* ── scan parameters ── */}
+        {scanDetails && (
+          <div className="card mb-3">
+            <div className="card-header">Scan Parameters</div>
+            <div className="card-body small row g-2">
+              <div className="col-md-4"><strong>Scan ID:</strong> {scanDetails.scanId}</div>
+              <div className="col-md-4"><strong>Scanned at:</strong> {fmtDateTime(scanDetails.scannedAt)}</div>
+              <div className="col-md-4"><strong>Timezone:</strong> {scanDetails.timezone}</div>
+              <div className="col-md-4"><strong>Base check-in:</strong> {scanDetails.baseCheckIn ? fmtDate(scanDetails.baseCheckIn) : '—'}</div>
+              <div className="col-md-4"><strong>Days scanned:</strong> {scanDetails.days ?? '—'}</div>
+              <div className="col-md-4"><strong>Stay nights:</strong> {scanDetails.stayNights ?? '—'}</div>
+            </div>
           </div>
-          <div className="card-body">
-            <div className="row">
-              <div className="col-md-3">
-                <strong>Total Comparisons:</strong> {summary.totalComparisons}
+        )}
+
+        {/* ── summary ── */}
+        {filteredRows.length > 0 && (
+          <div className="card mb-3">
+            <div className="card-header"><h6 className="mb-0">Summary</h6></div>
+            <div className="card-body small">
+              <div className="row g-2">
+                <div className="col-md-3"><strong>Total rows:</strong> {summary.total}</div>
+                <div className="col-md-3"><strong>Both available:</strong> {summary.both}</div>
+                <div className="col-md-3"><strong>Amello only:</strong> {summary.amelloOnly}</div>
+                <div className="col-md-3"><strong>Booking only:</strong> {summary.bookingOnly}</div>
               </div>
-              <div className="col-md-3">
-                <strong>Both Available:</strong> {summary.bothAvailable}
-              </div>
-              <div className="col-md-3">
-                <strong>Amello Only:</strong> {summary.amelloOnly}
-              </div>
-              <div className="col-md-3">
-                <strong>Booking Only:</strong> {summary.bookingOnly}
-              </div>
-            </div>
-            <div className="row mt-3">
-              <div className="col-md-4">
-                <strong className="text-success">Amello Cheaper:</strong> {summary.amelloCheaper} times
-              </div>
-              <div className="col-md-4">
-                <strong className="text-danger">Booking Cheaper:</strong> {summary.bookingCheaper} times
-              </div>
-              <div className="col-md-4">
-                <strong>Same Price:</strong> {summary.samePrice} times
-              </div>
-            </div>
-            {summary.avgAmello && summary.avgBooking && (
-              <div className="row mt-3">
-                <div className="col-md-6">
-                  <strong>Average Amello Price:</strong> {summary.avgAmello}
-                </div>
-                <div className="col-md-6">
-                  <strong>Average Booking Price:</strong> {summary.avgBooking}
+              <div className="row g-2 mt-1">
+                <div className="col-md-3 text-success"><strong>Amello cheaper:</strong> {summary.amelloCheaper}</div>
+                <div className="col-md-3 text-danger"><strong>Booking cheaper:</strong> {summary.bookingCheaper}</div>
+                <div className="col-md-3"><strong>Same price:</strong> {summary.same}</div>
+                <div className="col-md-3">
+                  {summary.avgAmello && <span><strong>Avg Amello:</strong> {summary.avgAmello}</span>}
+                  {summary.avgBooking && <span className="ms-2"><strong>Avg Booking:</strong> {summary.avgBooking}</span>}
                 </div>
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Error Display */}
-      {error && <div className="alert alert-danger">{error}</div>}
+        {error && <div className="alert alert-danger">{error}</div>}
 
-      {/* Loading Indicator */}
-      {loading && (
-        <div className="text-center my-4">
-          <div className="spinner-border text-primary" role="status"></div>
-          <div className="mt-2 text-muted">Loading…</div>
-        </div>
-      )}
-
-      {/* Pagination Controls */}
-      {!loading && pagination.totalPages > 1 && (
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            Showing page {pagination.page} of {pagination.totalPages} ({pagination.total} total records)
+        {loading && (
+          <div className="text-center my-4">
+            <div className="spinner-border text-primary" role="status" />
+            <div className="mt-2 text-muted">Loading…</div>
           </div>
-          <div className="btn-group">
-            <button
-              className="btn btn-outline-primary"
-              disabled={pagination.page <= 1}
-              onClick={() => handlePageChange(pagination.page - 1)}
-            >
-              Previous
-            </button>
-            <button className="btn btn-outline-primary" disabled>
-              {pagination.page} / {pagination.totalPages}
-            </button>
-            <button
-              className="btn btn-outline-primary"
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => handlePageChange(pagination.page + 1)}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Comparison Table */}
-      {!loading && comparisonData.length > 0 ? (
-        <div className="table-responsive border rounded">
-          <table className="table table-sm table-striped mb-0">
-            <thead className="table-light">
-              <tr>
-                <th rowSpan={2}>Hotel</th>
-                <th rowSpan={2}>Check-in Date</th>
-                <th colSpan={3} className="text-center">
-                  Amello
-                </th>
-                <th colSpan={3} className="text-center">
-                  Booking.com
-                </th>
-                <th colSpan={2} className="text-center">
-                  Comparison
-                </th>
-              </tr>
-              <tr>
-                <th className="text-end">Price</th>
-                <th>Room</th>
-                <th>Rate</th>
-                <th className="text-end">Price</th>
-                <th>Room</th>
-                <th>Rate</th>
-                <th className="text-end">Difference</th>
-                <th className="text-end">% Diff</th>
-              </tr>
-            </thead>
-            <tbody>
-              {comparisonData.map((row, idx) => {
-                const currency = row.amello_currency || row.booking_currency || 'EUR';
-                const priceDiffClass =
-                  row.price_difference === null
-                    ? 'text-muted'
-                    : row.price_difference > 0
-                      ? 'text-danger'
-                      : row.price_difference < 0
-                        ? 'text-success'
-                        : 'text-muted';
-                
-                return (
-                  <tr key={idx}>
-                    <td>{row.hotel_name}</td>
-                    <td>{fmtDate(row.check_in_date)}</td>
-                    
-                    {/* Amello columns */}
-                    <td className="text-end">
-                      {row.amello_min_price !== null 
-                        ? formatPrice(row.amello_min_price, currency) 
-                        : <span className="text-muted">—</span>}
-                    </td>
-                    <td className="small">
-                      {row.amello_room_name || <span className="text-muted">—</span>}
-                    </td>
-                    <td className="small">
-                      {row.amello_rate_name || <span className="text-muted">—</span>}
-                    </td>
-                    
-                    {/* Booking.com columns */}
-                    <td className="text-end">
-                      {row.booking_min_price !== null 
-                        ? formatPrice(row.booking_min_price, currency) 
-                        : <span className="text-muted">—</span>}
-                    </td>
-                    <td className="small">
-                      {row.booking_room_name || <span className="text-muted">—</span>}
-                    </td>
-                    <td className="small">
-                      {row.booking_rate_name || <span className="text-muted">—</span>}
-                    </td>
-                    
-                    {/* Comparison columns */}
-                    <td className={`text-end fw-bold ${priceDiffClass}`}>
-                      {row.price_difference !== null 
-                        ? (row.price_difference > 0 ? '+' : '') + formatPrice(row.price_difference, currency)
-                        : <span className="text-muted">—</span>}
-                    </td>
-                    <td className={`text-end fw-bold ${priceDiffClass}`}>
-                      {row.percentage_difference !== null 
-                        ? (row.percentage_difference > 0 ? '+' : '') + row.percentage_difference.toFixed(1) + '%'
-                        : <span className="text-muted">—</span>}
-                    </td>
+        {/* ── tables grouped by hotel ── */}
+        {Array.from(groupedByHotel.entries()).map(([hotelId, rows]) => (
+          <div key={hotelId} className="mb-5">
+            <h4 className="mb-2">{rows[0].hotel_name}</h4>
+
+            <div className="table-responsive border rounded">
+              <table className="table table-sm table-striped mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <SortTh label="Check-In"   col="check_in_date"       sort={sort} onSort={handleSort} />
+                    <th>Amello Room</th>
+                    <th>Amello Rate</th>
+                    <SortTh label="Amello Price"   col="amello_min_price"    sort={sort} onSort={handleSort} className="text-end" />
+                    <th>Booking Room</th>
+                    <th>Booking Rate</th>
+                    <SortTh label="Booking Price"  col="booking_min_price"   sort={sort} onSort={handleSort} className="text-end" />
+                    <SortTh label="Diff (A−B)"     col="price_difference"    sort={sort} onSort={handleSort} className="text-end" />
+                    <SortTh label="% Diff"         col="percentage_difference" sort={sort} onSort={handleSort} className="text-end" />
+                    <th>Status</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : !loading ? (
-        <div className="alert alert-info">
-          No comparison data available. Please select a scan to view results.
-        </div>
-      ) : null}
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => {
+                    const a = r.amello_min_price;
+                    const b = r.booking_min_price;
+                    const currency = r.amello_currency || r.booking_currency || 'EUR';
+                    const { label, className: pillCls, style: pillStyle } = pillProps(a, b);
+                    const diffCls = r.price_difference == null ? 'text-muted'
+                      : r.price_difference > 0 ? 'text-danger'
+                      : r.price_difference < 0 ? 'text-success'
+                      : 'text-muted';
 
-      {/* Bottom Pagination Controls */}
-      {!loading && pagination.totalPages > 1 && (
-        <div className="d-flex justify-content-between align-items-center mt-3">
-          <div>
-            Showing page {pagination.page} of {pagination.totalPages}
+                    return (
+                      <tr key={i} className={rowBgClass(a, b)}>
+                        <td className="text-nowrap">{fmtDate(r.check_in_date)}</td>
+                        <td className="small">{r.amello_room_name  || <span className="text-muted">—</span>}</td>
+                        <td className="small">{r.amello_rate_name  || <span className="text-muted">—</span>}</td>
+                        <td className="text-end text-nowrap">
+                          {a != null ? formatPrice(a, currency) : <span className="text-muted">—</span>}
+                        </td>
+                        <td className="small">{r.booking_room_name || <span className="text-muted">—</span>}</td>
+                        <td className="small">{r.booking_rate_name || <span className="text-muted">—</span>}</td>
+                        <td className="text-end text-nowrap">
+                          {b != null ? formatPrice(b, currency) : <span className="text-muted">—</span>}
+                        </td>
+                        <td className={`text-end fw-bold ${diffCls}`}>
+                          {r.price_difference != null
+                            ? (r.price_difference > 0 ? '+' : '') + formatPrice(r.price_difference, currency)
+                            : <span className="text-muted">—</span>}
+                        </td>
+                        <td className={`text-end fw-bold ${diffCls}`}>
+                          {r.percentage_difference != null
+                            ? (r.percentage_difference > 0 ? '+' : '') + r.percentage_difference.toFixed(1) + '%'
+                            : <span className="text-muted">—</span>}
+                        </td>
+                        <td>
+                          <span className={pillCls} style={pillStyle}>{label}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="btn-group">
-            <button
-              className="btn btn-outline-primary"
-              disabled={pagination.page <= 1}
-              onClick={() => handlePageChange(pagination.page - 1)}
-            >
-              Previous
-            </button>
-            <button className="btn btn-outline-primary" disabled>
-              {pagination.page} / {pagination.totalPages}
-            </button>
-            <button
-              className="btn btn-outline-primary"
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => handlePageChange(pagination.page + 1)}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
+        ))}
+
+        {!loading && groupedByHotel.size === 0 && !error && (
+          <p className="text-muted">No results found for this scan.</p>
+        )}
+      </div>
     </main>
   );
 }
