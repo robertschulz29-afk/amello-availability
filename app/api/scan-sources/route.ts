@@ -40,9 +40,6 @@ export async function GET() {
 }
 
 
-
-
-
 /**
  * POST /api/scan-sources
  * Create or update a scan source

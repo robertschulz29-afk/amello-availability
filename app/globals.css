@@ -1,3 +1,9 @@
+/* Bootstrap table-pink: mirrors Bootstrap's table-danger pattern */
+.table-pink > td, .table-pink > th, tr.table-pink > td, tr.table-pink > th {
+  background-color: #f9d0e3;
+  color: #6b1535;
+}
+
 .alert-red{background-color: red; width: 100% ; height:1rem;}
 .alert-yellow{background-color: rgb(255, 193, 7); width: 100% ; height:1rem;}
 .alert-green{background-color: green; width: 100% ; height:1rem;}

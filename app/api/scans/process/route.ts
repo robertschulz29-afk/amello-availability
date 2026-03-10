@@ -92,6 +92,21 @@ export async function POST(req: NextRequest) {
       if (curDone >= total) {
         await sql`UPDATE scans SET status = 'done' WHERE id = ${scanId}`;
         console.log(`[process] Scan ${scanId} marked as done`);
+
+        // Sync room names from this scan into hotel_room_names.
+        // Scoped to this scan_id only — fast regardless of total scan history.
+        await sql`
+          INSERT INTO hotel_room_names (hotel_id, source, room_name, last_seen_at)
+          SELECT DISTINCT sr.hotel_id, sr.source, elem->>'name', NOW()
+          FROM scan_results sr,
+               jsonb_array_elements(sr.response_json->'rooms') AS elem
+          WHERE sr.scan_id = ${scanId}
+            AND sr.status  = 'green'
+            AND elem->>'name' IS NOT NULL
+          ON CONFLICT (hotel_id, source, room_name)
+            DO UPDATE SET last_seen_at = NOW()
+        `;
+        console.log(`[process] Scan ${scanId} room names synced`);
       }
     }
 

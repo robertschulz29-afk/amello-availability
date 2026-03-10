@@ -1,10 +1,10 @@
 // lib/scrapers/BaseScraper.ts
 // Base class for web scraping with bot detection prevention
 
-import { getRandomUserAgent, getNextUserAgent } from './utils/user-agents';
+import { getRandomUserAgent } from './utils/user-agents';
 import { RateLimiter, randomSleep } from './utils/delays';
-import { parseHTML, extractText, extractMultiple } from './utils/html-parser';
-import { retry, isRetryableError } from './utils/retry';
+import { extractMultiple } from './utils/html-parser';
+import { retry } from './utils/retry';
 import type {
   ScanSource,
   ScrapeRequest,
