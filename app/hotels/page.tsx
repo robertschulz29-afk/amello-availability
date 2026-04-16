@@ -3,6 +3,13 @@
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
 
+type GlobalType = {
+  global_type: string;
+  type_description: string | null;
+  type_category: string | null;
+  global_type_category: string | null;
+};
+
 type Hotel = {
   id: number;
   name: string;
@@ -16,6 +23,7 @@ type Hotel = {
   bookable?: boolean | null;
   active?: boolean | null;
   base_image?: string | null;
+  globalTypes?: string[] | null;
 };
 
 type SortField = 'name' | 'brand' | 'region';
@@ -42,6 +50,9 @@ export default function Page() {
   const [syncBusy, setSyncBusy] = React.useState(false);
   const [syncWarnings, setSyncWarnings] = React.useState<string[]>([]);
 
+  const [globalTypeOptions, setGlobalTypeOptions] = React.useState<GlobalType[]>([]);
+  const [selectedGlobalTypes, setSelectedGlobalTypes] = React.useState<Set<string>>(new Set());
+
   const [filterActive,   setFilterActive]   = React.useState<FilterBool>('all');
   const [filterBookable, setFilterBookable] = React.useState<FilterBool>('all');
   const [sortField, setSortField] = React.useState<SortField>('name');
@@ -59,6 +70,18 @@ export default function Page() {
   const [editBusy, setEditBusy] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
 
+  const [globalTypesHotel, setGlobalTypesHotel] = React.useState<Hotel | null>(null);
+  const [globalTypeFilterOpen, setGlobalTypeFilterOpen] = React.useState(false);
+  const [copiedCodes, setCopiedCodes] = React.useState(false);
+
+  const copyHotelCodes = () => {
+    const codes = visibleHotels.map(h => h.code).join(', ');
+    navigator.clipboard.writeText(codes).then(() => {
+      setCopiedCodes(true);
+      setTimeout(() => setCopiedCodes(false), 2000);
+    });
+  };
+
   const [deleteHotel, setDeleteHotel] = React.useState<Hotel | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
@@ -75,10 +98,36 @@ export default function Page() {
   React.useEffect(() => { loadHotels(); }, [loadHotels]);
 
   React.useEffect(() => {
+    fetchJSON('/api/global_types', { cache: 'no-store' } as RequestInit)
+      .then((data: GlobalType[]) => {
+        if (!Array.isArray(data)) { setGlobalTypeOptions([]); return; }
+        // Deduplicate by global_type code — merge descriptions if multiple rows share the same code
+        const map = new Map<string, GlobalType>();
+        for (const gt of data) {
+          const existing = map.get(gt.global_type);
+          if (existing) {
+            const descs = [existing.type_description, gt.type_description].filter(Boolean);
+            map.set(gt.global_type, { ...existing, type_description: descs.join(' / ') || null });
+          } else {
+            map.set(gt.global_type, gt);
+          }
+        }
+        setGlobalTypeOptions([...map.values()]);
+      })
+      .catch(() => {});
+  }, []);
+
+  React.useEffect(() => {
     if (!successMsg) return;
     const t = setTimeout(() => setSuccessMsg(null), SUCCESS_MESSAGE_TIMEOUT_MS);
     return () => clearTimeout(t);
   }, [successMsg]);
+
+  const parseGlobalTypes = (raw: string[] | string | null | undefined): string[] => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
+  };
 
   const visibleHotels = React.useMemo(() => {
     let list = [...hotels];
@@ -90,6 +139,12 @@ export default function Page() {
       const want = filterBookable === 'true';
       list = list.filter(h => h.bookable === want);
     }
+    if (selectedGlobalTypes.size > 0) {
+      list = list.filter(h => {
+        const types = parseGlobalTypes(h.globalTypes as any);
+        return [...selectedGlobalTypes].every(sel => types.includes(sel));
+      });
+    }
     list.sort((a, b) => {
       const av = (a[sortField] ?? '').toLowerCase();
       const bv = (b[sortField] ?? '').toLowerCase();
@@ -98,7 +153,7 @@ export default function Page() {
       return 0;
     });
     return list;
-  }, [hotels, filterActive, filterBookable, sortField, sortDir]);
+  }, [hotels, filterActive, filterBookable, selectedGlobalTypes, sortField, sortDir]);
 
   const activeCount       = hotels.filter(h => h.active === true).length;
   const inactiveCount     = hotels.filter(h => h.active === false).length;
@@ -297,6 +352,92 @@ export default function Page() {
           </div>
         </div>
 
+        {/* ── Global Types Filter ──────────────────────────────────────── */}
+        {globalTypeOptions.length > 0 && (() => {
+          const categories = [...new Set(globalTypeOptions.map(gt => gt.global_type_category ?? ''))].sort();
+          const codes = visibleHotels.length > 0 ? visibleHotels.map(h => h.code).join(', ') : '—';
+          return (
+            <div className="card mb-3">
+              <div
+                className="card-header d-flex align-items-center justify-content-between py-2"
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+                onClick={() => setGlobalTypeFilterOpen(o => !o)}
+              >
+                <span className="fw-semibold small">
+                  Filter by Global Type
+                  {selectedGlobalTypes.size > 0 && (
+                    <>
+                      <span className="badge bg-primary ms-2">{selectedGlobalTypes.size}</span>
+                      <button
+                        className="btn btn-link btn-sm p-0 ms-2 text-decoration-none text-danger"
+                        style={{ fontSize: '0.75rem' }}
+                        onClick={e => { e.stopPropagation(); setSelectedGlobalTypes(new Set()); }}
+                      >
+                        Clear
+                      </button>
+                    </>
+                  )}
+                </span>
+                <i className={`fas fa-chevron-${globalTypeFilterOpen ? 'up' : 'down'} small text-muted`} />
+              </div>
+
+              {globalTypeFilterOpen && (
+                <div className="card-body py-3">
+                  <div className="d-flex flex-wrap gap-4 mb-3">
+                    {categories.map(cat => (
+                      <div key={cat || '_'}>
+                        <div className="fw-semibold small text-muted mb-1">{cat || 'Uncategorized'}</div>
+                        <div className="d-flex flex-wrap gap-1">
+                          {globalTypeOptions.filter(gt => (gt.global_type_category ?? '') === cat).map(gt => {
+                            const active = selectedGlobalTypes.has(gt.global_type);
+                            return (
+                              <button
+                                key={gt.global_type}
+                                type="button"
+                                className={`btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}`}
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setSelectedGlobalTypes(prev => {
+                                    const next = new Set(prev);
+                                    next.has(gt.global_type) ? next.delete(gt.global_type) : next.add(gt.global_type);
+                                    return next;
+                                  });
+                                }}
+                                title={gt.global_type}
+                              >
+                                {gt.type_description || gt.global_type}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {selectedGlobalTypes.size > 0 && (
+                    <div className="border-top pt-3 mt-1">
+                      <div className="d-flex align-items-start gap-2">
+                        <div className="flex-grow-1">
+                          <span className="small fw-semibold me-2">Hotel codes ({visibleHotels.length}):</span>
+                          <span className="small text-muted font-monospace">{codes}</span>
+                        </div>
+                        <button
+                          className="btn btn-sm btn-outline-secondary flex-shrink-0"
+                          onClick={e => { e.stopPropagation(); copyHotelCodes(); }}
+                          disabled={visibleHotels.length === 0}
+                        >
+                          <i className={`fas fa-${copiedCodes ? 'check' : 'copy'} me-1`} />
+                          {copiedCodes ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* ── Stats ────────────────────────────────────────────────────── */}
         <p className="small text-muted mb-3">
           <strong>Total:</strong> {hotels.length} &nbsp;|&nbsp;
@@ -368,6 +509,17 @@ export default function Page() {
                       </tr>
                       <tr><td><strong>Bookable:</strong></td><td>{h.bookable == null ? 'N/A' : h.bookable ? 'Yes' : 'No'}</td></tr>
                       <tr><td><strong>Active:</strong></td><td>{h.active == null ? 'N/A' : h.active ? 'Yes' : 'No'}</td></tr>
+                      <tr>
+                        <td><strong>Global Types:</strong></td>
+                        <td>
+                          <button
+                            className="btn btn-link btn-sm p-0 text-decoration-none"
+                            onClick={() => setGlobalTypesHotel(h)}
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -476,6 +628,45 @@ export default function Page() {
             </div>
           </div>
         )}
+
+        {/* ── Global Types Modal ──────────────────────────────────────────── */}
+        {globalTypesHotel && (() => {
+          const types = Array.isArray(globalTypesHotel.globalTypes)
+            ? globalTypesHotel.globalTypes
+            : typeof globalTypesHotel.globalTypes === 'string'
+              ? (() => { try { return JSON.parse(globalTypesHotel.globalTypes as string); } catch { return []; } })()
+              : [];
+          return (
+            <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={e => { if (e.target === e.currentTarget) setGlobalTypesHotel(null); }}>
+              <div className="modal-dialog modal-dialog-centered">
+                <div className="modal-content">
+                  <div className="modal-header">
+                    <h5 className="modal-title">
+                      Global Types — {globalTypesHotel.name}&nbsp;
+                      <code className="fs-6 text-muted">{globalTypesHotel.code}</code>
+                    </h5>
+                    <button type="button" className="btn-close" onClick={() => setGlobalTypesHotel(null)}></button>
+                  </div>
+                  <div className="modal-body">
+                    {types.length > 0
+                      ? <ul className="mb-0">{types.map((t: string, i: number) => {
+                          const meta = globalTypeOptions.find(g => g.globalType === t);
+                          const label = meta
+                            ? meta.type_description || t
+                            : t;
+                          return <li key={i}>{label}</li>;
+                        })}</ul>
+                      : <p className="text-muted mb-0">No global types available.</p>
+                    }
+                  </div>
+                  <div className="modal-footer">
+                    <button type="button" className="btn btn-secondary" onClick={() => setGlobalTypesHotel(null)}>Close</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       </div>
     </main>

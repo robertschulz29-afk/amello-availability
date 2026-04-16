@@ -14,7 +14,7 @@ type ScanRow = {
   status: 'queued' | 'running' | 'done' | 'error';
 };
 
-type HotelRow = { id: number; name: string; code: string };
+type HotelRow = { id: number; name: string; code: string; brand?: string; country?: string; region?: string };
 
 type RateRow = {
   scan_id: number;
@@ -146,6 +146,11 @@ export default function Page() {
   // ── sort & filter state ──────────────────────────────────────────────────
   const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir }>({ key: 'check_in_date', dir: 'asc' });
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
+  const [groupBy, setGroupBy] = React.useState<'none' | 'brand' | 'country' | 'region'>('none');
+  const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(new Set());
+
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   const handleSort = (key: SortKey) =>
     setSort(prev => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
@@ -212,6 +217,10 @@ export default function Page() {
 
   // ── derived data ──────────────────────────────────────────────────────────
 
+  const hotelMeta = React.useMemo(() =>
+    new Map(hotels.map(h => [h.id, h])),
+  [hotels]);
+
   const filteredHotels = React.useMemo(() => {
     if (!hotelSearchTerm.trim()) return hotels;
     const t = hotelSearchTerm.toLowerCase();
@@ -234,6 +243,20 @@ export default function Page() {
     for (const [id, rows] of map) map.set(id, sortRows(rows, sort.key, sort.dir));
     return map;
   }, [filteredRows, sort]);
+
+  // outer grouping by brand / country / region
+  const groupedByDimension = React.useMemo(() => {
+    if (groupBy === 'none') return null;
+    const outer = new Map<string, number[]>(); // groupLabel → hotelIds
+    for (const [hotelId] of groupedByHotel) {
+      const meta = hotelMeta.get(hotelId);
+      const label = (meta?.[groupBy] ?? '') || '—';
+      const arr = outer.get(label) ?? [];
+      arr.push(hotelId);
+      outer.set(label, arr);
+    }
+    return new Map([...outer.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+  }, [groupBy, groupedByHotel, hotelMeta]);
 
   const summary = React.useMemo(() => {
     let amelloOnly = 0, bookingOnly = 0, both = 0, amelloCheaper = 0, bookingCheaper = 0, same = 0;
@@ -258,6 +281,57 @@ export default function Page() {
   }, [filteredRows]);
 
   // ── render ────────────────────────────────────────────────────────────────
+
+  const hotelTable = (rows: RateRow[]) => (
+    <div className="table-responsive border rounded">
+      <table className="table table-sm table-striped mb-0">
+        <thead className="table-light">
+          <tr>
+            <SortTh label="Check-In"   col="check_in_date"         sort={sort} onSort={handleSort} />
+            <th>Amello Room</th>
+            <th>Amello Rate</th>
+            <SortTh label="Amello Price"    col="amello_min_price"    sort={sort} onSort={handleSort} className="text-end" />
+            <th>Booking Room</th>
+            <th>Booking Rate</th>
+            <SortTh label="Booking Price"   col="booking_min_price"   sort={sort} onSort={handleSort} className="text-end" />
+            <SortTh label="Diff (A−B)"      col="price_difference"    sort={sort} onSort={handleSort} className="text-end" />
+            <SortTh label="% Diff"          col="percentage_difference" sort={sort} onSort={handleSort} className="text-end" />
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            const a = r.amello_min_price;
+            const b = r.booking_min_price;
+            const currency = r.amello_currency || r.booking_currency || 'EUR';
+            const { label, className: pillCls, style: pillStyle } = pillProps(a, b);
+            const diffCls = r.price_difference == null ? 'text-muted'
+              : r.price_difference > 0 ? 'text-danger'
+              : r.price_difference < 0 ? 'text-success'
+              : 'text-muted';
+            return (
+              <tr key={i} className={rowBgClass(a, b)}>
+                <td className="text-nowrap">{fmtDate(r.check_in_date)}</td>
+                <td className="small">{r.amello_room_name  || <span className="text-muted">—</span>}</td>
+                <td className="small">{r.amello_rate_name  || <span className="text-muted">—</span>}</td>
+                <td className="text-end text-nowrap">{a != null ? formatPrice(a, currency) : <span className="text-muted">—</span>}</td>
+                <td className="small">{r.booking_room_name || <span className="text-muted">—</span>}</td>
+                <td className="small">{r.booking_rate_name || <span className="text-muted">—</span>}</td>
+                <td className="text-end text-nowrap">{b != null ? formatPrice(b, currency) : <span className="text-muted">—</span>}</td>
+                <td className={`text-end fw-bold ${diffCls}`}>
+                  {r.price_difference != null ? (r.price_difference > 0 ? '+' : '') + formatPrice(r.price_difference, currency) : <span className="text-muted">—</span>}
+                </td>
+                <td className={`text-end fw-bold ${diffCls}`}>
+                  {r.percentage_difference != null ? (r.percentage_difference > 0 ? '+' : '') + r.percentage_difference.toFixed(1) + '%' : <span className="text-muted">—</span>}
+                </td>
+                <td><span className={pillCls} style={pillStyle}>{label}</span></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <main>
@@ -315,6 +389,13 @@ export default function Page() {
             <option value="booking_cheaper_lte5">Booking cheaper ≤5%</option>
             <option value="amello_cheaper">Amello cheaper</option>
           </select>
+
+          <select className="form-select" style={{ maxWidth: 180 }} value={groupBy} onChange={e => { setGroupBy(e.target.value as typeof groupBy); setCollapsedGroups(new Set()); }}>
+            <option value="none">No grouping</option>
+            <option value="brand">Group by Brand</option>
+            <option value="country">Group by Country</option>
+            <option value="region">Group by Region</option>
+          </select>
         </div>
 
         {/* ── scan parameters ── */}
@@ -365,72 +446,35 @@ export default function Page() {
           </div>
         )}
 
-        {/* ── tables grouped by hotel ── */}
-        {Array.from(groupedByHotel.entries()).map(([hotelId, rows]) => (
-          <div key={hotelId} className="mb-5">
-            <h4 className="mb-2">{rows[0].hotel_name}</h4>
-
-            <div className="table-responsive border rounded">
-              <table className="table table-sm table-striped mb-0">
-                <thead className="table-light">
-                  <tr>
-                    <SortTh label="Check-In"   col="check_in_date"       sort={sort} onSort={handleSort} />
-                    <th>Amello Room</th>
-                    <th>Amello Rate</th>
-                    <SortTh label="Amello Price"   col="amello_min_price"    sort={sort} onSort={handleSort} className="text-end" />
-                    <th>Booking Room</th>
-                    <th>Booking Rate</th>
-                    <SortTh label="Booking Price"  col="booking_min_price"   sort={sort} onSort={handleSort} className="text-end" />
-                    <SortTh label="Diff (A−B)"     col="price_difference"    sort={sort} onSort={handleSort} className="text-end" />
-                    <SortTh label="% Diff"         col="percentage_difference" sort={sort} onSort={handleSort} className="text-end" />
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, i) => {
-                    const a = r.amello_min_price;
-                    const b = r.booking_min_price;
-                    const currency = r.amello_currency || r.booking_currency || 'EUR';
-                    const { label, className: pillCls, style: pillStyle } = pillProps(a, b);
-                    const diffCls = r.price_difference == null ? 'text-muted'
-                      : r.price_difference > 0 ? 'text-danger'
-                      : r.price_difference < 0 ? 'text-success'
-                      : 'text-muted';
-
-                    return (
-                      <tr key={i} className={rowBgClass(a, b)}>
-                        <td className="text-nowrap">{fmtDate(r.check_in_date)}</td>
-                        <td className="small">{r.amello_room_name  || <span className="text-muted">—</span>}</td>
-                        <td className="small">{r.amello_rate_name  || <span className="text-muted">—</span>}</td>
-                        <td className="text-end text-nowrap">
-                          {a != null ? formatPrice(a, currency) : <span className="text-muted">—</span>}
-                        </td>
-                        <td className="small">{r.booking_room_name || <span className="text-muted">—</span>}</td>
-                        <td className="small">{r.booking_rate_name || <span className="text-muted">—</span>}</td>
-                        <td className="text-end text-nowrap">
-                          {b != null ? formatPrice(b, currency) : <span className="text-muted">—</span>}
-                        </td>
-                        <td className={`text-end fw-bold ${diffCls}`}>
-                          {r.price_difference != null
-                            ? (r.price_difference > 0 ? '+' : '') + formatPrice(r.price_difference, currency)
-                            : <span className="text-muted">—</span>}
-                        </td>
-                        <td className={`text-end fw-bold ${diffCls}`}>
-                          {r.percentage_difference != null
-                            ? (r.percentage_difference > 0 ? '+' : '') + r.percentage_difference.toFixed(1) + '%'
-                            : <span className="text-muted">—</span>}
-                        </td>
-                        <td>
-                          <span className={pillCls} style={pillStyle}>{label}</span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+        {/* ── tables grouped by hotel (optionally wrapped in dimension groups) ── */}
+        {groupedByDimension
+          ? Array.from(groupedByDimension.entries()).map(([groupLabel, hotelIds]) => (
+            <div key={groupLabel} className="mb-4">
+              <button
+                className="btn btn-light border w-100 text-start fw-semibold d-flex justify-content-between align-items-center mb-2 px-3 py-2"
+                onClick={() => toggleGroup(groupLabel)}
+              >
+                <span>{groupLabel} <span className="text-muted fw-normal small ms-1">({hotelIds.length} hotel{hotelIds.length !== 1 ? 's' : ''})</span></span>
+                <i className={`fas fa-chevron-${collapsedGroups.has(groupLabel) ? 'down' : 'up'} small`} />
+              </button>
+              {!collapsedGroups.has(groupLabel) && hotelIds.map(hotelId => {
+                const rows = groupedByHotel.get(hotelId)!;
+                return (
+                  <div key={hotelId} className="mb-4 ms-3">
+                    <h5 className="mb-2">{rows[0].hotel_name}</h5>
+                    {hotelTable(rows)}
+                  </div>
+                );
+              })}
             </div>
-          </div>
-        ))}
+          ))
+          : Array.from(groupedByHotel.entries()).map(([hotelId, rows]) => (
+            <div key={hotelId} className="mb-5">
+              <h4 className="mb-2">{rows[0].hotel_name}</h4>
+              {hotelTable(rows)}
+            </div>
+          ))
+        }
 
         {!loading && groupedByHotel.size === 0 && !error && (
           <p className="text-muted">No results found for this scan.</p>

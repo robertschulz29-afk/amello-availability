@@ -14,7 +14,7 @@ type ScanRow = {
   status: 'queued' | 'running' | 'done' | 'error';
 };
 
-type HotelRow = { id: number; name: string; code: string };
+type HotelRow = { id: number; name: string; code: string; brand?: string; country?: string; region?: string };
 
 type RoomMapping = {
   id: number;
@@ -279,6 +279,11 @@ export default function Page() {
 
   const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir }>({ key: 'check_in_date', dir: 'asc' });
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
+  const [groupBy, setGroupBy] = React.useState<'none' | 'brand' | 'country' | 'region'>('none');
+  const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(new Set());
+
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   const handleSort = (key: SortKey) =>
     setSort(prev => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
@@ -346,6 +351,10 @@ export default function Page() {
 
   // ── derived ──────────────────────────────────────────────────────────────
 
+  const hotelMeta = React.useMemo(() =>
+    new Map(hotels.map(h => [h.id, h])),
+  [hotels]);
+
   const filteredHotels = React.useMemo(() => {
     if (!hotelSearchTerm.trim()) return hotels;
     const term = hotelSearchTerm.toLowerCase();
@@ -373,6 +382,19 @@ export default function Page() {
     return map;
   }, [filteredRows, sort]);
 
+  const groupedByDimension = React.useMemo(() => {
+    if (groupBy === 'none') return null;
+    const outer = new Map<string, number[]>();
+    for (const [hotelId] of groupedByHotel) {
+      const meta = hotelMeta.get(hotelId);
+      const label = (meta?.[groupBy] ?? '') || '—';
+      const arr = outer.get(label) ?? [];
+      arr.push(hotelId);
+      outer.set(label, arr);
+    }
+    return new Map([...outer.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+  }, [groupBy, groupedByHotel, hotelMeta]);
+
   const summary = React.useMemo(() => {
     let amelloOnly = 0, bookingOnly = 0, both = 0, amelloCheaper = 0, bookingCheaper = 0, same = 0;
     let amelloSum = 0, amelloCount = 0, bookingSum = 0, bookingCount = 0, currency = 'EUR';
@@ -396,6 +418,46 @@ export default function Page() {
   }, [filteredRows]);
 
   // ── render ────────────────────────────────────────────────────────────────
+
+  const hotelTable = (rows: DisplayRow[]) => (
+    <div className="table-responsive border rounded">
+      <table className="table table-sm table-striped mb-0">
+        <thead className="table-light">
+          <tr>
+            <SortTh label="Check-In"      col="check_in_date"  sort={sort} onSort={handleSort} />
+            <th>Amello Room</th>
+            <th>Booking Room</th>
+            <th>Rate</th>
+            <SortTh label="Amello Price"  col="price_amello"   sort={sort} onSort={handleSort} className="text-end" />
+            <SortTh label="Booking Price" col="price_booking"  sort={sort} onSort={handleSort} className="text-end" />
+            <SortTh label="Diff (A−B)"    col="diff"           sort={sort} onSort={handleSort} className="text-end" />
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            const { label, className: pillCls, style: pillStyle } = pillProps(r.price_amello, r.price_booking);
+            return (
+              <tr key={i} className={rowClass(r)}>
+                <td className="text-nowrap">{r.check_in_date}</td>
+                <td>{r.amello_room  ?? <span className="text-muted fst-italic">—</span>}</td>
+                <td>{r.booking_room ?? <span className="text-muted fst-italic">—</span>}</td>
+                <td className="text-muted small">{r.rate_name || '—'}</td>
+                <td className="text-end text-nowrap">
+                  {r.price_amello != null ? formatPrice(r.price_amello, r.currency) : <span className="text-muted">—</span>}
+                </td>
+                <td className="text-end text-nowrap">
+                  {r.price_booking != null ? formatPrice(r.price_booking, r.currency) : <span className="text-muted">—</span>}
+                </td>
+                <DiffCell a={r.price_amello} b={r.price_booking} currency={r.currency} />
+                <td><span className={pillCls} style={pillStyle}>{label}</span></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <main>
@@ -456,6 +518,13 @@ export default function Page() {
             <option value="booking_cheaper_lte5">Booking cheaper ≤5%</option>
             <option value="amello_cheaper">Amello cheaper</option>
           </select>
+
+          <select className="form-select" style={{ maxWidth: 180 }} value={groupBy} onChange={e => { setGroupBy(e.target.value as typeof groupBy); setCollapsedGroups(new Set()); }}>
+            <option value="none">No grouping</option>
+            <option value="brand">Group by Brand</option>
+            <option value="country">Group by Country</option>
+            <option value="region">Group by Region</option>
+          </select>
         </div>
 
         {/* ── scan parameters ── */}
@@ -506,52 +575,35 @@ export default function Page() {
           </div>
         )}
 
-        {/* ── tables grouped by hotel ── */}
-        {Array.from(groupedByHotel.entries()).map(([hotelId, rows]) => (
-          <div key={hotelId} className="mb-5">
-            <h4 className="mb-2">{rows[0].hotel_name}</h4>
-
-            <div className="table-responsive border rounded">
-              <table className="table table-sm table-striped mb-0">
-                <thead className="table-light">
-                  <tr>
-                    <SortTh label="Check-In"      col="check_in_date"  sort={sort} onSort={handleSort} />
-                    <th>Amello Room</th>
-                    <th>Booking Room</th>
-                    <th>Rate</th>
-                    <SortTh label="Amello Price"  col="price_amello"   sort={sort} onSort={handleSort} className="text-end" />
-                    <SortTh label="Booking Price" col="price_booking"  sort={sort} onSort={handleSort} className="text-end" />
-                    <SortTh label="Diff (A−B)"    col="diff"           sort={sort} onSort={handleSort} className="text-end" />
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, i) => {
-                    const { label, className: pillCls, style: pillStyle } = pillProps(r.price_amello, r.price_booking);
-                    return (
-                      <tr key={i} className={rowClass(r)}>
-                        <td className="text-nowrap">{r.check_in_date}</td>
-                        <td>{r.amello_room  ?? <span className="text-muted fst-italic">—</span>}</td>
-                        <td>{r.booking_room ?? <span className="text-muted fst-italic">—</span>}</td>
-                        <td className="text-muted small">{r.rate_name || '—'}</td>
-                        <td className="text-end text-nowrap">
-                          {r.price_amello != null ? formatPrice(r.price_amello, r.currency) : <span className="text-muted">—</span>}
-                        </td>
-                        <td className="text-end text-nowrap">
-                          {r.price_booking != null ? formatPrice(r.price_booking, r.currency) : <span className="text-muted">—</span>}
-                        </td>
-                        <DiffCell a={r.price_amello} b={r.price_booking} currency={r.currency} />
-                        <td>
-                          <span className={pillCls} style={pillStyle}>{label}</span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+        {/* ── tables grouped by hotel (optionally wrapped in dimension groups) ── */}
+        {groupedByDimension
+          ? Array.from(groupedByDimension.entries()).map(([groupLabel, hotelIds]) => (
+            <div key={groupLabel} className="mb-4">
+              <button
+                className="btn btn-light border w-100 text-start fw-semibold d-flex justify-content-between align-items-center mb-2 px-3 py-2"
+                onClick={() => toggleGroup(groupLabel)}
+              >
+                <span>{groupLabel} <span className="text-muted fw-normal small ms-1">({hotelIds.length} hotel{hotelIds.length !== 1 ? 's' : ''})</span></span>
+                <i className={`fas fa-chevron-${collapsedGroups.has(groupLabel) ? 'down' : 'up'} small`} />
+              </button>
+              {!collapsedGroups.has(groupLabel) && hotelIds.map(hotelId => {
+                const rows = groupedByHotel.get(hotelId)!;
+                return (
+                  <div key={hotelId} className="mb-4 ms-3">
+                    <h5 className="mb-2">{rows[0].hotel_name}</h5>
+                    {hotelTable(rows)}
+                  </div>
+                );
+              })}
             </div>
-          </div>
-        ))}
+          ))
+          : Array.from(groupedByHotel.entries()).map(([hotelId, rows]) => (
+            <div key={hotelId} className="mb-5">
+              <h4 className="mb-2">{rows[0].hotel_name}</h4>
+              {hotelTable(rows)}
+            </div>
+          ))
+        }
 
         {!loading && groupedByHotel.size === 0 && !error && (
           <p className="text-muted">No results found for this scan.</p>
