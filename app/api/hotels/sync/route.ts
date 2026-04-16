@@ -137,7 +137,7 @@ export async function POST(): Promise<NextResponse> {
             COALESCE(region, '')  AS region,
             COALESCE(country, '') AS country,
             base_image, bookable, active,
-            booking_url, tuiamello_url, expedia_url
+            booking_url, tuiamello_url, expedia_url, "globalTypes"
      FROM hotels
      ORDER BY name ASC`,
   );

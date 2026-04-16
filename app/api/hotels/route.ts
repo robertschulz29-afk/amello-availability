@@ -18,7 +18,7 @@ type IncomingHotel = {
 export async function GET() {
   const { rows } = await sql`
     SELECT id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country,
-           booking_url, tuiamello_url, expedia_url, bookable, active, base_image
+           booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"
     FROM hotels
     ORDER BY id ASC
   `;
