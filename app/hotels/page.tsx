@@ -650,7 +650,7 @@ export default function Page() {
                   <div className="modal-body">
                     {types.length > 0
                       ? <ul className="mb-0">{types.map((t: string, i: number) => {
-                          const meta = globalTypeOptions.find(g => g.globalType === t);
+                          const meta = globalTypeOptions.find(g => g.global_type === t);
                           const label = meta
                             ? meta.type_description || t
                             : t;
