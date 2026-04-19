@@ -40,11 +40,13 @@ export async function POST(
       );
     }
 
-    // Update scan status to cancelled
+    // Cancel scan and all its source jobs
     await sql`
-      UPDATE scans
-      SET status = 'cancelled'
-      WHERE id = ${scanId}
+      UPDATE scans SET status = 'cancelled' WHERE id = ${scanId}
+    `;
+    await sql`
+      UPDATE scan_source_jobs SET status = 'cancelled', updated_at = NOW()
+      WHERE scan_id = ${scanId} AND status IN ('running','queued')
     `;
 
     return NextResponse.json({

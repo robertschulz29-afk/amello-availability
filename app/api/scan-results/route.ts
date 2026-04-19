@@ -22,7 +22,10 @@ export async function GET(req: NextRequest) {
 
     const scanID = scanIDParam ? parseInt(scanIDParam, 10) : null;
     const status = statusParam && (statusParam === 'green' || statusParam === 'red') ? statusParam : null;
-    const hotelID = hotelIDParam ? parseInt(hotelIDParam, 10) : null;
+    // Support comma-separated hotel IDs: hotelID=1,2,3
+    const hotelIDs = hotelIDParam
+      ? hotelIDParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => isFinite(n))
+      : [];
     const checkInDate = checkInDateParam || null;
     const source = sourceParam && (sourceParam === 'booking' || sourceParam === 'amello') ? sourceParam : null;
 
@@ -41,10 +44,14 @@ export async function GET(req: NextRequest) {
       conditions.push(`sr.status = $${paramCount}`);
       params.push(status);
     }
-    if (hotelID !== null) {
+    if (hotelIDs.length === 1) {
       paramCount++;
       conditions.push(`sr.hotel_id = $${paramCount}`);
-      params.push(hotelID);
+      params.push(hotelIDs[0]);
+    } else if (hotelIDs.length > 1) {
+      const placeholders = hotelIDs.map(() => `$${++paramCount}`).join(', ');
+      conditions.push(`sr.hotel_id IN (${placeholders})`);
+      params.push(...hotelIDs);
     }
     if (checkInDate !== null) {
       paramCount++;

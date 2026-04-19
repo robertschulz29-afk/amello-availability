@@ -1,6 +1,6 @@
 // app/api/scans/process/amello/route.ts
-// Processes Amello API scans for a given batch of hotel × date cells.
-// Called by the orchestrator at /api/scans/process
+// Processes one batch of Amello API calls for a given scan_source_job.
+// Receives: { jobId, startIndex, size }
 
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
@@ -19,52 +19,57 @@ const CONCURRENCY = 4;
 
 export async function POST(req: NextRequest) {
   const tStart = Date.now();
-  console.log('[amello] ===== AMELLO PROCESS START =====', new Date().toISOString());
-
   const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
 
   try {
     const body = await req.json().catch(() => ({}));
-    const scanId = Number(body?.scanId);
+    const jobId = Number(body?.jobId);
     const startIndex = Number.isFinite(body?.startIndex) ? Number(body.startIndex) : 0;
     const size = Math.max(1, Math.min(200, Number.isFinite(body?.size) ? Number(body.size) : 50));
 
-    if (!Number.isFinite(scanId) || scanId <= 0) {
-      return NextResponse.json({ error: 'Invalid scanId' }, { status: 400 });
+    if (!Number.isFinite(jobId) || jobId <= 0) {
+      return NextResponse.json({ error: 'Invalid jobId' }, { status: 400 });
     }
 
-    // Load scan
-    const s = await sql`
-      SELECT id, base_checkin::text AS base_checkin, days, stay_nights, start_offset, end_offset, total_cells, status
-      FROM scans WHERE id = ${scanId}
+    // Load source job + parent scan
+    const jobQ = await sql`
+      SELECT j.id, j.scan_id, j.status AS job_status, j.total_cells,
+             s.base_checkin::text AS base_checkin, s.days, s.stay_nights, s.status AS scan_status
+      FROM scan_source_jobs j
+      JOIN scans s ON s.id = j.scan_id
+      WHERE j.id = ${jobId} AND j.source = 'amello'
     `;
-    if (!s.rows.length) return NextResponse.json({ error: 'Scan not found' }, { status: 404 });
-    const scan = s.rows[0];
 
-    if (scan.status === 'cancelled') {
-      return NextResponse.json({ processed: 0, done: true, message: 'Scan cancelled' });
+    if (!jobQ.rows.length) {
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
-    // Build dates
-    const baseYMD = normalizeYMD(scan.base_checkin);
-    const daysNum = Number(scan.days);
-    let dates: string[] = [];
+    const job = jobQ.rows[0];
 
-    if (baseYMD && Number.isFinite(daysNum) && daysNum > 0) {
-      dates = datesFromBase(baseYMD, daysNum);
+    if (job.scan_status === 'cancelled' || job.job_status === 'cancelled') {
+      return NextResponse.json({ processed: 0, done: true, message: 'Cancelled' });
     }
+
+    const scanId = job.scan_id as number;
+
+    // Build date list
+    const baseYMD = normalizeYMD(job.base_checkin);
+    const daysNum = Number(job.days);
+    const dates: string[] = baseYMD && Number.isFinite(daysNum) && daysNum > 0
+      ? datesFromBase(baseYMD, daysNum) : [];
 
     if (!dates.length) {
       return NextResponse.json({ error: 'No dates to process' }, { status: 400 });
     }
 
-    // Hotels
     const hotels = (await sql`
       SELECT id, code FROM hotels WHERE active = true AND bookable = true ORDER BY id ASC
     `).rows as Array<{ id: number; code: string }>;
 
     if (!hotels.length) {
-      return NextResponse.json({ error: 'No hotels to process' }, { status: 400 });
+      await sql`UPDATE scan_source_jobs SET status = 'done', updated_at = NOW() WHERE id = ${jobId}`;
+      await checkAndFinalizeScan(scanId);
+      return NextResponse.json({ processed: 0, done: true, total: 0, message: 'No hotels' });
     }
 
     const total = hotels.length * dates.length;
@@ -72,24 +77,21 @@ export async function POST(req: NextRequest) {
     const endIndex = Math.min(total, clampedStart + size);
 
     if (clampedStart >= endIndex) {
+      await markJobDone(jobId, scanId);
       return NextResponse.json({ processed: 0, nextIndex: total, done: true, total });
     }
 
-    // Build slice
-    const stayNights = Number(scan.stay_nights) || 7;
+    const stayNights = Number(job.stay_nights) || 7;
     const slice: ScanCell[] = [];
 
     for (let idx = clampedStart; idx < endIndex; idx++) {
-      const hotelIdx = Math.floor(idx / dates.length);
-      const dateIdx = idx % dates.length;
-      const h = hotels[hotelIdx];
-      const checkIn = dates[dateIdx];
+      const h = hotels[Math.floor(idx / dates.length)];
+      const checkIn = dates[idx % dates.length];
       const checkInDt = ymdToUTC(checkIn);
       checkInDt.setUTCDate(checkInDt.getUTCDate() + stayNights);
       slice.push({ hotelId: h.id, hotelCode: h.code, bookingUrl: null, checkIn, checkOut: toYMDUTC(checkInDt) });
     }
 
-    // Process concurrently
     let i = 0;
     let processed = 0;
     let failures = 0;
@@ -115,10 +117,7 @@ export async function POST(req: NextRequest) {
 
           const res = await fetch(`${BASE_URL}/hotel/offer`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Bello-Mandator': belloMandator,
-            },
+            headers: { 'Content-Type': 'application/json', 'Bello-Mandator': belloMandator },
             body: JSON.stringify(payload),
             cache: 'no-store',
           });
@@ -153,10 +152,16 @@ export async function POST(req: NextRequest) {
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-    // Update done_cells
+    // Update source job progress
     if (processed > 0) {
       await sql`
-        UPDATE scans SET done_cells = LEAST(done_cells + ${processed}, ${total}) WHERE id = ${scanId}
+        UPDATE scan_source_jobs
+        SET done_cells = LEAST(done_cells + ${processed}, ${total}), updated_at = NOW()
+        WHERE id = ${jobId}
+      `;
+      // Update legacy shared counter on scan
+      await sql`
+        UPDATE scans SET done_cells = LEAST(done_cells + ${processed}, total_cells) WHERE id = ${scanId}
       `;
     }
 
@@ -164,8 +169,7 @@ export async function POST(req: NextRequest) {
     const done = nextIndex >= total;
 
     if (done) {
-      // Mark done only if booking is also done — orchestrator handles final status
-      // Just return done=true and let orchestrator decide
+      await markJobDone(jobId, scanId);
     }
 
     console.log('[amello] done —', processed, 'processed,', failures, 'failures, duration:', Date.now() - tStart, 'ms');
@@ -175,5 +179,37 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error('[amello] fatal', e);
     return NextResponse.json({ error: 'Amello processing error' }, { status: 500 });
+  }
+}
+
+async function markJobDone(jobId: number, scanId: number) {
+  await sql`
+    UPDATE scan_source_jobs SET status = 'done', updated_at = NOW() WHERE id = ${jobId}
+  `;
+  await checkAndFinalizeScan(scanId);
+}
+
+async function checkAndFinalizeScan(scanId: number) {
+  // Mark scan done when ALL its source jobs are done (none still running/queued)
+  const pending = await sql`
+    SELECT COUNT(*)::int AS c FROM scan_source_jobs
+    WHERE scan_id = ${scanId} AND status IN ('running','queued')
+  `;
+  if ((pending.rows[0]?.c ?? 1) === 0) {
+    await sql`UPDATE scans SET status = 'done' WHERE id = ${scanId} AND status != 'cancelled'`;
+    console.log(`[amello] Scan #${scanId} finalized — all source jobs complete`);
+
+    // Harvest room names
+    await sql`
+      INSERT INTO hotel_room_names (hotel_id, source, room_name, last_seen_at)
+      SELECT DISTINCT sr.hotel_id, sr.source, elem->>'name', NOW()
+      FROM scan_results sr,
+           jsonb_array_elements(sr.response_json->'rooms') AS elem
+      WHERE sr.scan_id = ${scanId}
+        AND sr.status  = 'green'
+        AND elem->>'name' IS NOT NULL
+      ON CONFLICT (hotel_id, source, room_name)
+        DO UPDATE SET last_seen_at = NOW()
+    `;
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { sql, query } from '@/lib/db';
 import { normalizeYMD } from '@/lib/scrapers/process-helpers';
 
 export const runtime = 'nodejs';
@@ -97,5 +97,24 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   } catch (err: any) {
     console.error('[GET /api/scans/[id]] error', err);
     return NextResponse.json({ error: 'internal error' }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const scanId = Number(params.id);
+  if (!Number.isFinite(scanId) || scanId <= 0) {
+    return NextResponse.json({ error: 'invalid scan id' }, { status: 400 });
+  }
+
+  try {
+    await query('DELETE FROM scan_results WHERE scan_id = $1', [scanId]);
+    await query('DELETE FROM scans WHERE id = $1', [scanId]);
+    // VACUUM is best-effort — may fail through pgBouncer transaction mode
+    await query('VACUUM scan_results', []).catch(() => {});
+    await query('VACUUM scans', []).catch(() => {});
+    return NextResponse.json({ ok: true });
+  } catch (err: any) {
+    console.error('[DELETE /api/scans/[id]] error', err);
+    return NextResponse.json({ error: err.message || 'internal error' }, { status: 500 });
   }
 }

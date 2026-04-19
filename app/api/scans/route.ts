@@ -20,39 +20,51 @@ function getBaseUrl(): string {
   return 'http://localhost:3000';
 }
 
-/**
- * Kicks off the first batch via the orchestrator without blocking scan creation response.
- */
-function triggerFirstBatch(scanId: number, belloMandator: string): void {
-  const url = `${getBaseUrl()}/api/scans/process`;
-
+// Fire-and-forget: kick off processing for a specific source job
+function triggerSourceJob(jobId: number, belloMandator: string, source: string): void {
+  const url = `${getBaseUrl()}/api/scans/process/${source}`;
   fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Bello-Mandator': belloMandator,
-    },
-    body: JSON.stringify({ scanId, startIndex: 0, size: 50 }),
+    headers: { 'Content-Type': 'application/json', 'Bello-Mandator': belloMandator },
+    body: JSON.stringify({ jobId, startIndex: 0, size: 50 }),
   })
     .then(async (res) => {
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        console.error('[scans] triggerFirstBatch failed:', res.status, text.slice(0, 200));
+        console.error(`[scans] triggerSourceJob(${source}) failed:`, res.status, text.slice(0, 200));
       } else {
         const result = await res.json().catch(() => ({}));
-        console.log('[scans] triggerFirstBatch success — processed:', result.amello?.processed, '| done:', result.done);
+        console.log(`[scans] triggerSourceJob(${source}) ok — done:`, result.done);
       }
     })
-    .catch((e) => console.error('[scans] triggerFirstBatch fetch error:', e.message));
+    .catch((e) => console.error(`[scans] triggerSourceJob(${source}) error:`, e.message));
 }
 
-/* GET: list scans */
+/* GET: list scans with per-source job summary */
 export async function GET() {
   try {
     const { rows } = await sql`
-      SELECT id, scanned_at, stay_nights, total_cells, done_cells, status
-      FROM scans
-      ORDER BY scanned_at DESC
+      SELECT
+        s.id, s.scanned_at, s.base_checkin::text AS base_checkin,
+        s.fixed_checkout::text AS fixed_checkout,
+        s.days, s.stay_nights, s.timezone,
+        s.total_cells, s.done_cells, s.status, s.sources,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', j.id,
+              'source', j.source,
+              'total_cells', j.total_cells,
+              'done_cells', j.done_cells,
+              'status', j.status
+            ) ORDER BY j.source
+          ) FILTER (WHERE j.id IS NOT NULL),
+          '[]'::json
+        ) AS source_jobs
+      FROM scans s
+      LEFT JOIN scan_source_jobs j ON j.scan_id = s.id
+      GROUP BY s.id
+      ORDER BY s.scanned_at DESC
       LIMIT 200
     `;
     return NextResponse.json(rows);
@@ -62,7 +74,7 @@ export async function GET() {
   }
 }
 
-/* POST: create a scan */
+/* POST: create a scan and one source job per enabled source */
 export async function POST(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -70,11 +82,29 @@ export async function POST(req: NextRequest) {
     const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
     const body = await req.json().catch(() => ({}));
 
-    // baseCheckIn
+    // ── Resolve sources ───────────────────────────────────────────────────────
+    let enabledSources: string[];
+
+    if (Array.isArray(body?.sources)) {
+      enabledSources = (body.sources as any[]).filter((s): s is string => typeof s === 'string');
+      if (enabledSources.length === 0) {
+        return NextResponse.json({ error: 'Select at least one source to start a scan.' }, { status: 400 });
+      }
+    } else {
+      // Cron / legacy caller — read enabled sources from DB
+      const sourcesQ = await sql`SELECT name FROM scan_sources WHERE enabled = true ORDER BY name`;
+      enabledSources = sourcesQ.rows.map((r: any) => r.name as string);
+      if (enabledSources.length === 0) {
+        return NextResponse.json({ error: 'No scan sources are currently enabled.' }, { status: 400 });
+      }
+    }
+
+    console.log('[scans] Creating scan with sources:', enabledSources);
+
+    // ── Dates ─────────────────────────────────────────────────────────────────
     let baseCheckIn: string | null =
       typeof body?.baseCheckIn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.baseCheckIn)
-        ? body.baseCheckIn
-        : null;
+        ? body.baseCheckIn : null;
 
     const berlinToday = berlinTodayYMD();
     if (!baseCheckIn) {
@@ -94,10 +124,6 @@ export async function POST(req: NextRequest) {
     checkoutDt.setUTCDate(checkoutDt.getUTCDate() + stayNights);
     const fixedCheckout = toYMDUTC(checkoutDt);
 
-    const startOffset = 0;
-    const endOffset = days - 1;
-
-    // Cron idempotency
     if (isCron) {
       const already = await sql<{ id: number }>`
         SELECT id FROM scans
@@ -110,30 +136,63 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const countQ = await sql<{ c: number }>`
-      SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true
-    `;
-    const hotelsCount = countQ.rows[0]?.c ?? 0;
-    const totalCells = hotelsCount * days;
+    // ── Count hotels per source ───────────────────────────────────────────────
+    const [allHotelsQ, bookingHotelsQ] = await Promise.all([
+      sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true`,
+      sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND booking_url IS NOT NULL AND booking_url != ''`,
+    ]);
+    const allHotelsCount    = allHotelsQ.rows[0]?.c ?? 0;
+    const bookingHotelCount = bookingHotelsQ.rows[0]?.c ?? 0;
 
+    function totalForSource(source: string): number {
+      if (source === 'booking') return bookingHotelCount * days;
+      return allHotelsCount * days; // amello and any future sources
+    }
+
+    // Legacy shared counters (sum across sources for backward compat display)
+    const totalCells = enabledSources.reduce((sum, src) => sum + totalForSource(src), 0);
+    const sourcesJson = JSON.stringify(enabledSources);
+
+    // ── Create scan ───────────────────────────────────────────────────────────
     const ins = await sql`
       INSERT INTO scans (
         fixed_checkout, start_offset, end_offset, stay_nights, timezone,
-        total_cells, done_cells, status, base_checkin, days
+        total_cells, done_cells, status, base_checkin, days, sources
       )
       VALUES (
-        ${fixedCheckout}, ${startOffset}, ${endOffset}, ${stayNights}, 'Europe/Berlin',
-        ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}
+        ${fixedCheckout}, 0, ${days - 1}, ${stayNights}, 'Europe/Berlin',
+        ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}, ${sourcesJson}::jsonb
       )
-      RETURNING id, scanned_at
+      RETURNING id
     `;
-
     const scanId = ins.rows[0].id as number;
 
-    // Kick off first batch asynchronously — don't await
-    triggerFirstBatch(scanId, belloMandator);
+    // ── Create one source job per enabled source ──────────────────────────────
+    const jobs: Array<{ jobId: number; source: string }> = [];
+    for (const source of enabledSources) {
+      const cells = totalForSource(source);
+      const jobIns = await sql`
+        INSERT INTO scan_source_jobs (scan_id, source, total_cells, done_cells, status)
+        VALUES (${scanId}, ${source}, ${cells}, 0, 'running')
+        ON CONFLICT (scan_id, source) DO UPDATE
+          SET total_cells = EXCLUDED.total_cells, status = 'running', updated_at = NOW()
+        RETURNING id
+      `;
+      const jobId = jobIns.rows[0].id as number;
+      jobs.push({ jobId, source });
+      console.log(`[scans] Created source job #${jobId} for scan #${scanId} source=${source} cells=${cells}`);
+    }
 
-    return NextResponse.json({ scanId, totalCells, baseCheckIn, days, stayNights, fixedCheckout });
+    // ── Trigger first batch per source ────────────────────────────────────────
+    for (const { jobId, source } of jobs) {
+      triggerSourceJob(jobId, belloMandator, source);
+    }
+
+    return NextResponse.json({
+      scanId, totalCells, baseCheckIn, days, stayNights, fixedCheckout,
+      sources: enabledSources,
+      sourceJobs: jobs,
+    });
 
   } catch (e: any) {
     console.error('[POST /api/scans] error', e);

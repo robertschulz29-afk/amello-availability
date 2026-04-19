@@ -4,6 +4,7 @@
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
 import { formatPrice } from '@/lib/price-utils';
+import { HotelCombobox } from '@/app/components/HotelCombobox';
 
 type ScanRow = {
   id: number;
@@ -130,8 +131,7 @@ export default function Page() {
   const [scans, setScans] = React.useState<ScanRow[]>([]);
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
   const [hotels, setHotels] = React.useState<HotelRow[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = React.useState<number | null>(null);
-  const [hotelSearchTerm, setHotelSearchTerm] = React.useState('');
+  const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
 
   const [scanDetails, setScanDetails] = React.useState<{
     scanId: number; scannedAt: string;
@@ -192,7 +192,7 @@ export default function Page() {
     setError(null);
     try {
       const params = new URLSearchParams({ scanID: String(selectedScanId), limit: '5000' });
-      if (selectedHotelId) params.append('hotelID', String(selectedHotelId));
+      if (selectedHotelIds.length > 0) params.append('hotelID', selectedHotelIds.join(','));
       const res = await fetchJSON(`/api/rate-comparison?${params}`, { cache: 'no-store' });
       const rows: RateRow[] = (res.data ?? []).map((r: any) => ({
         ...r,
@@ -208,12 +208,12 @@ export default function Page() {
     } finally {
       setLoading(false);
     }
-  }, [selectedScanId, selectedHotelId]);
+  }, [selectedScanId, selectedHotelIds]);
 
   React.useEffect(() => { loadScans(); loadHotels(); }, [loadScans, loadHotels]);
   React.useEffect(() => {
     if (selectedScanId) { loadScanDetails(selectedScanId); loadData(); }
-  }, [selectedScanId, selectedHotelId, loadScanDetails, loadData]);
+  }, [selectedScanId, selectedHotelIds, loadScanDetails, loadData]);
 
   // ── derived data ──────────────────────────────────────────────────────────
 
@@ -221,11 +221,6 @@ export default function Page() {
     new Map(hotels.map(h => [h.id, h])),
   [hotels]);
 
-  const filteredHotels = React.useMemo(() => {
-    if (!hotelSearchTerm.trim()) return hotels;
-    const t = hotelSearchTerm.toLowerCase();
-    return hotels.filter(h => h.name.toLowerCase().includes(t) || h.code.toLowerCase().includes(t));
-  }, [hotels, hotelSearchTerm]);
 
   const filteredRows = React.useMemo(
     () => allRows.filter(r => matchesStatusFilter(r, statusFilter)),
@@ -338,7 +333,7 @@ export default function Page() {
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
 
         <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-          <h1 className="h3 mb-0">Best Available Rate</h1>
+          
         </div>
 
         {/* ── controls ── */}
@@ -356,25 +351,13 @@ export default function Page() {
             ))}
           </select>
 
-          <input
-            className="form-control"
-            style={{ maxWidth: 200 }}
-            placeholder="Search hotels..."
-            value={hotelSearchTerm}
-            onChange={e => setHotelSearchTerm(e.target.value)}
-          />
-
-          <select
-            className="form-select"
+          <HotelCombobox
+            hotels={hotels}
+            selectedIds={selectedHotelIds}
+            onChange={setSelectedHotelIds}
+            placeholder="All Hotels"
             style={{ maxWidth: 300 }}
-            value={selectedHotelId ?? ''}
-            onChange={e => setSelectedHotelId(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">All Hotels</option>
-            {filteredHotels.map(h => (
-              <option key={h.id} value={h.id}>{h.name} ({h.code})</option>
-            ))}
-          </select>
+          />
 
           <select
             className="form-select"

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://test.api.tui/content/hotels/FJR10012?locale=de_DE&details=true\")",
+      "Bash(2)",
+      "Bash(npx tsc *)",
+      "Bash(sed -i 's|<h1 className=\"mb-4\">Portfolio Health</h1>||' \"/c/Users/ro_sc/Projects/amello-availability/app/portfolio-health/page.tsx\")",
+      "Bash(sed -i 's|<h1 className=\"h3 mb-0\">Best Available Rate</h1>||' \"/c/Users/ro_sc/Projects/amello-availability/app/rate-comparison/page.tsx\")",
+      "Bash(sed -i 's|<h1 className=\"h3 mb-3\">Scan Results</h1>||' \"/c/Users/ro_sc/Projects/amello-availability/app/scan-results/page.tsx\")",
+      "Bash(sed -i 's|<h1 className=\"mb-4\">Scan Setup</h1>||' \"/c/Users/ro_sc/Projects/amello-availability/app/status-overview/page.tsx\")",
+      "Bash(xargs grep *)",
+      "Bash(git *)"
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 // app/LayoutContent.tsx
-'use client';  
+'use client';
 
 import { ReactNode, useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
@@ -21,8 +21,7 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
-  
-  // CHANGE: Set initial state to false so it is closed by default
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [showBackToTop, setShowBackToTop] = useState(false);
@@ -37,40 +36,47 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
 
   const toggleStyle = {
     ...getToggleButtonStyle(isDark),
-    backgroundColor: isHovered ? (isDark ? '#30363d' : '#e9ecef') : 'transparent'
+    backgroundColor: isHovered ? (isDark ? '#30363d' : '#e9ecef') : 'transparent',
   };
+
+  const isLoginPage = pathname === '/login';
+
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
 
   return (
     <div style={getBodyStyle(isDark)}>
       <Header onMenuClick={toggleSidebar} />
-      
+
       <div style={contentWrapperStyle}>
         <div style={layoutContainerStyle}>
-          
-          {/* Sidebar - only renders if isSidebarOpen is true */}
+
           {isSidebarOpen && (
             <nav style={getNavStyle(isDark)}>
-               <h4 style={{ paddingLeft: '1rem' }}>Reports</h4>
+              <h4 style={{ paddingLeft: '1rem' }}>Reports</h4>
               <Link href="/" style={getDashboardLinkStyle(pathname === '/', isDark)}>
-                Portfolio Health 
+                Dashboard
               </Link>
-               <Link href="/price-comparison" style={getNavLinkStyle(pathname === '/price-comparison', isDark)}>
+              <Link href="/portfolio-health" style={getNavLinkStyle(pathname === '/portfolio-health', isDark)}>
+                Portfolio Health
+              </Link>
+              <Link href="/price-comparison" style={getNavLinkStyle(pathname === '/price-comparison', isDark)}>
                 Price Comparison
               </Link>
               <Link href="/rate-comparison" style={getNavLinkStyle(pathname === '/rate-comparison', isDark)}>
-                Best Available Rate 
+                Best Available Rate
               </Link>
-                <h4 style={{ paddingLeft: '1rem' }}>Setup</h4>
+              <Link href="/scan-results" style={getNavLinkStyle(pathname === '/scan-results', isDark)}>
+                Scan Results
+              </Link>
+              <h4 style={{ paddingLeft: '1rem' }}>Setup</h4>
               <Link href="/status-overview" style={getNavLinkStyle(pathname === '/status-overview', isDark)}>
                 Scan Setup
               </Link>
               <Link href="/room-mappings" style={getNavLinkStyle(pathname === '/room-mappings', isDark)}>
                 Room Mappings
               </Link>
-              <Link href="/scan-results" style={getNavLinkStyle(pathname === '/scan-results', isDark)}>
-                Scan Results
-              </Link>
-             
               <Link href="/hotels" style={getNavLinkStyle(pathname === '/hotels', isDark)}>
                 Hotels
               </Link>
@@ -84,15 +90,24 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
               >
                 {isDark ? <i className="fas fa-sun"></i> : <i className="fas fa-moon"></i>}
               </button>
+
+              <button
+                style={{ ...toggleStyle, marginTop: '0.5rem' }}
+                onClick={async () => {
+                  await fetch('/api/auth/logout', { method: 'POST' });
+                  window.location.href = '/login';
+                }}
+                aria-label="Sign out"
+              >
+                <i className="fas fa-sign-out-alt"></i>
+              </button>
             </nav>
           )}
 
-          {/* Main Content Area */}
-          <div style={{ 
-            ...getMainContentStyle(isDark), 
-            // Optional: Ensure content takes full width when nav is gone
+          <div style={{
+            ...getMainContentStyle(isDark),
             width: isSidebarOpen ? 'calc(100% - 250px)' : '100%',
-            transition: 'width 0.3s ease' 
+            transition: 'width 0.3s ease',
           }}>
             {children}
           </div>
@@ -104,21 +119,15 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
           aria-label="Back to top"
           style={{
             position: 'fixed',
-            bottom: '2rem',
-            right: '2rem',
-            zIndex: 9999,
-            width: '2.5rem',
-            height: '2.5rem',
+            bottom: '2rem', right: '2rem', zIndex: 9999,
+            width: '2.5rem', height: '2.5rem',
             borderRadius: '50%',
             border: 'none',
             background: '#0d6efd',
             color: '#fff',
-            fontSize: '1.1rem',
-            cursor: 'pointer',
+            fontSize: '1.1rem', cursor: 'pointer',
             boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
           <i className="fas fa-chevron-up" />

@@ -119,7 +119,54 @@ export async function POST(): Promise<NextResponse> {
     );
   }
 
-  // ── Step 4: mark hotels not in the API response as inactive ──────────────
+  // ── Step 4: fetch TUI global types per hotel and store "listing" types ───
+  const TUI_BASE = 'https://test.api.tui/content/hotels';
+
+  await Promise.allSettled(
+    successfulCodes.map(async (code) => {
+      try {
+        const res = await fetch(
+          `${TUI_BASE}/${code}?locale=de_DE&details=true`,
+          { cache: 'no-store', signal: AbortSignal.timeout(8000) },
+        );
+        if (!res.ok) return;
+        const body = await res.json();
+
+        const collected = new Set<string>();
+
+        // Hotel-level global types
+        if (Array.isArray(body?.globalTypes)) {
+          for (const v of body.globalTypes) {
+            if (typeof v === 'string') collected.add(v);
+          }
+        }
+
+        // Room-level global types
+        if (Array.isArray(body?.details?.rooms)) {
+          for (const room of body.details.rooms) {
+            if (Array.isArray(room?.globalTypes)) {
+              for (const v of room.globalTypes) {
+                if (typeof v === 'string') collected.add(v);
+              }
+            }
+          }
+        }
+
+        const globalTypes = [...collected];
+
+        if (globalTypes.length === 0) return;
+
+        await query(
+          `UPDATE hotels SET "globalTypes" = $1 WHERE code = $2`,
+          [JSON.stringify(globalTypes), code],
+        );
+      } catch (e: any) {
+        errors.push(`TUI ${code}: ${e.message}`);
+      }
+    }),
+  );
+
+  // ── Step 5: mark hotels not in the API response as inactive ──────────────
   if (successfulCodes.length > 0) {
     await query(
       `UPDATE hotels
@@ -130,7 +177,7 @@ export async function POST(): Promise<NextResponse> {
     );
   }
 
-  // ── Step 5: return full hotel list ───────────────────────────────────────
+  // ── Step 6: return full hotel list ───────────────────────────────────────
   const { rows: dbRows } = await query(
     `SELECT id, name, code,
             COALESCE(brand, '')   AS brand,

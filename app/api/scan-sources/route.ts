@@ -29,7 +29,12 @@ export async function GET() {
       ORDER BY name ASC
     `;
 
-    return NextResponse.json(rows);
+    // pgBouncer can return boolean columns as strings 't'/'f' — normalise to JS boolean
+    const normalised = rows.map((r: any) => ({
+      ...r,
+      enabled: r.enabled === true || r.enabled === 't' || r.enabled === 'true' || r.enabled === 1,
+    }));
+    return NextResponse.json(normalised);
   } catch (error: any) {
     console.error('[GET /api/scan-sources] Error:', error);
     return NextResponse.json(

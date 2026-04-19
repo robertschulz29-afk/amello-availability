@@ -40,7 +40,7 @@ type AllSuggestions = Map<number, Map<string, Suggestion>>;
 function ConfidenceBadge({ confidence }: { confidence: number | null }) {
   if (confidence == null) return null;
   const pct = Math.round(confidence * 100);
-  const cls = pct >= 90 ? 'bg-success' : pct >= 75 ? 'bg-warning text-dark' : 'bg-danger';
+  const cls = pct >= 90 ? 'text-bg-success' : pct >= 75 ? 'text-bg-warning' : 'text-bg-danger';
   return <span className={`badge ${cls} ms-1`} style={{ fontSize: '0.65rem' }}>{pct}%</span>;
 }
 
@@ -136,7 +136,7 @@ function RoomRow({ amelloRoom, mapping, suggestion, bookingRooms, onSave, onDele
           <div>
             <div className="d-flex align-items-center gap-2 flex-wrap">
               <span className="small">{mapping.booking_room}</span>
-              <span className="badge bg-info text-dark" style={{ fontSize: '0.6rem' }}>AI</span>
+              <span className="badge text-bg-info" style={{ fontSize: '0.6rem' }}>AI</span>
               <ConfidenceBadge confidence={mapping.confidence} />
             </div>
             <div className="d-flex gap-1 mt-1">
@@ -162,7 +162,7 @@ function RoomRow({ amelloRoom, mapping, suggestion, bookingRooms, onSave, onDele
           <div>
             <div className="d-flex align-items-center gap-1 flex-wrap">
               <span className="small text-muted fst-italic">{suggestion.booking_room}</span>
-              <span className="badge bg-info text-dark" style={{ fontSize: '0.6rem' }}>AI suggestion</span>
+              <span className="badge text-bg-info" style={{ fontSize: '0.6rem' }}>AI suggestion</span>
               <ConfidenceBadge confidence={suggestion.confidence} />
             </div>
             <div className="text-muted fst-italic mb-1" style={{ fontSize: '0.7rem' }}>{suggestion.reasoning}</div>
@@ -211,6 +211,25 @@ function HotelSection({
 
   const unmappedCount = hotel.amelloRooms.filter(r => !mappingByAmello.has(r)).length;
   const aiPendingCount = hotel.mappings.filter(m => m.source === 'ai').length;
+
+  const acceptAll = async () => {
+    const pending = hotel.mappings.filter(m => m.source === 'ai');
+    if (!pending.length) return;
+    setBusy_(true);
+    for (const m of pending) {
+      try {
+        await fetchJSON('/api/room-mappings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hotelId: hotel.id, amelloRoom: m.amello_room, bookingRoom: m.booking_room, source: 'manual', confidence: m.confidence }),
+        });
+      } catch { /* skip */ }
+    }
+    setMsg({ text: `Accepted ${pending.length} AI mapping(s).`, ok: true });
+    onMappingChange();
+    setBusy_(false);
+  };
+  const [busy_, setBusy_] = React.useState(false);
   const pendingSuggestionsCount = hotel.amelloRooms.filter(r => !mappingByAmello.has(r) && suggestions.has(r)).length;
 
   const handleSave = async (amelloRoom: string, bookingRoom: string, source: 'manual' | 'ai', confidence?: number) => {
@@ -248,13 +267,25 @@ function HotelSection({
         <span className="fw-semibold">{hotel.name}</span>
         <span className="text-muted small">({hotel.code})</span>
         <div className="ms-auto d-flex align-items-center gap-2 flex-wrap">
-          {unmappedCount > 0 && <span className="badge bg-warning text-dark">{unmappedCount} unmapped</span>}
-          {pendingSuggestionsCount > 0 && <span className="badge bg-info text-dark">{pendingSuggestionsCount} AI suggestions</span>}
-          {aiPendingCount > 0 && <span className="badge bg-info text-dark">{aiPendingCount} AI pending</span>}
-          {unmappedCount === 0 && aiPendingCount === 0 && hotel.amelloRooms.length > 0 && (
-            <span className="badge bg-success">fully mapped</span>
+          {unmappedCount > 0 && <span className="badge text-bg-warning">{unmappedCount} unmapped</span>}
+          {pendingSuggestionsCount > 0 && <span className="badge text-bg-info">{pendingSuggestionsCount} AI suggestions</span>}
+          {aiPendingCount > 0 && (
+            <>
+              <span className="badge text-bg-info">{aiPendingCount} AI pending</span>
+              <button
+                className="btn btn-sm btn-outline-success"
+                style={{ fontSize: '0.7rem', padding: '1px 8px' }}
+                disabled={busy_}
+                onClick={e => { e.stopPropagation(); acceptAll(); }}
+              >
+                {busy_ ? <span className="spinner-border spinner-border-sm" /> : '✓ Accept all'}
+              </button>
+            </>
           )}
-          {hotel.amelloRooms.length === 0 && <span className="badge bg-light text-muted border">no scan data</span>}
+          {unmappedCount === 0 && aiPendingCount === 0 && hotel.amelloRooms.length > 0 && (
+            <span className="badge text-bg-success">fully mapped</span>
+          )}
+          {hotel.amelloRooms.length === 0 && <span className="badge text-bg-secondary border">no scan data</span>}
           <span className="text-muted small">{collapsed ? '▼' : '▲'}</span>
         </div>
       </div>
@@ -402,13 +433,25 @@ export default function Page() {
     });
   };
 
+  type MappingFilter = 'all' | 'mapped' | 'unmapped' | 'pending';
+  const [mappingFilter, setMappingFilter] = React.useState<MappingFilter>('all');
+
   const filtered = React.useMemo(() => {
-    if (!search.trim()) return hotels;
-    const term = search.toLowerCase();
-    return hotels.filter(h =>
-      h.name.toLowerCase().includes(term) || h.code.toLowerCase().includes(term)
-    );
-  }, [hotels, search]);
+    let list = hotels;
+    if (search.trim()) {
+      const term = search.toLowerCase();
+      list = list.filter(h => h.name.toLowerCase().includes(term) || h.code.toLowerCase().includes(term));
+    }
+    if (mappingFilter === 'mapped') {
+      list = list.filter(h => h.amelloRooms.length > 0 && h.mappings.filter(m => m.source === 'manual').length === h.amelloRooms.length);
+    } else if (mappingFilter === 'unmapped') {
+      const mapped = (h: HotelData) => new Set(h.mappings.map(m => m.amello_room));
+      list = list.filter(h => h.amelloRooms.some(r => !mapped(h).has(r) && !h.mappings.find(m => m.amello_room === r)));
+    } else if (mappingFilter === 'pending') {
+      list = list.filter(h => h.mappings.some(m => m.source === 'ai'));
+    }
+    return list;
+  }, [hotels, search, mappingFilter]);
 
   const totalUnmapped = React.useMemo(() =>
     hotels.reduce((acc, h) => {
@@ -428,9 +471,8 @@ export default function Page() {
 
         {/* ── Global header ── */}
         <div className="d-flex align-items-center gap-3 mb-3 flex-wrap">
-          <h1 className="mb-0">Room Name Mappings</h1>
           {!loading && totalUnmapped > 0 && (
-            <span className="badge bg-warning text-dark fs-6">{totalUnmapped} unmapped total</span>
+            <span className="badge text-bg-warning fs-6">{totalUnmapped} unmapped total</span>
           )}
           <a href="/price-comparison" className="btn btn-outline-secondary btn-sm ms-auto">
             ← Back to Price Comparison
@@ -451,13 +493,13 @@ export default function Page() {
                 </span>
               )}
               {totalPendingSuggestions > 0 && !suggesting && (
-                <span className="badge bg-info text-dark">{totalPendingSuggestions} suggestions pending</span>
+                <span className="badge text-bg-info">{totalPendingSuggestions} suggestions pending</span>
               )}
               {aiMsg && !suggesting && (
                 <span className="text-muted small fst-italic">{aiMsg}</span>
               )}
               <button
-                className="btn btn-primary"
+                className="btn btn-dark"
                 onClick={runAiAll}
                 disabled={suggesting || loading}
               >
@@ -479,14 +521,26 @@ export default function Page() {
 
         {error && <div className="alert alert-danger">{error}</div>}
 
-        <div className="mb-3">
+        <div className="mb-3 d-flex flex-wrap gap-2 align-items-center">
           <input
             className="form-control"
-            style={{ maxWidth: 320 }}
+            style={{ maxWidth: 280 }}
             placeholder="Filter hotels…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+          <div className="btn-group">
+            {(['all', 'mapped', 'unmapped', 'pending'] as const).map(f => (
+              <button
+                key={f}
+                type="button"
+                className={`btn btn-sm ${mappingFilter === f ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                onClick={() => setMappingFilter(f)}
+              >
+                {f === 'all' ? 'All' : f === 'mapped' ? 'Mapped' : f === 'unmapped' ? 'Unmapped' : 'Pending Approval'}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading && (

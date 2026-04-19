@@ -142,7 +142,9 @@ export default function Page() {
     if (selectedGlobalTypes.size > 0) {
       list = list.filter(h => {
         const types = parseGlobalTypes(h.globalTypes as any);
-        return [...selectedGlobalTypes].every(sel => types.includes(sel));
+        return [...selectedGlobalTypes].every(sel =>
+          types.some(t => t.split('/').includes(sel))
+        );
       });
     }
     list.sort((a, b) => {
@@ -305,7 +307,7 @@ export default function Page() {
               <label className="form-label fw-semibold mb-1 d-block small">Active</label>
               <div className="btn-group btn-group-sm" role="group">
                 {(['all', 'true', 'false'] as FilterBool[]).map(v => (
-                  <button key={v} type="button" className={`btn ${filterActive === v ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setFilterActive(v)}>
+                  <button key={v} type="button" className={`btn ${filterActive === v ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={() => setFilterActive(v)}>
                     {v === 'all' ? 'All' : v === 'true' ? 'Yes' : 'No'}
                   </button>
                 ))}
@@ -315,7 +317,7 @@ export default function Page() {
               <label className="form-label fw-semibold mb-1 d-block small">Bookable</label>
               <div className="btn-group btn-group-sm" role="group">
                 {(['all', 'true', 'false'] as FilterBool[]).map(v => (
-                  <button key={v} type="button" className={`btn ${filterBookable === v ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setFilterBookable(v)}>
+                  <button key={v} type="button" className={`btn ${filterBookable === v ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={() => setFilterBookable(v)}>
                     {v === 'all' ? 'All' : v === 'true' ? 'Yes' : 'No'}
                   </button>
                 ))}
@@ -326,14 +328,14 @@ export default function Page() {
               <label className="form-label fw-semibold mb-1 d-block small">Sort by</label>
               <div className="btn-group btn-group-sm" role="group">
                 {(['name', 'brand', 'region'] as SortField[]).map(f => (
-                  <button key={f} type="button" className={`btn ${sortField === f ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => toggleSort(f)}>
+                  <button key={f} type="button" className={`btn ${sortField === f ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={() => toggleSort(f)}>
                     {f.charAt(0).toUpperCase() + f.slice(1)}{sortIcon(f)}
                   </button>
                 ))}
               </div>
             </div>
             <div className="ms-auto">
-              <button className="btn btn-primary" onClick={updateHotelList} disabled={syncBusy}>
+              <button className="btn btn-dark" onClick={updateHotelList} disabled={syncBusy}>
                 {syncBusy
                   ? <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Syncing…</>
                   : 'Update Hotel List'
@@ -394,7 +396,7 @@ export default function Page() {
                               <button
                                 key={gt.global_type}
                                 type="button"
-                                className={`btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}`}
+                                className={`btn btn-sm ${active ? 'btn-secondary' : 'btn-outline-secondary'}`}
                                 onClick={e => {
                                   e.stopPropagation();
                                   setSelectedGlobalTypes(prev => {

@@ -1,12 +1,12 @@
 // app/api/scans/process/booking/route.ts
-// Processes Booking.com scrapes for a given batch of hotel × date cells.
-// Uses ScrapingAnt API instead of local Puppeteer — no browser needed on Vercel.
-// Called by the orchestrator at /api/scans/process
+// Processes one batch of Booking.com scrapes for a given scan_source_job.
+// Receives: { jobId, startIndex, size }
+// Uses ScrapingAnt API for JS-rendered HTML — no browser needed on Vercel.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import {
-  toYMDUTC, normalizeYMD, ymdToUTC, datesFromBase, type ScanCell,
+  toYMDUTC, normalizeYMD, ymdToUTC, datesFromBase,
 } from '@/lib/scrapers/process-helpers';
 import { parseHTML } from '@/lib/scrapers/utils/html-parser';
 
@@ -14,13 +14,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-// ScrapingAnt renders the page in a real browser on their infrastructure,
-// bypasses bot detection, and returns fully rendered HTML.
-// Sign up at https://scrapingant.com — free tier: 10,000 credits (1 credit per JS-rendered page)
 const SCRAPINGANT_API_KEY = process.env.SCRAPINGANT_API_KEY || '';
 const SCRAPINGANT_URL = 'https://api.scrapingant.com/v2/general';
-
-const CONCURRENCY = 3; // Keep low — each ScrapingAnt request uses 1 credit + their concurrency limits
+const CONCURRENCY = 3;
 
 // ─── ScrapingAnt fetch ────────────────────────────────────────────────────────
 
@@ -32,15 +28,14 @@ async function fetchWithScrapingAnt(url: string): Promise<string> {
   const params = new URLSearchParams({
     url,
     'x-api-key': SCRAPINGANT_API_KEY,
-    browser: 'true',        // JS rendering
-    wait_for_selector: '#available_rooms', // Wait until room table is in DOM
+    browser: 'true',
+    wait_for_selector: '#available_rooms',
     proxy_country: 'DE',
   });
 
   const response = await fetch(`${SCRAPINGANT_URL}?${params}`, {
     method: 'GET',
     headers: { 'Accept': 'text/html' },
-    // ScrapingAnt handles its own timeouts internally (~30s)
   });
 
   if (!response.ok) {
@@ -51,7 +46,7 @@ async function fetchWithScrapingAnt(url: string): Promise<string> {
   return response.text();
 }
 
-// ─── HTML parsing (same logic as BookingComScraper) ──────────────────────────
+// ─── HTML parsing ─────────────────────────────────────────────────────────────
 
 interface BookingRoom {
   name: string;
@@ -84,14 +79,10 @@ function parsePriceText(priceText: string): { amount: number; currency: string }
       : n.replace(/\./g, '').replace(',', '');
   } else if (n.includes(',')) {
     const parts = n.split(',');
-    n = parts.length === 2 && parts[1].length <= 2
-      ? n.replace(',', '')
-      : n.replace(/,/g, '');
+    n = parts.length === 2 && parts[1].length <= 2 ? n.replace(',', '') : n.replace(/,/g, '');
   } else if (n.includes('.')) {
     const parts = n.split('.');
-    n = parts.length === 2 && parts[1].length <= 2
-      ? n.replace('.', '')
-      : n.replace(/\./g, '');
+    n = parts.length === 2 && parts[1].length <= 2 ? n.replace('.', '') : n.replace(/\./g, '');
   }
 
   const amount = parseInt(n, 10);
@@ -110,7 +101,6 @@ function parseBookingHTML(html: string): BookingRoom[] {
   }
 
   const roomElements = container.find('.hprt-roomtype-link');
-  console.log('[booking] Room elements found:', roomElements.length);
 
   roomElements.each((_, el) => {
     const roomName = $(el).text().trim();
@@ -119,10 +109,8 @@ function parseBookingHTML(html: string): BookingRoom[] {
     const roomRow = $(el).closest('tr, .hprt-table-row');
     const rates: BookingRoom['rates'] = [];
 
-    // Try rates in same row first
     let rateEls = roomRow.find('.bui-list__item.e2e-cancellation');
 
-    // Fall back to sibling rows before next room
     if (!rateEls.length) {
       const nextRows = roomRow.nextAll();
       const nextRoomIdx = nextRows.toArray().findIndex(r => $(r).find('.hprt-roomtype-link').length > 0);
@@ -141,7 +129,6 @@ function parseBookingHTML(html: string): BookingRoom[] {
       if (parsed) rates.push({ name: rateName, price: parsed.amount, currency: parsed.currency });
     });
 
-    // Direct price fallback
     if (!rates.length) {
       roomRow.find('.bui-price-display__value').each((_, priceEl) => {
         const parsed = parsePriceText($(priceEl).text().trim());
@@ -159,44 +146,48 @@ function parseBookingHTML(html: string): BookingRoom[] {
 
 export async function POST(req: NextRequest) {
   const tStart = Date.now();
-  console.log('[booking] ===== BOOKING PROCESS START =====', new Date().toISOString());
 
   try {
     const body = await req.json().catch(() => ({}));
-    const scanId = Number(body?.scanId);
+    const jobId = Number(body?.jobId);
     const startIndex = Number.isFinite(body?.startIndex) ? Number(body.startIndex) : 0;
     const size = Math.max(1, Math.min(100, Number.isFinite(body?.size) ? Number(body.size) : 50));
 
-    if (!Number.isFinite(scanId) || scanId <= 0) {
-      return NextResponse.json({ error: 'Invalid scanId' }, { status: 400 });
+    if (!Number.isFinite(jobId) || jobId <= 0) {
+      return NextResponse.json({ error: 'Invalid jobId' }, { status: 400 });
     }
 
-    // Load scan
-    const s = await sql`
-      SELECT id, base_checkin::text AS base_checkin, days, stay_nights, status
-      FROM scans WHERE id = ${scanId}
+    // Load source job + parent scan
+    const jobQ = await sql`
+      SELECT j.id, j.scan_id, j.status AS job_status, j.total_cells,
+             s.base_checkin::text AS base_checkin, s.days, s.stay_nights, s.status AS scan_status
+      FROM scan_source_jobs j
+      JOIN scans s ON s.id = j.scan_id
+      WHERE j.id = ${jobId} AND j.source = 'booking'
     `;
-    if (!s.rows.length) return NextResponse.json({ error: 'Scan not found' }, { status: 404 });
-    const scan = s.rows[0];
 
-    if (scan.status === 'cancelled') {
-      return NextResponse.json({ processed: 0, done: true, message: 'Scan cancelled' });
+    if (!jobQ.rows.length) {
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
-    // Build dates
-    const baseYMD = normalizeYMD(scan.base_checkin);
-    const daysNum = Number(scan.days);
-    let dates: string[] = [];
+    const job = jobQ.rows[0];
 
-    if (baseYMD && Number.isFinite(daysNum) && daysNum > 0) {
-      dates = datesFromBase(baseYMD, daysNum);
+    if (job.scan_status === 'cancelled' || job.job_status === 'cancelled') {
+      return NextResponse.json({ processed: 0, done: true, message: 'Cancelled' });
     }
+
+    const scanId = job.scan_id as number;
+
+    // Build date list
+    const baseYMD = normalizeYMD(job.base_checkin);
+    const daysNum = Number(job.days);
+    const dates: string[] = baseYMD && Number.isFinite(daysNum) && daysNum > 0
+      ? datesFromBase(baseYMD, daysNum) : [];
 
     if (!dates.length) {
       return NextResponse.json({ error: 'No dates to process' }, { status: 400 });
     }
 
-    // Only hotels with a booking_url
     const hotels = (await sql`
       SELECT id, booking_url FROM hotels
       WHERE active = true AND bookable = true AND booking_url IS NOT NULL AND booking_url != ''
@@ -204,6 +195,7 @@ export async function POST(req: NextRequest) {
     `).rows as Array<{ id: number; booking_url: string }>;
 
     if (!hotels.length) {
+      await markJobDone(jobId, scanId);
       return NextResponse.json({ processed: 0, done: true, total: 0, message: 'No hotels with booking_url' });
     }
 
@@ -212,18 +204,16 @@ export async function POST(req: NextRequest) {
     const endIndex = Math.min(total, clampedStart + size);
 
     if (clampedStart >= endIndex) {
+      await markJobDone(jobId, scanId);
       return NextResponse.json({ processed: 0, nextIndex: total, done: true, total });
     }
 
-    // Build slice
-    const stayNights = Number(scan.stay_nights) || 7;
+    const stayNights = Number(job.stay_nights) || 7;
     const slice: Array<{ hotelId: number; bookingUrl: string; checkIn: string; checkOut: string }> = [];
 
     for (let idx = clampedStart; idx < endIndex; idx++) {
-      const hotelIdx = Math.floor(idx / dates.length);
-      const dateIdx = idx % dates.length;
-      const h = hotels[hotelIdx];
-      const checkIn = dates[dateIdx];
+      const h = hotels[Math.floor(idx / dates.length)];
+      const checkIn = dates[idx % dates.length];
       const checkInDt = ymdToUTC(checkIn);
       checkInDt.setUTCDate(checkInDt.getUTCDate() + stayNights);
       slice.push({ hotelId: h.id, bookingUrl: h.booking_url, checkIn, checkOut: toYMDUTC(checkInDt) });
@@ -256,10 +246,8 @@ export async function POST(req: NextRequest) {
         try {
           const html = await fetchWithScrapingAnt(url);
           const rooms = parseBookingHTML(html);
-
           status = rooms.length > 0 ? 'green' : 'red';
           responseJson = { rooms, source: 'booking' };
-
           console.log(`[booking] Hotel ${cell.hotelId} | ${cell.checkIn}: ${status} (${rooms.length} rooms)`);
         } catch (e: any) {
           console.error(`[booking] Scrape error hotel ${cell.hotelId}:`, e.message);
@@ -284,8 +272,24 @@ export async function POST(req: NextRequest) {
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
+    // Update source job progress
+    if (processed > 0) {
+      await sql`
+        UPDATE scan_source_jobs
+        SET done_cells = LEAST(done_cells + ${processed}, ${total}), updated_at = NOW()
+        WHERE id = ${jobId}
+      `;
+      await sql`
+        UPDATE scans SET done_cells = LEAST(done_cells + ${processed}, total_cells) WHERE id = ${scanId}
+      `;
+    }
+
     const nextIndex = endIndex;
     const done = nextIndex >= total;
+
+    if (done) {
+      await markJobDone(jobId, scanId);
+    }
 
     console.log('[booking] done —', processed, 'processed,', failures, 'failures, duration:', Date.now() - tStart, 'ms');
 
@@ -294,5 +298,33 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error('[booking] fatal', e);
     return NextResponse.json({ error: 'Booking processing error' }, { status: 500 });
+  }
+}
+
+async function markJobDone(jobId: number, scanId: number) {
+  await sql`UPDATE scan_source_jobs SET status = 'done', updated_at = NOW() WHERE id = ${jobId}`;
+  await checkAndFinalizeScan(scanId);
+}
+
+async function checkAndFinalizeScan(scanId: number) {
+  const pending = await sql`
+    SELECT COUNT(*)::int AS c FROM scan_source_jobs
+    WHERE scan_id = ${scanId} AND status IN ('running','queued')
+  `;
+  if ((pending.rows[0]?.c ?? 1) === 0) {
+    await sql`UPDATE scans SET status = 'done' WHERE id = ${scanId} AND status != 'cancelled'`;
+    console.log(`[booking] Scan #${scanId} finalized — all source jobs complete`);
+
+    await sql`
+      INSERT INTO hotel_room_names (hotel_id, source, room_name, last_seen_at)
+      SELECT DISTINCT sr.hotel_id, sr.source, elem->>'name', NOW()
+      FROM scan_results sr,
+           jsonb_array_elements(sr.response_json->'rooms') AS elem
+      WHERE sr.scan_id = ${scanId}
+        AND sr.status  = 'green'
+        AND elem->>'name' IS NOT NULL
+      ON CONFLICT (hotel_id, source, room_name)
+        DO UPDATE SET last_seen_at = NOW()
+    `;
   }
 }

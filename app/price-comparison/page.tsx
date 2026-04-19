@@ -2,8 +2,10 @@
 'use client';
 
 import * as React from 'react';
+import { useSearchParams } from 'next/navigation';
 import { fetchJSON } from '@/lib/api-client';
 import { formatPrice } from '@/lib/price-utils';
+import { HotelCombobox } from '@/app/components/HotelCombobox';
 
 type ScanRow = {
   id: number;
@@ -61,7 +63,7 @@ type PaginatedResponse = {
 
 type SortKey = 'check_in_date' | 'price_amello' | 'price_booking' | 'diff';
 type SortDir = 'asc' | 'desc';
-type StatusFilter = 'all' | 'amello_only' | 'booking_only' | 'booking_cheaper_gt5' | 'booking_cheaper_lte5' | 'amello_cheaper';
+type StatusFilter = 'all' | 'amello_only' | 'booking_only' | 'booking_cheaper_gt5' | 'booking_cheaper_lte5' | 'booking_cheaper' | 'amello_cheaper';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -122,6 +124,7 @@ function matchesStatus(row: DisplayRow, filter: StatusFilter): boolean {
   const pct = pctDiff(a, b)!;
   if (filter === 'booking_cheaper_gt5')  return pct > 5;
   if (filter === 'booking_cheaper_lte5') return pct > 0 && pct <= 5;
+  if (filter === 'booking_cheaper')      return pct > 0;
   if (filter === 'amello_cheaper')       return pct <= 0;
   return true;
 }
@@ -259,12 +262,14 @@ function DiffCell({ a, b, currency }: { a: number | null; b: number | null; curr
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
-export default function Page() {
+function PriceComparisonPage() {
+  const searchParams = useSearchParams();
   const [scans, setScans] = React.useState<ScanRow[]>([]);
-  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
+  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(
+    searchParams.get('scanId') ? Number(searchParams.get('scanId')) : null
+  );
   const [hotels, setHotels] = React.useState<HotelRow[]>([]);
-  const [selectedHotelId, setSelectedHotelId] = React.useState<number | null>(null);
-  const [hotelSearchTerm, setHotelSearchTerm] = React.useState('');
+  const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
 
   const [scanDetails, setScanDetails] = React.useState<{
     scanId: number; scannedAt: string;
@@ -278,7 +283,9 @@ export default function Page() {
   const [loading, setLoading] = React.useState(false);
 
   const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir }>({ key: 'check_in_date', dir: 'asc' });
-  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>(
+    (searchParams.get('filter') as StatusFilter) ?? 'all'
+  );
   const [groupBy, setGroupBy] = React.useState<'none' | 'brand' | 'country' | 'region'>('none');
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(new Set());
 
@@ -295,7 +302,7 @@ export default function Page() {
     const arr: ScanRow[] = Array.isArray(list) ? list : [];
     arr.sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
     setScans(arr);
-    if (!selectedScanId && arr.length > 0) setSelectedScanId(arr[0].id);
+    setSelectedScanId(prev => prev ?? (arr.length > 0 ? arr[0].id : null));
   }, [selectedScanId]);
 
   const loadHotels = React.useCallback(async () => {
@@ -327,7 +334,7 @@ export default function Page() {
         format: 'comparison',
         limit: '1000',
       });
-      if (selectedHotelId) params.append('hotelID', selectedHotelId.toString());
+      if (selectedHotelIds.length > 0) params.append('hotelID', selectedHotelIds.join(','));
 
       const res: PaginatedResponse = await fetchJSON(`/api/scan-results?${params}`, { cache: 'no-store' });
       setRawRows(res.data || []);
@@ -342,7 +349,7 @@ export default function Page() {
     } finally {
       setLoading(false);
     }
-  }, [selectedScanId, selectedHotelId]);
+  }, [selectedScanId, selectedHotelIds]);
 
   React.useEffect(() => { loadScans(); loadHotels(); }, [loadScans, loadHotels]);
   React.useEffect(() => {
@@ -355,11 +362,6 @@ export default function Page() {
     new Map(hotels.map(h => [h.id, h])),
   [hotels]);
 
-  const filteredHotels = React.useMemo(() => {
-    if (!hotelSearchTerm.trim()) return hotels;
-    const term = hotelSearchTerm.toLowerCase();
-    return hotels.filter(h => h.name.toLowerCase().includes(term) || h.code.toLowerCase().includes(term));
-  }, [hotels, hotelSearchTerm]);
 
   const displayRows = React.useMemo(
     () => buildDisplayRows(rawRows, mappingsByHotel),
@@ -442,7 +444,7 @@ export default function Page() {
                 <td className="text-nowrap">{r.check_in_date}</td>
                 <td>{r.amello_room  ?? <span className="text-muted fst-italic">—</span>}</td>
                 <td>{r.booking_room ?? <span className="text-muted fst-italic">—</span>}</td>
-                <td className="text-muted small">{r.rate_name || '—'}</td>
+                <td className="small">{r.rate_name || '—'}</td>
                 <td className="text-end text-nowrap">
                   {r.price_amello != null ? formatPrice(r.price_amello, r.currency) : <span className="text-muted">—</span>}
                 </td>
@@ -463,8 +465,7 @@ export default function Page() {
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
 
-        <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-          <h1 className="h3 mb-0">Price Comparison</h1>
+        <div className="d-flex justify-content-end mb-3">
           <a href="/room-mappings" className="btn btn-outline-secondary btn-sm">
             <i className="fa fa-sliders me-1" /> Manage Room Mappings
           </a>
@@ -485,25 +486,13 @@ export default function Page() {
             ))}
           </select>
 
-          <input
-            className="form-control"
-            style={{ maxWidth: 200 }}
-            placeholder="Search hotels..."
-            value={hotelSearchTerm}
-            onChange={e => setHotelSearchTerm(e.target.value)}
-          />
-
-          <select
-            className="form-select"
+          <HotelCombobox
+            hotels={hotels}
+            selectedIds={selectedHotelIds}
+            onChange={setSelectedHotelIds}
+            placeholder="All Hotels"
             style={{ maxWidth: 300 }}
-            value={selectedHotelId ?? ''}
-            onChange={e => setSelectedHotelId(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">All Hotels</option>
-            {filteredHotels.map(h => (
-              <option key={h.id} value={h.id}>{h.name} ({h.code})</option>
-            ))}
-          </select>
+          />
 
           <select
             className="form-select"
@@ -514,6 +503,7 @@ export default function Page() {
             <option value="all">All statuses</option>
             <option value="amello_only">Amello only</option>
             <option value="booking_only">Booking only</option>
+            <option value="booking_cheaper">Booking cheaper (all)</option>
             <option value="booking_cheaper_gt5">Booking cheaper &gt;5%</option>
             <option value="booking_cheaper_lte5">Booking cheaper ≤5%</option>
             <option value="amello_cheaper">Amello cheaper</option>
@@ -610,5 +600,13 @@ export default function Page() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <React.Suspense fallback={null}>
+      <PriceComparisonPage />
+    </React.Suspense>
   );
 }

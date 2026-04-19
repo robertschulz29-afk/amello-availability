@@ -37,7 +37,9 @@ export async function GET(req: NextRequest) {
     const offset = (page - 1) * limit;
 
     const scanID = scanIDParam ? parseInt(scanIDParam, 10) : null;
-    const hotelID = hotelIDParam ? parseInt(hotelIDParam, 10) : null;
+    const hotelIDs = hotelIDParam
+      ? hotelIDParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => isFinite(n))
+      : [];
 
     // Build WHERE conditions
     const conditions: string[] = ['sr.status = $1']; // Only include successful scans
@@ -49,10 +51,14 @@ export async function GET(req: NextRequest) {
       conditions.push(`sr.scan_id = $${paramCount}`);
       params.push(scanID);
     }
-    if (hotelID !== null) {
+    if (hotelIDs.length === 1) {
       paramCount++;
       conditions.push(`sr.hotel_id = $${paramCount}`);
-      params.push(hotelID);
+      params.push(hotelIDs[0]);
+    } else if (hotelIDs.length > 1) {
+      const placeholders = hotelIDs.map(() => `$${++paramCount}`).join(', ');
+      conditions.push(`sr.hotel_id IN (${placeholders})`);
+      params.push(...hotelIDs);
     }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
