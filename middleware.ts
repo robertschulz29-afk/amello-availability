@@ -3,7 +3,13 @@ import type { NextRequest } from 'next/server';
 import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/auth-edge';
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/api/auth/login',
+  '/api/scans',          // scan creation, listing, stop, delete
+  '/api/scan-sources',   // source toggle
+  '/api/hotels',         // hotel data
+];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
