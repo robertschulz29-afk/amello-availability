@@ -26,21 +26,25 @@ async function fetchWithScrapingAnt(url: string): Promise<string> {
     throw new Error('SCRAPINGANT_API_KEY environment variable is not set');
   }
 
-  const params: Record<string, string> = {
+  const params = new URLSearchParams({
     url,
     'x-api-key': SCRAPINGANT_API_KEY,
     browser: 'true',
     wait_for_selector: '#available_rooms',
     proxy_country: 'DE',
-  };
+  });
+
+  const fetchHeaders: Record<string, string> = { 'Accept': 'text/html' };
 
   if (BOOKING_COM_COOKIES) {
-    params['cookies'] = BOOKING_COM_COOKIES;
+    // Pass via ant- header — ScrapingAnt strips the prefix and forwards as Cookie header to booking.com
+    const cookieString = BOOKING_COM_COOKIES.split(';').map(c => c.trim()).filter(Boolean).join('; ');
+    fetchHeaders['ant-Cookie'] = cookieString;
   }
 
-  const response = await fetch(`${SCRAPINGANT_URL}?${new URLSearchParams(params)}`, {
+  const response = await fetch(`${SCRAPINGANT_URL}?${params}`, {
     method: 'GET',
-    headers: { 'Accept': 'text/html' },
+    headers: fetchHeaders,
   });
 
   if (!response.ok) {

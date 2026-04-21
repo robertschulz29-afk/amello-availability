@@ -63,7 +63,6 @@ html, body {
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-primary);
-  background: var(--bg-app);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -199,7 +198,7 @@ html, body {
   margin-left: var(--sidebar-width);
   flex: 1;
   min-width: 0;
-  padding: 1.75rem;
+  padding: calc(var(--topbar-height) + 1.75rem) 1.75rem 1.75rem;
 }
 
 /* ── Card ──────────────────────────────────────────────────────────────────── */
@@ -264,12 +263,12 @@ html, body {
 .table-light { background: var(--bg-app) !important; color: var(--text-secondary) !important; }
 .table-responsive { border-radius: var(--radius-md); border: 1px solid var(--border); }
 
-/* Status row colours */
-.table-success > td, tr.table-success > td { background: #f0fdf4 !important; }
-.table-danger  > td, tr.table-danger  > td { background: #fef2f2 !important; }
-.table-warning > td, tr.table-warning > td { background: #fffbeb !important; }
-.table-pink    > td, tr.table-pink    > td { background: #fdf2f8 !important; color: #831843; }
-.table-primary > td, tr.table-primary > td { background: #eff6ff !important; }
+/* Status row colours — explicit text colour to beat Bootstrap's table variant defaults */
+.table-success > td, tr.table-success > td { background: #f0fdf4 !important; color: #14532d !important; }
+.table-danger  > td, tr.table-danger  > td { background: #fef2f2 !important; color: #7f1d1d !important; }
+.table-warning > td, tr.table-warning > td { background: #fffbeb !important; color: #78350f !important; }
+.table-pink    > td, tr.table-pink    > td { background: #fdf2f8 !important; color: #831843 !important; }
+.table-primary > td, tr.table-primary > td { background: #eff6ff !important; color: #1e3a8a !important; }
 
 /* ── Badges ────────────────────────────────────────────────────────────────── */
 
@@ -452,17 +451,28 @@ html, body {
   background-color: rgba(59,130,246,.12);
 }
 
-[data-theme="dark"] .table-success > td, [data-theme="dark"] tr.table-success > td { background: #052e16 !important; color: #bbf7d0; }
-[data-theme="dark"] .table-danger  > td, [data-theme="dark"] tr.table-danger  > td { background: #2d0a0a !important; color: #fecaca; }
-[data-theme="dark"] .table-warning > td, [data-theme="dark"] tr.table-warning > td { background: #2d1f00 !important; color: #fde68a; }
-[data-theme="dark"] .table-pink    > td, [data-theme="dark"] tr.table-pink    > td { background: #2d0a1a !important; color: #fbcfe8; }
-[data-theme="dark"] .table-primary > td, [data-theme="dark"] tr.table-primary > td { background: #0c1f3d !important; color: #bfdbfe; }
+[data-theme="dark"] .table-success > td, [data-theme="dark"] tr.table-success > td,
+[data-bs-theme="dark"] .table-success > td, [data-bs-theme="dark"] tr.table-success > td { background: #052e16 !important; color: #bbf7d0 !important; }
+
+[data-theme="dark"] .table-danger  > td, [data-theme="dark"] tr.table-danger  > td,
+[data-bs-theme="dark"] .table-danger  > td, [data-bs-theme="dark"] tr.table-danger  > td { background: #2d0a0a !important; color: #fecaca !important; }
+
+[data-theme="dark"] .table-warning > td, [data-theme="dark"] tr.table-warning > td,
+[data-bs-theme="dark"] .table-warning > td, [data-bs-theme="dark"] tr.table-warning > td { background: #2d1f00 !important; color: #fde68a !important; }
+
+[data-theme="dark"] .table-pink    > td, [data-theme="dark"] tr.table-pink    > td,
+[data-bs-theme="dark"] .table-pink    > td, [data-bs-theme="dark"] tr.table-pink    > td { background: #2d0a1a !important; color: #fbcfe8 !important; }
+
+[data-theme="dark"] .table-primary > td, [data-theme="dark"] tr.table-primary > td,
+[data-bs-theme="dark"] .table-primary > td, [data-bs-theme="dark"] tr.table-primary > td { background: #0c1f3d !important; color: #bfdbfe !important; }
 
 [data-theme="dark"] .card          { background: var(--bg-surface); border-color: var(--border); }
 [data-theme="dark"] .card-header   { border-color: var(--border); }
 [data-theme="dark"] .table         { border-color: var(--border); color: var(--text-primary); }
 [data-theme="dark"] .table th      { background: var(--bg-app); color: var(--text-secondary); border-color: var(--border); }
-[data-theme="dark"] .table td      { border-color: var(--border); }
+[data-theme="dark"] .table td      { border-color: var(--border); color: var(--text-primary); }
+[data-theme="dark"] .table tbody tr td,
+[data-theme="dark"] .table tbody tr th { color: var(--text-primary); }
 [data-theme="dark"] .table-responsive { border-color: var(--border); }
 [data-theme="dark"] .form-control,
 [data-theme="dark"] .form-select   { background: var(--bg-app); border-color: var(--border); color: var(--text-primary); }
@@ -481,6 +491,15 @@ html, body {
 [data-theme="dark"] .alert-warning { background: #2d1f00; border-color: #78350f; color: #fde68a; }
 [data-theme="dark"] .progress      { background: #334155; }
 [data-theme="dark"] .text-muted    { color: var(--text-secondary) !important; }
+
+/* Override Bootstrap's own dark-mode table resets */
+[data-bs-theme="dark"] .table     { --bs-table-color: var(--text-primary); --bs-table-striped-color: var(--text-primary); --bs-table-hover-color: var(--text-primary); }
+[data-bs-theme="dark"] .table td,
+[data-bs-theme="dark"] .table th  { color: var(--text-primary); }
+
+/* Prevent Bootstrap from applying --bs-table-striped-bg via the bg-type variable in dark mode */
+[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(2n+1) > *,
+[data-bs-theme="dark"] .table-striped > tbody > tr:nth-of-type(2n+1) > * { --bs-table-bg-type: initial; }
 
 /* ── Sidebar backdrop (mobile) ─────────────────────────────────────────────── */
 
@@ -519,7 +538,7 @@ html, body {
   /* Content fills full width */
   .main-content {
     margin-left: 0;
-    padding: 1rem;
+    padding: calc(var(--topbar-height) + 1rem) 1rem 1rem;
   }
 
   /* Show hamburger button */
