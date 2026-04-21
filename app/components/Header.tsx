@@ -4,9 +4,10 @@ import { useTheme } from '../context/ThemeContext';
 
 interface HeaderProps {
   onLogout: () => void;
+  onMenuClick: () => void;
 }
 
-export function Header({ onLogout }: HeaderProps) {
+export function Header({ onLogout, onMenuClick }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -19,6 +20,9 @@ export function Header({ onLogout }: HeaderProps) {
       </div>
 
       <div className="topbar-actions">
+        <button className="topbar-btn topbar-menu-btn" onClick={onMenuClick} title="Menu" aria-label="Toggle menu">
+          <i className="fas fa-bars" />
+        </button>
         <button
           className="topbar-btn"
           onClick={toggleTheme}

@@ -482,11 +482,52 @@ html, body {
 [data-theme="dark"] .progress      { background: #334155; }
 [data-theme="dark"] .text-muted    { color: var(--text-secondary) !important; }
 
+/* ── Sidebar backdrop (mobile) ─────────────────────────────────────────────── */
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 89;
+}
+
+/* Hamburger — hidden on desktop, visible on mobile */
+.topbar-menu-btn { display: none; }
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+
 @media (max-width: 900px) {
   .hotelListCard { width: calc(50% - 0.625rem); }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  /* Sidebar becomes a slide-in overlay */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+    z-index: 95;
+  }
+
+  .sidebar--open {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0,0,0,.3);
+  }
+
+  .sidebar-backdrop { display: block; }
+
+  /* Content fills full width */
+  .main-content {
+    margin-left: 0;
+    padding: 1rem;
+  }
+
+  /* Show hamburger button */
+  .topbar-menu-btn { display: flex; }
+
+  .hotelListCard { width: calc(50% - 0.625rem); }
+}
+
+@media (max-width: 480px) {
   .hotelListCard { width: 100%; }
-  .main-content  { margin-left: 0; padding: 1rem; }
 }
