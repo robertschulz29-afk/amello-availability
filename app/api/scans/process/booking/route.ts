@@ -16,6 +16,7 @@ export const maxDuration = 300;
 
 const SCRAPINGANT_API_KEY = process.env.SCRAPINGANT_API_KEY || '';
 const SCRAPINGANT_URL = 'https://api.scrapingant.com/v2/general';
+const BOOKING_COM_COOKIES = process.env.BOOKING_COM_COOKIES || '';
 const CONCURRENCY = 3;
 
 // ─── ScrapingAnt fetch ────────────────────────────────────────────────────────
@@ -25,15 +26,19 @@ async function fetchWithScrapingAnt(url: string): Promise<string> {
     throw new Error('SCRAPINGANT_API_KEY environment variable is not set');
   }
 
-  const params = new URLSearchParams({
+  const params: Record<string, string> = {
     url,
     'x-api-key': SCRAPINGANT_API_KEY,
     browser: 'true',
     wait_for_selector: '#available_rooms',
     proxy_country: 'DE',
-  });
+  };
 
-  const response = await fetch(`${SCRAPINGANT_URL}?${params}`, {
+  if (BOOKING_COM_COOKIES) {
+    params['cookies'] = BOOKING_COM_COOKIES;
+  }
+
+  const response = await fetch(`${SCRAPINGANT_URL}?${new URLSearchParams(params)}`, {
     method: 'GET',
     headers: { 'Accept': 'text/html' },
   });
@@ -50,7 +55,12 @@ async function fetchWithScrapingAnt(url: string): Promise<string> {
 
 interface BookingRoom {
   name: string;
-  rates: Array<{ name: string | null; price: number; currency: string }>;
+  rates: Array<{
+    name: string | null;
+    price: number;
+    currency: string;
+    memberPrice?: number; // Genius / logged-in member price, if different from standard
+  }>;
 }
 
 const DEFAULT_CURRENCY = 'EUR';
@@ -90,6 +100,28 @@ function parsePriceText(priceText: string): { amount: number; currency: string }
   return { amount, currency };
 }
 
+// Standard price: element with class js-strikethrough-price (crossed-out original).
+// Member price:   element with class bui-price-display__value (the discounted Genius price).
+function extractPricesFromCell($: ReturnType<typeof parseHTML>, cell: any): {
+  standard: { amount: number; currency: string } | null;
+  member: { amount: number; currency: string } | null;
+} {
+  const $cell = $(cell);
+
+  const standardEl = $cell.find('.js-strikethrough-price').first();
+  const standardParsed = standardEl.length ? parsePriceText(standardEl.text().trim()) : null;
+
+  const memberEl = $cell.find('.bui-price-display__value').first();
+  const memberParsed = memberEl.length ? parsePriceText(memberEl.text().trim()) : null;
+
+  if (standardParsed && memberParsed) {
+    return { standard: standardParsed, member: memberParsed };
+  }
+
+  // No strikethrough — only one price present, treat as standard only
+  return { standard: memberParsed, member: null };
+}
+
 function parseBookingHTML(html: string): BookingRoom[] {
   const $ = parseHTML(html);
   const rooms: BookingRoom[] = [];
@@ -120,20 +152,32 @@ function parseBookingHTML(html: string): BookingRoom[] {
 
     rateEls.each((_, rateEl) => {
       const rateName = $(rateEl).text().trim() || null;
-      let priceEl = $(rateEl).find('.bui-price-display__value').first();
-      if (!priceEl.length) {
-        priceEl = $(rateEl).closest('tr, .hprt-table-row, .hprt-table-cell').find('.bui-price-display__value').first();
-      }
-      if (!priceEl.length) return;
-      const parsed = parsePriceText($(priceEl).text().trim());
-      if (parsed) rates.push({ name: rateName, price: parsed.amount, currency: parsed.currency });
+      let priceCell = $(rateEl).find('.bui-price-display__value').length
+        ? $(rateEl)
+        : $(rateEl).closest('tr, .hprt-table-row, .hprt-table-cell');
+      const { standard, member } = extractPricesFromCell($, priceCell);
+      if (!standard) return;
+      const entry: BookingRoom['rates'][number] = {
+        name: rateName,
+        price: standard.amount,
+        currency: standard.currency,
+      };
+      if (member) entry.memberPrice = member.amount;
+      rates.push(entry);
     });
 
     if (!rates.length) {
-      roomRow.find('.bui-price-display__value').each((_, priceEl) => {
-        const parsed = parsePriceText($(priceEl).text().trim());
-        if (parsed) rates.push({ name: null, price: parsed.amount, currency: parsed.currency });
-      });
+      // Fallback: grab prices directly from the row
+      const { standard, member } = extractPricesFromCell($, roomRow);
+      if (standard) {
+        const entry: BookingRoom['rates'][number] = {
+          name: null,
+          price: standard.amount,
+          currency: standard.currency,
+        };
+        if (member) entry.memberPrice = member.amount;
+        rates.push(entry);
+      }
     }
 
     if (rates.length) rooms.push({ name: roomName, rates });

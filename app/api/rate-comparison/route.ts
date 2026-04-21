@@ -15,6 +15,7 @@ interface RateComparisonRow {
   amello_room_name: string | null;
   amello_rate_name: string | null;
   booking_min_price: number | null;
+  booking_member_min_price: number | null;
   booking_currency: string | null;
   booking_room_name: string | null;
   booking_rate_name: string | null;
@@ -74,13 +75,14 @@ export async function GET(req: NextRequest) {
           sr.source,
           sr.response_json,
           -- Extract all room/rate combinations from the response_json
-          CASE 
+          CASE
             WHEN sr.response_json->'rooms' IS NOT NULL THEN
               (SELECT jsonb_agg(
                 jsonb_build_object(
                   'room_name', room->>'name',
                   'rate_name', rate->>'name',
                   'price', (rate->>'price')::numeric,
+                  'member_price', CASE WHEN rate->>'memberPrice' IS NOT NULL THEN (rate->>'memberPrice')::numeric ELSE NULL END,
                   'currency', rate->>'currency'
                 )
               )
@@ -94,7 +96,7 @@ export async function GET(req: NextRequest) {
         ${whereClause}
       ),
       min_prices AS (
-        SELECT 
+        SELECT
           pd.scan_id,
           pd.hotel_id,
           pd.hotel_name,
@@ -105,6 +107,7 @@ export async function GET(req: NextRequest) {
             SELECT jsonb_build_object(
               'room_name', rr2->>'room_name',
               'rate_name', rr2->>'rate_name',
+              'member_price', rr2->>'member_price',
               'currency', rr2->>'currency'
             )
             FROM jsonb_array_elements(pd.room_rates) AS rr2
@@ -116,7 +119,7 @@ export async function GET(req: NextRequest) {
         WHERE pd.room_rates IS NOT NULL
         GROUP BY pd.scan_id, pd.hotel_id, pd.hotel_name, pd.check_in_date, pd.source, pd.room_rates
       )
-      SELECT 
+      SELECT
         mp.scan_id,
         mp.hotel_id,
         mp.hotel_name,
@@ -126,6 +129,7 @@ export async function GET(req: NextRequest) {
         MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'room_name' END) as amello_room_name,
         MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'rate_name' END) as amello_rate_name,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) as booking_min_price,
+        MAX(CASE WHEN mp.source = 'booking' THEN (mp.min_rate_details->>'member_price')::numeric END) as booking_member_min_price,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'currency' END) as booking_currency,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'room_name' END) as booking_room_name,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'rate_name' END) as booking_rate_name,

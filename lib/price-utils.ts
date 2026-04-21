@@ -7,12 +7,14 @@ export interface LowestPriceInfo {
   rateName: string | null;
   price: number | null;
   currency: string | null;
+  memberPrice?: number | null; // Genius / member price for the same rate, if available
 }
 
 export interface RateInfo {
   name: string | null;
   price: number;
   currency: string;
+  memberPrice?: number | null; // Genius / member-only price (Booking.com logged-in)
 }
 
 export interface RoomInfo {
@@ -119,11 +121,15 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
           
           const rateCurrency = extractCurrency(rate) || roomCurrency;
 
-          extractedRates.push({
+          const rateEntry: RateInfo = {
             name: rateName,
             price: price,
             currency: rateCurrency,
-          });
+          };
+          if (rate.memberPrice != null && typeof rate.memberPrice === 'number' && isFinite(rate.memberPrice)) {
+            rateEntry.memberPrice = rate.memberPrice;
+          }
+          extractedRates.push(rateEntry);
         }
       }
     } else {
@@ -192,6 +198,9 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
           result.rateName = rate.name || null;
           result.price = rate.price;
           result.currency = rate.currency || 'EUR';
+          result.memberPrice = (rate.memberPrice != null && typeof rate.memberPrice === 'number' && isFinite(rate.memberPrice))
+            ? rate.memberPrice
+            : null;
         }
       }
     }
