@@ -27,6 +27,7 @@ type RateRow = {
   amello_room_name: string | null;
   amello_rate_name: string | null;
   booking_min_price: number | null;
+  booking_member_min_price: number | null;
   booking_currency: string | null;
   booking_room_name: string | null;
   booking_rate_name: string | null;
@@ -196,10 +197,11 @@ export default function Page() {
       const res = await fetchJSON(`/api/rate-comparison?${params}`, { cache: 'no-store' });
       const rows: RateRow[] = (res.data ?? []).map((r: any) => ({
         ...r,
-        amello_min_price:    toNum(r.amello_min_price),
-        booking_min_price:   toNum(r.booking_min_price),
-        price_difference:    toNum(r.price_difference),
-        percentage_difference: toNum(r.percentage_difference),
+        amello_min_price:         toNum(r.amello_min_price),
+        booking_min_price:        toNum(r.booking_min_price),
+        booking_member_min_price: toNum(r.booking_member_min_price),
+        price_difference:         toNum(r.price_difference),
+        percentage_difference:    toNum(r.percentage_difference),
       }));
       setAllRows(rows);
     } catch (e: any) {
@@ -289,6 +291,7 @@ export default function Page() {
             <th>Booking Room</th>
             <th>Booking Rate</th>
             <SortTh label="Booking Price"   col="booking_min_price"   sort={sort} onSort={handleSort} className="text-end" />
+            <th className="text-end text-nowrap">Member Price</th>
             <SortTh label="Diff (A−B)"      col="price_difference"    sort={sort} onSort={handleSort} className="text-end" />
             <SortTh label="% Diff"          col="percentage_difference" sort={sort} onSort={handleSort} className="text-end" />
             <th>Status</th>
@@ -313,6 +316,11 @@ export default function Page() {
                 <td className="small">{r.booking_room_name || <span className="text-muted">—</span>}</td>
                 <td className="small">{r.booking_rate_name || <span className="text-muted">—</span>}</td>
                 <td className="text-end text-nowrap">{b != null ? formatPrice(b, currency) : <span className="text-muted">—</span>}</td>
+                <td className="text-end text-nowrap">
+                  {r.booking_member_min_price != null
+                    ? <span className="text-primary fw-semibold">{formatPrice(r.booking_member_min_price, currency)}</span>
+                    : <span className="text-muted">—</span>}
+                </td>
                 <td className={`text-end fw-bold ${diffCls}`}>
                   {r.price_difference != null ? (r.price_difference > 0 ? '+' : '') + formatPrice(r.price_difference, currency) : <span className="text-muted">—</span>}
                 </td>
