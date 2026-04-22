@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
         MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'room_name' END) as amello_room_name,
         MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'rate_name' END) as amello_rate_name,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) as booking_min_price,
-        MAX(CASE WHEN mp.source = 'booking' THEN (mp.min_rate_details->>'member_price')::numeric END) as booking_member_min_price,
+        MAX(CASE WHEN mp.source = 'booking_member' THEN mp.min_price END) as booking_member_min_price,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'currency' END) as booking_currency,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'room_name' END) as booking_room_name,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'rate_name' END) as booking_rate_name,
@@ -150,6 +150,7 @@ export async function GET(req: NextRequest) {
       GROUP BY mp.scan_id, mp.hotel_id, mp.hotel_name, mp.check_in_date
       HAVING MAX(CASE WHEN mp.source = 'amello' THEN mp.min_price END) IS NOT NULL
          OR MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) IS NOT NULL
+         OR MAX(CASE WHEN mp.source = 'booking_member' THEN mp.min_price END) IS NOT NULL
       ORDER BY mp.scan_id DESC, mp.hotel_id, mp.check_in_date
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `;

@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
       ? hotelIDParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => isFinite(n))
       : [];
     const checkInDate = checkInDateParam || null;
-    const source = sourceParam && (sourceParam === 'booking' || sourceParam === 'amello') ? sourceParam : null;
+    const source = sourceParam && (['booking', 'booking_member', 'amello'].includes(sourceParam)) ? sourceParam : null;
 
     // Build WHERE conditions dynamically
     const conditions: string[] = [];
@@ -121,9 +121,9 @@ export async function GET(req: NextRequest) {
           fd.room_name,
           fd.rate_name,
           MAX(CASE WHEN fd.source = 'amello' THEN fd.price END) as price_amello,
-          MAX(CASE WHEN fd.source = 'booking' THEN fd.price END) as price_booking,
+          MAX(CASE WHEN fd.source IN ('booking', 'booking_member') THEN fd.price END) as price_booking,
           MAX(CASE WHEN fd.source = 'amello' THEN fd.status END) as status_amello,
-          MAX(CASE WHEN fd.source = 'booking' THEN fd.status END) as status_booking,
+          MAX(CASE WHEN fd.source IN ('booking', 'booking_member') THEN fd.status END) as status_booking,
           COALESCE(MAX(fd.currency), 'EUR') as currency
         FROM flattened_data fd
         GROUP BY fd.hotel_id, fd.hotel_name, fd.check_in_date, fd.room_name, fd.rate_name

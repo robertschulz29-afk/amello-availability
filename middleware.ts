@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   '/api/scans',          // scan creation, listing, stop, delete
   '/api/scan-sources',   // source toggle
   '/api/hotels',         // hotel data
+  '/api/settings',       // app settings (cookies etc.)
 ];
 
 export async function middleware(request: NextRequest) {

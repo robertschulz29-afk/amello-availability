@@ -49,7 +49,9 @@ function getHotelDisplay(name: string | null | undefined, id: number): string {
 
 function getSourceDisplay(source?: string) {
   if (source === 'booking') {
-    return { label: 'Booking.com', badgeClass: 'bg-info' };
+    return { label: 'Booking (Standard)', badgeClass: 'bg-info' };
+  } else if (source === 'booking_member') {
+    return { label: 'Booking (Member)', badgeClass: 'bg-primary' };
   } else if (source === 'amello') {
     return { label: 'Amello', badgeClass: 'bg-secondary' };
   } else {
@@ -251,7 +253,8 @@ export default function Page() {
               }}
             >
               <option value="">All</option>
-              <option value="booking">Booking.com</option>
+              <option value="booking">Booking (Standard)</option>
+              <option value="booking_member">Booking (Member)</option>
               <option value="amello">Amello</option>
             </select>
           </div>
@@ -309,6 +312,7 @@ export default function Page() {
                     <th>Room Name</th>
                     <th>Rate Name</th>
                     <th>Price</th>
+                    <th>Member Price</th>
                     <th>Response JSON</th>
                     <th>Actions</th>
                   </tr>
@@ -337,6 +341,11 @@ export default function Page() {
                         <td>{priceInfo.roomName ?? '—'}</td>
                         <td>{priceInfo.rateName ?? '—'}</td>
                         <td>{formatPrice(priceInfo.price, priceInfo.currency)}</td>
+                        <td>
+                          {priceInfo.memberPrice != null
+                            ? <span className="text-primary fw-semibold">{formatPrice(priceInfo.memberPrice, priceInfo.currency)}</span>
+                            : <span className="text-muted">—</span>}
+                        </td>
                         <td>
                           <details>
                             <summary className="btn btn-sm btn-outline-secondary">View JSON</summary>

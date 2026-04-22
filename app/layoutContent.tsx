@@ -22,6 +22,7 @@ const NAV = [
       { href: '/status-overview', icon: 'fa-radar',    label: 'Scan Setup' },
       { href: '/room-mappings',   icon: 'fa-bed',      label: 'Room Mappings' },
       { href: '/hotels',          icon: 'fa-building', label: 'Hotels' },
+      { href: '/settings',        icon: 'fa-gear',     label: 'Settings' },
     ],
   },
 ];

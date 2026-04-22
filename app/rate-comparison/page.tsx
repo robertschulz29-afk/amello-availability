@@ -55,7 +55,9 @@ function toNum(v: unknown): number | null {
 
 // ─── pill & row coloring (same logic as price-comparison) ────────────────────
 
-function pillProps(a: number | null, b: number | null): { label: string; className: string; style?: React.CSSProperties } {
+function pillProps(row: RateRow): { label: string; className: string; style?: React.CSSProperties } {
+  const a = row.amello_min_price;
+  const b = row.booking_min_price ?? row.booking_member_min_price;
   if (a != null && b == null) return { label: 'Amello only',   className: 'badge bg-primary' };
   if (a == null && b != null) return { label: 'Booking only',  className: 'badge text-white', style: { background: '#d63384' } };
   if (a != null && b != null) {
@@ -67,7 +69,9 @@ function pillProps(a: number | null, b: number | null): { label: string; classNa
   return { label: 'No price', className: 'badge bg-secondary' };
 }
 
-function rowBgClass(a: number | null, b: number | null): string {
+function rowBgClass(row: RateRow): string {
+  const a = row.amello_min_price;
+  const b = row.booking_min_price ?? row.booking_member_min_price;
   if (a != null && b == null) return 'table-primary';
   if (a == null && b != null) return 'table-pink';
   if (a != null && b != null) {
@@ -81,9 +85,9 @@ function rowBgClass(a: number | null, b: number | null): string {
 
 function matchesStatusFilter(row: RateRow, filter: StatusFilter): boolean {
   const a = row.amello_min_price;
-  const b = row.booking_min_price;
+  const b = row.booking_min_price ?? row.booking_member_min_price;
   if (filter === 'all') return true;
-  if (filter === 'amello_only')        return a != null && b == null;
+  if (filter === 'amello_only')        return a != null && row.booking_min_price == null && row.booking_member_min_price == null;
   if (filter === 'booking_only')       return a == null && b != null;
   if (a == null || b == null) return false;
   const pct = b !== 0 ? ((a - b) / b) * 100 : 0;
@@ -302,13 +306,13 @@ export default function Page() {
             const a = r.amello_min_price;
             const b = r.booking_min_price;
             const currency = r.amello_currency || r.booking_currency || 'EUR';
-            const { label, className: pillCls, style: pillStyle } = pillProps(a, b);
+            const { label, className: pillCls, style: pillStyle } = pillProps(r);
             const diffCls = r.price_difference == null ? 'text-muted'
               : r.price_difference > 0 ? 'text-danger'
               : r.price_difference < 0 ? 'text-success'
               : 'text-muted';
             return (
-              <tr key={i} className={rowBgClass(a, b)}>
+              <tr key={i} className={rowBgClass(r)}>
                 <td className="text-nowrap">{fmtDate(r.check_in_date)}</td>
                 <td className="small">{r.amello_room_name  || <span className="text-muted">—</span>}</td>
                 <td className="small">{r.amello_rate_name  || <span className="text-muted">—</span>}</td>
