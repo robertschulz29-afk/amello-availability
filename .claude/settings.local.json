@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl -s \"https://test.api.tui/content/hotels/FJR10012?locale=de_DE&details=true\")",
+      "Bash(curl -s \"https://prod.api.tui/content/hotels/FJR10012?locale=de_DE&details=true\")",
       "Bash(2)",
       "Bash(npx tsc *)",
       "Bash(sed -i 's|<h1 className=\"mb-4\">Portfolio Health</h1>||' \"/c/Users/ro_sc/Projects/amello-availability/app/portfolio-health/page.tsx\")",
