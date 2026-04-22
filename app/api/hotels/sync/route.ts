@@ -120,7 +120,7 @@ export async function POST(): Promise<NextResponse> {
   }
 
   // ── Step 4: fetch TUI global types per hotel and store "listing" types ───
-  const TUI_BASE = 'https://test.api.tui/content/hotels';
+  const TUI_BASE = 'https://prod.api.tui/content/hotels';
 
   await Promise.allSettled(
     successfulCodes.map(async (code) => {
