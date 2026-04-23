@@ -86,15 +86,10 @@ export default function Page() {
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
-  const loadHotels = React.useCallback(async (collectorIds?: Set<number>, gtOptions?: GlobalType[]) => {
+  const loadHotels = React.useCallback(async (globalTypeCodes: string[] = []) => {
     try {
       const params = new URLSearchParams();
-      if (collectorIds && collectorIds.size > 0 && gtOptions) {
-        const codes = gtOptions
-          .filter(gt => gt.collector_id != null && collectorIds.has(gt.collector_id))
-          .map(gt => gt.global_type);
-        if (codes.length > 0) params.set('globalTypes', codes.join(','));
-      }
+      if (globalTypeCodes.length > 0) params.set('globalTypes', globalTypeCodes.join(','));
       const url = params.toString() ? `/api/hotels?${params}` : '/api/hotels';
       const data = await fetchJSON(url, { cache: 'no-store' } as RequestInit);
       setHotels(Array.isArray(data) ? data : []);
@@ -103,17 +98,22 @@ export default function Page() {
     }
   }, []);
 
-  React.useEffect(() => { loadHotels(); }, [loadHotels]);
-
   React.useEffect(() => {
     fetchJSON('/api/global_types', { cache: 'no-store' } as RequestInit)
       .then((data: GlobalType[]) => setGlobalTypeOptions(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
+  // Single effect: re-runs when selection or available options change.
+  // Waits for options to load before applying a collector filter.
   React.useEffect(() => {
-    loadHotels(selectedCollectorIds, globalTypeOptions);
-  }, [selectedCollectorIds]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (selectedCollectorIds.size > 0 && globalTypeOptions.length === 0) return;
+    const codes = globalTypeOptions
+      .filter(gt => gt.collector_id != null && selectedCollectorIds.has(gt.collector_id!))
+      .map(gt => gt.global_type);
+    if (selectedCollectorIds.size > 0 && codes.length === 0) return;
+    loadHotels(codes);
+  }, [selectedCollectorIds, globalTypeOptions, loadHotels]);
 
   React.useEffect(() => {
     if (!successMsg) return;
