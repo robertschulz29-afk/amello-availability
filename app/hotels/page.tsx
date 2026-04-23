@@ -87,9 +87,12 @@ export default function Page() {
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
-  const loadHotels = React.useCallback(async () => {
+  const loadHotels = React.useCallback(async (globalTypes?: Set<string>) => {
     try {
-      const data = await fetchJSON('/api/hotels', { cache: 'no-store' } as RequestInit);
+      const params = new URLSearchParams();
+      if (globalTypes && globalTypes.size > 0) params.set('globalTypes', [...globalTypes].join(','));
+      const url = params.toString() ? `/api/hotels?${params}` : '/api/hotels';
+      const data = await fetchJSON(url, { cache: 'no-store' } as RequestInit);
       setHotels(Array.isArray(data) ? data : []);
     } catch (e: any) {
       setLoadError(e.message || 'Failed to load hotels');
@@ -119,6 +122,10 @@ export default function Page() {
   }, []);
 
   React.useEffect(() => {
+    loadHotels(selectedGlobalTypes);
+  }, [selectedGlobalTypes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
     if (!successMsg) return;
     const t = setTimeout(() => setSuccessMsg(null), SUCCESS_MESSAGE_TIMEOUT_MS);
     return () => clearTimeout(t);
@@ -140,14 +147,6 @@ export default function Page() {
       const want = filterBookable === 'true';
       list = list.filter(h => h.bookable === want);
     }
-    if (selectedGlobalTypes.size > 0) {
-      list = list.filter(h => {
-        const types = parseGlobalTypes(h.globalTypes as any);
-        return [...selectedGlobalTypes].every(sel =>
-          types.some(t => t.split('/').includes(sel))
-        );
-      });
-    }
     list.sort((a, b) => {
       const av = (a[sortField] ?? '').toLowerCase();
       const bv = (b[sortField] ?? '').toLowerCase();
@@ -156,7 +155,7 @@ export default function Page() {
       return 0;
     });
     return list;
-  }, [hotels, filterActive, filterBookable, selectedGlobalTypes, sortField, sortDir]);
+  }, [hotels, filterActive, filterBookable, sortField, sortDir]);
 
   const activeCount       = hotels.filter(h => h.active === true).length;
   const inactiveCount     = hotels.filter(h => h.active === false).length;

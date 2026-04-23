@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { sql, query } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,13 +15,40 @@ type IncomingHotel = {
   expedia_url?: string | null;
 };
 
-export async function GET() {
-  const { rows } = await sql`
-    SELECT id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country,
-           booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"
-    FROM hotels
-    ORDER BY id ASC
-  `;
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const globalTypesParam = searchParams.get('globalTypes');
+  const selectedTypes = globalTypesParam
+    ? globalTypesParam.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+
+  if (selectedTypes.length === 0) {
+    const { rows } = await sql`
+      SELECT id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country,
+             booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"
+      FROM hotels
+      ORDER BY id ASC
+    `;
+    return NextResponse.json(rows);
+  }
+
+  // For each selected type, the hotel's "globalTypes" JSON array must contain an element
+  // equal to the type code or starting with "<code>/" (slash-separated suffix format).
+  // All selected types must match (AND logic).
+  const conditions = selectedTypes.map((_, i) => `
+    EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text("globalTypes"::jsonb) AS elem
+      WHERE elem = $${i + 1} OR elem LIKE ($${i + 1} || '/%')
+    )`).join(' AND ');
+
+  const { rows } = await query(
+    `SELECT id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country,
+            booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"
+     FROM hotels
+     WHERE "globalTypes" IS NOT NULL AND ${conditions}
+     ORDER BY id ASC`,
+    selectedTypes,
+  );
   return NextResponse.json(rows);
 }
 
