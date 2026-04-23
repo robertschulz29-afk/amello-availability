@@ -84,7 +84,7 @@ type StatusFilter = 'all' | 'amello_only' | 'booking_only' | 'booking_cheaper_gt
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDateTime(dt: string) { try { return new Date(dt).toLocaleString(); } catch { return dt; } }
-function fmtDate(dt: string)     { try { return new Date(dt).toLocaleDateString(); } catch { return dt; } }
+function fmtDate(dt: string)     { try { return new Date(dt.length === 10 ? dt + 'T00:00:00' : dt).toLocaleDateString(); } catch { return dt; } }
 
 function toNum(v: unknown): number | null {
   if (v == null) return null;
