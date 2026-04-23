@@ -119,31 +119,36 @@ export async function POST(): Promise<NextResponse> {
     );
   }
 
-  // ── Step 4: fetch TUI global types per hotel and store "listing" types ───
-  const TUI_BASE = 'https://prod.api.tui/content/hotels';
+  // ── Step 4: fetch TUI global types per hotel via GraphQL ────────────────
+  const TUI_GRAPHQL = 'https://prod.api.tui/content/graphql';
 
   await Promise.allSettled(
     successfulCodes.map(async (code) => {
       try {
-        const res = await fetch(
-          `${TUI_BASE}/${code}?locale=de_DE&details=true`,
-          { cache: 'no-store', signal: AbortSignal.timeout(8000) },
-        );
+        const res = await fetch(TUI_GRAPHQL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `{ getHotelByCode(code: "${code}") { globalTypes details { rooms { globalTypes } } } }`,
+          }),
+          signal: AbortSignal.timeout(8000),
+        });
         if (!res.ok) return;
         const body = await res.json();
+        const hotel = body?.data?.getHotelByCode;
 
         const collected = new Set<string>();
 
         // Hotel-level global types
-        if (Array.isArray(body?.globalTypes)) {
-          for (const v of body.globalTypes) {
+        if (Array.isArray(hotel?.globalTypes)) {
+          for (const v of hotel.globalTypes) {
             if (typeof v === 'string') collected.add(v);
           }
         }
 
         // Room-level global types
-        if (Array.isArray(body?.details?.rooms)) {
-          for (const room of body.details.rooms) {
+        if (Array.isArray(hotel?.details?.rooms)) {
+          for (const room of hotel.details.rooms) {
             if (Array.isArray(room?.globalTypes)) {
               for (const v of room.globalTypes) {
                 if (typeof v === 'string') collected.add(v);
