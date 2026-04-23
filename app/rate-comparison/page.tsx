@@ -630,7 +630,7 @@ export default function Page() {
             const { label, className: pillCls, style: pillStyle } = allRatesPillProps(r.price_amello, r.price_booking);
             return (
               <tr key={i} className={allRatesBgClass(r)}>
-                <td className="text-nowrap">{r.check_in_date}</td>
+                <td className="text-nowrap">{fmtDate(r.check_in_date)}</td>
                 <td>{r.amello_room  ?? <span className="text-muted fst-italic">—</span>}</td>
                 <td>{r.booking_room ?? <span className="text-muted fst-italic">—</span>}</td>
                 <td className="small">{r.rate_name || '—'}</td>
