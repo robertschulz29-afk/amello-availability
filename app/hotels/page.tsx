@@ -5,9 +5,8 @@ import { fetchJSON } from '@/lib/api-client';
 
 type GlobalType = {
   global_type: string;
-  type_name: string | null;
-  type_category: string | null;
-  group_name: string | null;
+  collector_id: number | null;
+  collector_name: string | null;
   global_type_category: string | null;
 };
 
@@ -52,7 +51,7 @@ export default function Page() {
   const [syncWarnings, setSyncWarnings] = React.useState<string[]>([]);
 
   const [globalTypeOptions, setGlobalTypeOptions] = React.useState<GlobalType[]>([]);
-  const [selectedGlobalTypes, setSelectedGlobalTypes] = React.useState<Set<string>>(new Set());
+  const [selectedCollectorIds, setSelectedCollectorIds] = React.useState<Set<number>>(new Set());
 
   const [filterActive,   setFilterActive]   = React.useState<FilterBool>('all');
   const [filterBookable, setFilterBookable] = React.useState<FilterBool>('all');
@@ -87,10 +86,15 @@ export default function Page() {
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
-  const loadHotels = React.useCallback(async (globalTypes?: Set<string>) => {
+  const loadHotels = React.useCallback(async (collectorIds?: Set<number>, gtOptions?: GlobalType[]) => {
     try {
       const params = new URLSearchParams();
-      if (globalTypes && globalTypes.size > 0) params.set('globalTypes', [...globalTypes].join(','));
+      if (collectorIds && collectorIds.size > 0 && gtOptions) {
+        const codes = gtOptions
+          .filter(gt => gt.collector_id != null && collectorIds.has(gt.collector_id))
+          .map(gt => gt.global_type);
+        if (codes.length > 0) params.set('globalTypes', codes.join(','));
+      }
       const url = params.toString() ? `/api/hotels?${params}` : '/api/hotels';
       const data = await fetchJSON(url, { cache: 'no-store' } as RequestInit);
       setHotels(Array.isArray(data) ? data : []);
@@ -103,27 +107,13 @@ export default function Page() {
 
   React.useEffect(() => {
     fetchJSON('/api/global_types', { cache: 'no-store' } as RequestInit)
-      .then((data: GlobalType[]) => {
-        if (!Array.isArray(data)) { setGlobalTypeOptions([]); return; }
-        // Deduplicate by global_type code — merge descriptions if multiple rows share the same code
-        const map = new Map<string, GlobalType>();
-        for (const gt of data) {
-          const existing = map.get(gt.global_type);
-          if (existing) {
-            const descs = [existing.type_name, gt.type_name].filter(Boolean);
-            map.set(gt.global_type, { ...existing, type_name: descs.join(' / ') || null });
-          } else {
-            map.set(gt.global_type, gt);
-          }
-        }
-        setGlobalTypeOptions([...map.values()]);
-      })
+      .then((data: GlobalType[]) => setGlobalTypeOptions(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
   React.useEffect(() => {
-    loadHotels(selectedGlobalTypes);
-  }, [selectedGlobalTypes]); // eslint-disable-line react-hooks/exhaustive-deps
+    loadHotels(selectedCollectorIds, globalTypeOptions);
+  }, [selectedCollectorIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (!successMsg) return;
@@ -356,7 +346,19 @@ export default function Page() {
 
         {/* ── Global Types Filter ──────────────────────────────────────── */}
         {globalTypeOptions.length > 0 && (() => {
-          const categories = [...new Set(globalTypeOptions.map(gt => gt.global_type_category ?? ''))].sort();
+          // Derive collectors (deduplicated by collector_id) from globalTypeOptions
+          const collectorMap = new Map<number, { id: number; name: string; category: string }>();
+          for (const gt of globalTypeOptions) {
+            if (gt.collector_id != null && !collectorMap.has(gt.collector_id)) {
+              collectorMap.set(gt.collector_id, {
+                id: gt.collector_id,
+                name: gt.collector_name ?? String(gt.collector_id),
+                category: gt.global_type_category ?? '',
+              });
+            }
+          }
+          const collectors = [...collectorMap.values()];
+          const categories = [...new Set(collectors.map(c => c.category))].sort();
           const codes = visibleHotels.length > 0 ? visibleHotels.map(h => h.code).join(', ') : '—';
           return (
             <div className="card mb-3">
@@ -366,14 +368,14 @@ export default function Page() {
                 onClick={() => setGlobalTypeFilterOpen(o => !o)}
               >
                 <span className="fw-semibold small">
-                  Filter by Global Type
-                  {selectedGlobalTypes.size > 0 && (
+                  Filter by Feature
+                  {selectedCollectorIds.size > 0 && (
                     <>
-                      <span className="badge bg-primary ms-2">{selectedGlobalTypes.size}</span>
+                      <span className="badge bg-primary ms-2">{selectedCollectorIds.size}</span>
                       <button
                         className="btn btn-link btn-sm p-0 ms-2 text-decoration-none text-danger"
                         style={{ fontSize: '0.75rem' }}
-                        onClick={e => { e.stopPropagation(); setSelectedGlobalTypes(new Set()); }}
+                        onClick={e => { e.stopPropagation(); setSelectedCollectorIds(new Set()); }}
                       >
                         Clear
                       </button>
@@ -387,52 +389,38 @@ export default function Page() {
                 <div className="card-body py-3">
                   <div className="d-flex flex-wrap gap-4 mb-3">
                     {categories.map(cat => {
-                      const catTypes = globalTypeOptions.filter(gt => (gt.global_type_category ?? '') === cat);
-                      const groups = [...new Set(catTypes.map(gt => gt.group_name ?? ''))].sort();
+                      const catCollectors = collectors.filter(c => c.category === cat).sort((a, b) => a.name.localeCompare(b.name));
                       return (
                         <div key={cat || '_'} style={{ minWidth: 180 }}>
                           <div className="fw-semibold small text-muted mb-2">{cat || 'Uncategorized'}</div>
-                          {groups.map(group => {
-                            const groupTypes = catTypes.filter(gt => (gt.group_name ?? '') === group);
-                            return (
-                              <div key={group || '_none'} className="mb-2">
-                                {group && (
-                                  <div className="small fw-semibold mb-1" style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}>
-                                    {group}
-                                  </div>
-                                )}
-                                <div className="d-flex flex-wrap gap-1">
-                                  {groupTypes.map(gt => {
-                                    const active = selectedGlobalTypes.has(gt.global_type);
-                                    return (
-                                      <button
-                                        key={gt.global_type}
-                                        type="button"
-                                        className={`btn btn-sm ${active ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                                        onClick={e => {
-                                          e.stopPropagation();
-                                          setSelectedGlobalTypes(prev => {
-                                            const next = new Set(prev);
-                                            next.has(gt.global_type) ? next.delete(gt.global_type) : next.add(gt.global_type);
-                                            return next;
-                                          });
-                                        }}
-                                        title={gt.global_type}
-                                      >
-                                        {gt.type_name || gt.global_type}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
+                          <div className="d-flex flex-wrap gap-1">
+                            {catCollectors.map(c => {
+                              const active = selectedCollectorIds.has(c.id);
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  className={`btn btn-sm ${active ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    setSelectedCollectorIds(prev => {
+                                      const next = new Set(prev);
+                                      next.has(c.id) ? next.delete(c.id) : next.add(c.id);
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  {c.name}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
 
-                  {selectedGlobalTypes.size > 0 && (
+                  {selectedCollectorIds.size > 0 && (
                     <div className="border-top pt-3 mt-1">
                       <div className="d-flex align-items-start gap-2">
                         <div className="flex-grow-1">
@@ -670,7 +658,7 @@ export default function Page() {
                       ? <ul className="mb-0">{types.map((t: string, i: number) => {
                           const meta = globalTypeOptions.find(g => g.global_type === t);
                           const label = meta
-                            ? meta.type_name || t
+                            ? meta.collector_name || t
                             : t;
                           return <li key={i}>{label}</li>;
                         })}</ul>

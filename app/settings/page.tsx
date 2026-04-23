@@ -41,55 +41,93 @@ function buildCookieString(fields: CookieMap): string {
     .join('; ');
 }
 
-// ─── Global type filter groups ────────────────────────────────────────────────
+// ─── Global type collectors ───────────────────────────────────────────────────
 
-type GlobalTypeRow = {
-  global_type: string;
-  type_name: string | null;
-  type_category: string | null;
-  group_name: string | null;
+type CollectorType = { global_type: string };
+type Collector = {
+  id: number;
+  name: string;
+  description: string | null;
+  type_category_id: number | null;
   global_type_category: string | null;
+  types: CollectorType[];
 };
+type Category = { id: number; global_type_category: string };
+type UnassignedType = { global_type: string };
 
-function useFilterGroups() {
-  const [rows, setRows] = React.useState<GlobalTypeRow[]>([]);
+function CollectorsSection() {
+  const [collectors, setCollectors] = React.useState<Collector[]>([]);
+  const [unassigned, setUnassigned] = React.useState<UnassignedType[]>([]);
+  const [categories, setCategories] = React.useState<Category[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  // local pending changes: global_type → new group_name (null = remove)
-  const [pending, setPending] = React.useState<Map<string, string | null>>(new Map());
+  const [selectedId, setSelectedId] = React.useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [newName, setNewName] = React.useState('');
+  const [newDesc, setNewDesc] = React.useState('');
+  const [newCatId, setNewCatId] = React.useState<number | ''>('');
+  const [creating, setCreating] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [savedMsg, setSavedMsg] = React.useState(false);
+  // pending assignment changes: global_type → collector_id | null
+  const [pending, setPending] = React.useState<Map<string, number | null>>(new Map());
 
-  React.useEffect(() => {
-    fetchJSON('/api/global_types/filter-groups')
-      .then(data => setRows(Array.isArray(data) ? data : []))
+  const reload = React.useCallback(() => {
+    setLoading(true);
+    fetchJSON('/api/global_types/collectors')
+      .then(d => {
+        setCollectors(d.collectors ?? []);
+        setUnassigned(d.unassigned ?? []);
+        setCategories(d.categories ?? []);
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
-  const effectiveGroup = (gt: GlobalTypeRow): string | null =>
-    pending.has(gt.global_type) ? pending.get(gt.global_type)! : gt.group_name;
+  React.useEffect(() => { reload(); }, [reload]);
 
-  const assign = (global_type: string, group_name: string | null) =>
-    setPending(prev => new Map(prev).set(global_type, group_name));
+  const selected = collectors.find(c => c.id === selectedId) ?? null;
 
-  const save = async () => {
+  // effective types for a collector (incorporating pending changes)
+  const effectiveTypes = (c: Collector): string[] => {
+    const base = c.types.map(t => t.global_type).filter(gt => pending.get(gt) !== null);
+    const added = [...pending.entries()]
+      .filter(([, cid]) => cid === c.id)
+      .map(([gt]) => gt)
+      .filter(gt => !base.includes(gt));
+    return [...base, ...added];
+  };
+
+  const effectiveUnassigned = unassigned
+    .filter(u => !pending.has(u.global_type) || pending.get(u.global_type) === null)
+    .concat(
+      collectors.flatMap(c => c.types
+        .filter(t => pending.get(t.global_type) === null)
+        .map(t => ({ global_type: t.global_type }))
+      )
+    );
+
+  const filteredUnassigned = effectiveUnassigned.filter(u =>
+    !searchTerm || u.global_type.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
+  const assign = (global_type: string, collector_id: number | null) =>
+    setPending(prev => new Map(prev).set(global_type, collector_id));
+
+  const saveAssignments = async () => {
     setSaving(true);
     setSavedMsg(false);
     try {
-      const assignments = [...pending.entries()].map(([global_type, group_name]) => ({ global_type, group_name }));
-      await fetch('/api/global_types/filter-groups', {
+      const assignments = [...pending.entries()].map(([global_type, collector_id]) => ({ global_type, collector_id }));
+      await fetch('/api/global_types/assignments', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assignments }),
       });
-      // commit pending into rows
-      setRows(prev => prev.map(r =>
-        pending.has(r.global_type) ? { ...r, group_name: pending.get(r.global_type)! } : r,
-      ));
       setPending(new Map());
       setSavedMsg(true);
       setTimeout(() => setSavedMsg(false), 3000);
+      reload();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -97,171 +135,147 @@ function useFilterGroups() {
     }
   };
 
-  return { rows, loading, error, effectiveGroup, assign, pending, save, saving, savedMsg };
-}
-
-function FilterGroupsSection() {
-  const { rows, loading, error, effectiveGroup, assign, pending, save, saving, savedMsg } = useFilterGroups();
-  const [newGroupName, setNewGroupName] = React.useState('');
-  const [selectedGroup, setSelectedGroup] = React.useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = React.useState('');
-
-  // Derive groups from current effective assignments
-  const groupNames = React.useMemo(() => {
-    const names = new Set<string>();
-    for (const r of rows) {
-      const g = effectiveGroup(r);
-      if (g) names.add(g);
+  const createCollector = async () => {
+    if (!newName.trim()) return;
+    setCreating(true);
+    try {
+      const res = await fetch('/api/global_types/collectors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim(), description: newDesc.trim() || null, type_category_id: newCatId || null }),
+      });
+      const created = await res.json();
+      setNewName(''); setNewDesc(''); setNewCatId('');
+      reload();
+      setSelectedId(created.id);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setCreating(false);
     }
-    return [...names].sort();
-  }, [rows, pending]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const typesByGroup = React.useMemo(() => {
-    const map = new Map<string, GlobalTypeRow[]>();
-    for (const r of rows) {
-      const g = effectiveGroup(r);
-      if (g) {
-        const arr = map.get(g) ?? [];
-        arr.push(r);
-        map.set(g, arr);
-      }
-    }
-    return map;
-  }, [rows, pending]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const unassigned = React.useMemo(
-    () => rows.filter(r => !effectiveGroup(r)),
-    [rows, pending], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  const filteredUnassigned = unassigned.filter(r =>
-    !searchTerm || (r.type_name ?? r.global_type).toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-
-  const addGroup = () => {
-    const name = newGroupName.trim();
-    if (!name || groupNames.includes(name)) return;
-    setSelectedGroup(name);
-    setNewGroupName('');
   };
 
-  if (loading) return <div className="text-muted small">Loading global types…</div>;
+  const deleteCollector = async (id: number) => {
+    if (!confirm('Delete this collector? Its global types will be unassigned.')) return;
+    await fetch(`/api/global_types/collectors/${id}`, { method: 'DELETE' });
+    if (selectedId === id) setSelectedId(null);
+    reload();
+  };
+
+  if (loading) return <div className="text-muted small">Loading…</div>;
   if (error) return <div className="alert alert-danger small">{error}</div>;
 
   return (
     <div>
       <p className="text-muted small mb-3">
-        Define filter groups (e.g. "All Inclusive") and assign global types to them.
-        Groups appear as sub-labels in the hotel filter panel.
+        Create collectors (e.g. "All Inclusive"), assign them to a category, and map global type codes to them.
+        Collectors appear as filter buttons on the Hotels page.
       </p>
 
       <div className="row g-3">
-        {/* ── group list ── */}
+        {/* ── collector list + create ── */}
         <div className="col-md-4">
-          <div className="d-flex gap-2 mb-2">
-            <input
-              type="text"
-              className="form-control form-control-sm"
-              placeholder="New group name…"
-              value={newGroupName}
-              onChange={e => setNewGroupName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addGroup()}
-            />
-            <button className="btn btn-sm btn-outline-primary text-nowrap" onClick={addGroup} disabled={!newGroupName.trim()}>
-              + Add
+          {/* create form */}
+          <div className="border rounded p-2 mb-2 bg-light">
+            <div className="fw-semibold small mb-2">New Collector</div>
+            <input className="form-control form-control-sm mb-1" placeholder="Name" value={newName} onChange={e => setNewName(e.target.value)} />
+            <input className="form-control form-control-sm mb-1" placeholder="Description (optional)" value={newDesc} onChange={e => setNewDesc(e.target.value)} />
+            <select className="form-select form-select-sm mb-2" value={newCatId} onChange={e => setNewCatId(e.target.value ? Number(e.target.value) : '')}>
+              <option value="">— No category —</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.global_type_category}</option>)}
+            </select>
+            <button className="btn btn-sm btn-primary w-100" onClick={createCollector} disabled={creating || !newName.trim()}>
+              {creating ? 'Creating…' : '+ Create'}
             </button>
           </div>
-          <div className="list-group" style={{ maxHeight: 400, overflowY: 'auto' }}>
-            {groupNames.map(g => (
+
+          {/* list */}
+          <div className="list-group" style={{ maxHeight: 360, overflowY: 'auto' }}>
+            {collectors.length === 0 && (
+              <div className="list-group-item text-muted small fst-italic">No collectors yet</div>
+            )}
+            {collectors.map(c => (
               <button
-                key={g}
+                key={c.id}
                 type="button"
-                className={`list-group-item list-group-item-action d-flex justify-content-between align-items-center py-2 ${selectedGroup === g ? 'active' : ''}`}
-                onClick={() => setSelectedGroup(g)}
+                className={`list-group-item list-group-item-action py-2 ${selectedId === c.id ? 'active' : ''}`}
+                onClick={() => { setSelectedId(c.id); setSearchTerm(''); }}
               >
-                <span className="small fw-semibold">{g}</span>
-                <span className="badge bg-secondary rounded-pill ms-2">
-                  {typesByGroup.get(g)?.length ?? 0}
-                </span>
+                <div className="d-flex justify-content-between align-items-center">
+                  <span className="small fw-semibold">{c.name}</span>
+                  <div className="d-flex gap-1 align-items-center">
+                    <span className="badge bg-secondary rounded-pill">{effectiveTypes(c).length}</span>
+                    <button
+                      type="button"
+                      className={`btn btn-sm p-0 ms-1 ${selectedId === c.id ? 'text-white' : 'text-danger'}`}
+                      style={{ lineHeight: 1 }}
+                      onClick={e => { e.stopPropagation(); deleteCollector(c.id); }}
+                      title="Delete collector"
+                    >
+                      <i className="fas fa-trash-can" style={{ fontSize: '0.7rem' }} />
+                    </button>
+                  </div>
+                </div>
+                {c.global_type_category && (
+                  <div className={`small ${selectedId === c.id ? 'text-white-50' : 'text-muted'}`} style={{ fontSize: '0.7rem' }}>
+                    {c.global_type_category}
+                  </div>
+                )}
               </button>
             ))}
-            {groupNames.length === 0 && (
-              <div className="list-group-item text-muted small fst-italic">No groups defined</div>
-            )}
           </div>
         </div>
 
-        {/* ── group detail ── */}
+        {/* ── collector detail ── */}
         <div className="col-md-8">
-          {selectedGroup ? (
+          {selected ? (
             <>
-              <div className="fw-semibold mb-2">{selectedGroup}</div>
+              <div className="fw-semibold mb-1">{selected.name}</div>
+              {selected.description && <div className="text-muted small mb-2">{selected.description}</div>}
+
+              <div className="fw-semibold small text-muted mb-1">Assigned global types</div>
               <div className="d-flex flex-wrap gap-1 mb-3 p-2 border rounded" style={{ minHeight: 42 }}>
-                {(typesByGroup.get(selectedGroup) ?? []).map(r => (
-                  <span key={r.global_type} className="badge bg-secondary d-flex align-items-center gap-1" style={{ fontSize: '0.8rem' }}>
-                    {r.type_name || r.global_type}
-                    <button
-                      type="button"
-                      className="btn-close btn-close-white ms-1"
-                      style={{ fontSize: '0.55rem' }}
-                      onClick={() => assign(r.global_type, null)}
-                      aria-label="Remove"
-                    />
+                {effectiveTypes(selected).map(gt => (
+                  <span key={gt} className="badge bg-secondary d-flex align-items-center gap-1" style={{ fontSize: '0.8rem' }}>
+                    {gt}
+                    <button type="button" className="btn-close btn-close-white ms-1" style={{ fontSize: '0.55rem' }}
+                      onClick={() => assign(gt, null)} aria-label="Remove" />
                   </span>
                 ))}
-                {(typesByGroup.get(selectedGroup) ?? []).length === 0 && (
-                  <span className="text-muted small fst-italic">No types assigned — pick from the list below</span>
+                {effectiveTypes(selected).length === 0 && (
+                  <span className="text-muted small fst-italic">No types assigned</span>
                 )}
               </div>
 
-              <div className="fw-semibold small text-muted mb-1">Add from unassigned types</div>
-              <input
-                type="text"
-                className="form-control form-control-sm mb-2"
-                placeholder="Search types…"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
+              <div className="fw-semibold small text-muted mb-1">Add unassigned global types</div>
+              <input className="form-control form-control-sm mb-2" placeholder="Search by code…"
+                value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               <div style={{ maxHeight: 220, overflowY: 'auto' }} className="border rounded">
                 {filteredUnassigned.length === 0 && (
                   <div className="p-2 text-muted small fst-italic">No unassigned types{searchTerm ? ' matching search' : ''}</div>
                 )}
-                {filteredUnassigned.map(r => (
-                  <button
-                    key={r.global_type}
-                    type="button"
-                    className="btn btn-link btn-sm w-100 text-start text-decoration-none px-3 py-1 border-bottom"
-                    onClick={() => assign(r.global_type, selectedGroup)}
+                {filteredUnassigned.map(u => (
+                  <button key={u.global_type} type="button"
+                    className="btn btn-link btn-sm w-100 text-start text-decoration-none px-3 py-1 border-bottom text-body"
+                    onClick={() => assign(u.global_type, selected.id)}
                   >
-                    <span className="text-body">{r.type_name || r.global_type}</span>
-                    {r.global_type_category && (
-                      <span className="text-muted ms-2 small">({r.global_type_category})</span>
-                    )}
+                    {u.global_type}
                   </button>
                 ))}
               </div>
             </>
           ) : (
-            <div className="text-muted small fst-italic mt-2">Select a group to manage its types</div>
+            <div className="text-muted small fst-italic mt-2">Select a collector to manage its global types</div>
           )}
         </div>
       </div>
 
-      {/* ── save bar ── */}
       <div className="d-flex align-items-center gap-2 mt-3 pt-3 border-top">
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={save}
-          disabled={saving || pending.size === 0}
-        >
-          {saving ? 'Saving…' : `Save Changes${pending.size > 0 ? ` (${pending.size})` : ''}`}
+        <button className="btn btn-primary btn-sm" onClick={saveAssignments} disabled={saving || pending.size === 0}>
+          {saving ? 'Saving…' : `Save Assignments${pending.size > 0 ? ` (${pending.size})` : ''}`}
         </button>
-        {pending.size > 0 && (
-          <span className="text-warning small"><i className="fas fa-circle-exclamation me-1" />Unsaved changes</span>
-        )}
-        {savedMsg && (
-          <span className="text-success small"><i className="fas fa-check me-1" />Saved</span>
-        )}
+        {pending.size > 0 && <span className="text-warning small"><i className="fas fa-circle-exclamation me-1" />Unsaved changes</span>}
+        {savedMsg && <span className="text-success small"><i className="fas fa-check me-1" />Saved</span>}
       </div>
     </div>
   );
@@ -394,11 +408,11 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ── Global type filter groups ── */}
+      {/* ── Global type collectors ── */}
       <div className="card mb-4" style={{ maxWidth: 900 }}>
-        <div className="card-header fw-semibold">Global Type Filter Groups</div>
+        <div className="card-header fw-semibold">Global Type Collectors</div>
         <div className="card-body">
-          <FilterGroupsSection />
+          <CollectorsSection />
         </div>
       </div>
     </main>

@@ -76,11 +76,11 @@ export async function GET(req: NextRequest) {
             sr.scan_id,
             sr.hotel_id,
             h.name as hotel_name,
-            sr.check_in_date,
+            sr.check_in_date::text as check_in_date,
             sr.source,
             sr.status,
             sr.response_json,
-            CASE 
+            CASE
               WHEN sr.status = 'green' AND sr.response_json->'rooms' IS NOT NULL THEN
                 (SELECT jsonb_agg(
                   jsonb_build_object(
@@ -141,11 +141,11 @@ export async function GET(req: NextRequest) {
             sr.scan_id,
             sr.hotel_id,
             h.name as hotel_name,
-            sr.check_in_date,
+            sr.check_in_date::text as check_in_date,
             sr.source,
             sr.status,
             sr.response_json,
-            CASE 
+            CASE
               WHEN sr.status = 'green' AND sr.response_json->'rooms' IS NOT NULL THEN
                 (SELECT jsonb_agg(
                   jsonb_build_object(
