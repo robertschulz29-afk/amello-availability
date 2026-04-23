@@ -153,7 +153,6 @@ export async function POST(): Promise<NextResponse> {
         }
 
         const globalTypes = [...collected];
-
         if (globalTypes.length === 0) return;
 
         await query(
