@@ -10,6 +10,7 @@ const PUBLIC_PATHS = [
   '/api/scan-sources',   // source toggle
   '/api/hotels',         // hotel data
   '/api/settings',       // app settings (cookies etc.)
+  '/api/global_types',   // global types and filter group management
 ];
 
 export async function middleware(request: NextRequest) {
