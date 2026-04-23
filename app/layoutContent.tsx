@@ -11,8 +11,7 @@ const NAV = [
     links: [
       { href: '/',                 icon: 'fa-gauge-high',             label: 'Dashboard' },
       { href: '/portfolio-health', icon: 'fa-heart-pulse',            label: 'Portfolio Health' },
-      { href: '/price-comparison', icon: 'fa-chart-bar',              label: 'Price Comparison' },
-      { href: '/rate-comparison',  icon: 'fa-arrow-right-arrow-left', label: 'Best Available Rate' },
+      { href: '/rate-comparison',  icon: 'fa-arrow-right-arrow-left', label: 'Rate Report' },
       { href: '/scan-results',     icon: 'fa-table-list',             label: 'Scan Results' },
     ],
   },
