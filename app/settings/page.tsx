@@ -45,9 +45,9 @@ function buildCookieString(fields: CookieMap): string {
 
 type GlobalTypeRow = {
   global_type: string;
-  type_description: string | null;
+  type_name: string | null;
   type_category: string | null;
-  filter_group: string | null;
+  group_name: string | null;
   global_type_category: string | null;
 };
 
@@ -55,7 +55,7 @@ function useFilterGroups() {
   const [rows, setRows] = React.useState<GlobalTypeRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  // local pending changes: global_type → new filter_group (null = remove)
+  // local pending changes: global_type → new group_name (null = remove)
   const [pending, setPending] = React.useState<Map<string, string | null>>(new Map());
   const [saving, setSaving] = React.useState(false);
   const [savedMsg, setSavedMsg] = React.useState(false);
@@ -68,16 +68,16 @@ function useFilterGroups() {
   }, []);
 
   const effectiveGroup = (gt: GlobalTypeRow): string | null =>
-    pending.has(gt.global_type) ? pending.get(gt.global_type)! : gt.filter_group;
+    pending.has(gt.global_type) ? pending.get(gt.global_type)! : gt.group_name;
 
-  const assign = (global_type: string, filter_group: string | null) =>
-    setPending(prev => new Map(prev).set(global_type, filter_group));
+  const assign = (global_type: string, group_name: string | null) =>
+    setPending(prev => new Map(prev).set(global_type, group_name));
 
   const save = async () => {
     setSaving(true);
     setSavedMsg(false);
     try {
-      const assignments = [...pending.entries()].map(([global_type, filter_group]) => ({ global_type, filter_group }));
+      const assignments = [...pending.entries()].map(([global_type, group_name]) => ({ global_type, group_name }));
       await fetch('/api/global_types/filter-groups', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -85,7 +85,7 @@ function useFilterGroups() {
       });
       // commit pending into rows
       setRows(prev => prev.map(r =>
-        pending.has(r.global_type) ? { ...r, filter_group: pending.get(r.global_type)! } : r,
+        pending.has(r.global_type) ? { ...r, group_name: pending.get(r.global_type)! } : r,
       ));
       setPending(new Map());
       setSavedMsg(true);
@@ -135,7 +135,7 @@ function FilterGroupsSection() {
   );
 
   const filteredUnassigned = unassigned.filter(r =>
-    !searchTerm || (r.type_description ?? r.global_type).toLowerCase().includes(searchTerm.toLowerCase()),
+    !searchTerm || (r.type_name ?? r.global_type).toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const addGroup = () => {
@@ -199,7 +199,7 @@ function FilterGroupsSection() {
               <div className="d-flex flex-wrap gap-1 mb-3 p-2 border rounded" style={{ minHeight: 42 }}>
                 {(typesByGroup.get(selectedGroup) ?? []).map(r => (
                   <span key={r.global_type} className="badge bg-secondary d-flex align-items-center gap-1" style={{ fontSize: '0.8rem' }}>
-                    {r.type_description || r.global_type}
+                    {r.type_name || r.global_type}
                     <button
                       type="button"
                       className="btn-close btn-close-white ms-1"
@@ -233,7 +233,7 @@ function FilterGroupsSection() {
                     className="btn btn-link btn-sm w-100 text-start text-decoration-none px-3 py-1 border-bottom"
                     onClick={() => assign(r.global_type, selectedGroup)}
                   >
-                    <span className="text-body">{r.type_description || r.global_type}</span>
+                    <span className="text-body">{r.type_name || r.global_type}</span>
                     {r.global_type_category && (
                       <span className="text-muted ms-2 small">({r.global_type_category})</span>
                     )}

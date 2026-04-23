@@ -5,9 +5,9 @@ import { fetchJSON } from '@/lib/api-client';
 
 type GlobalType = {
   global_type: string;
-  type_description: string | null;
+  type_name: string | null;
   type_category: string | null;
-  filter_group: string | null;
+  group_name: string | null;
   global_type_category: string | null;
 };
 
@@ -110,8 +110,8 @@ export default function Page() {
         for (const gt of data) {
           const existing = map.get(gt.global_type);
           if (existing) {
-            const descs = [existing.type_description, gt.type_description].filter(Boolean);
-            map.set(gt.global_type, { ...existing, type_description: descs.join(' / ') || null });
+            const descs = [existing.type_name, gt.type_name].filter(Boolean);
+            map.set(gt.global_type, { ...existing, type_name: descs.join(' / ') || null });
           } else {
             map.set(gt.global_type, gt);
           }
@@ -388,12 +388,12 @@ export default function Page() {
                   <div className="d-flex flex-wrap gap-4 mb-3">
                     {categories.map(cat => {
                       const catTypes = globalTypeOptions.filter(gt => (gt.global_type_category ?? '') === cat);
-                      const groups = [...new Set(catTypes.map(gt => gt.filter_group ?? ''))].sort();
+                      const groups = [...new Set(catTypes.map(gt => gt.group_name ?? ''))].sort();
                       return (
                         <div key={cat || '_'} style={{ minWidth: 180 }}>
                           <div className="fw-semibold small text-muted mb-2">{cat || 'Uncategorized'}</div>
                           {groups.map(group => {
-                            const groupTypes = catTypes.filter(gt => (gt.filter_group ?? '') === group);
+                            const groupTypes = catTypes.filter(gt => (gt.group_name ?? '') === group);
                             return (
                               <div key={group || '_none'} className="mb-2">
                                 {group && (
@@ -419,7 +419,7 @@ export default function Page() {
                                         }}
                                         title={gt.global_type}
                                       >
-                                        {gt.type_description || gt.global_type}
+                                        {gt.type_name || gt.global_type}
                                       </button>
                                     );
                                   })}
@@ -670,7 +670,7 @@ export default function Page() {
                       ? <ul className="mb-0">{types.map((t: string, i: number) => {
                           const meta = globalTypeOptions.find(g => g.global_type === t);
                           const label = meta
-                            ? meta.type_description || t
+                            ? meta.type_name || t
                             : t;
                           return <li key={i}>{label}</li>;
                         })}</ul>

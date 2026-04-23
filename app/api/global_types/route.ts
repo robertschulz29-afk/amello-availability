@@ -8,15 +8,15 @@ export async function GET() {
   const { rows } = await sql`
     SELECT
       gt.global_type,
-      gt.type_description,
+      gt.type_name,
       gt.type_category,
-      gt.filter_group,
+      gt.group_name,
       gtc.global_type_category
     FROM global_types gt
     LEFT JOIN global_types_categories gtc
       ON gt.type_category::bigint = gtc.id
     WHERE gt.global_type IS NOT NULL
-    ORDER BY gtc.global_type_category ASC, gt.filter_group ASC, gt.type_description ASC, gt.global_type ASC
+    ORDER BY gtc.global_type_category ASC, gt.group_name ASC, gt.type_name ASC, gt.global_type ASC
   `;
   return NextResponse.json(rows);
 }

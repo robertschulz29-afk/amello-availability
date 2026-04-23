@@ -6,27 +6,27 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const { rows } = await sql`
-    SELECT global_type, type_description, type_category, filter_group,
+    SELECT global_type, type_name, type_category, group_name,
            gtc.global_type_category
     FROM global_types gt
     LEFT JOIN global_types_categories gtc ON gt.type_category::bigint = gtc.id
     WHERE gt.global_type IS NOT NULL
-    ORDER BY gt.filter_group ASC NULLS LAST, gt.type_description ASC
+    ORDER BY gt.group_name ASC NULLS LAST, gt.type_name ASC
   `;
   return NextResponse.json(rows);
 }
 
-// PUT body: { assignments: { global_type: string, filter_group: string | null }[] }
+// PUT body: { assignments: { global_type: string, group_name: string | null }[] }
 export async function PUT(req: NextRequest) {
   try {
     const { assignments } = await req.json();
     if (!Array.isArray(assignments)) {
       return NextResponse.json({ error: 'assignments must be an array' }, { status: 400 });
     }
-    for (const { global_type, filter_group } of assignments) {
+    for (const { global_type, group_name } of assignments) {
       await query(
-        `UPDATE global_types SET filter_group = $1 WHERE global_type = $2`,
-        [filter_group ?? null, global_type],
+        `UPDATE global_types SET group_name = $1 WHERE global_type = $2`,
+        [group_name ?? null, global_type],
       );
     }
     return NextResponse.json({ ok: true, updated: assignments.length });
