@@ -121,7 +121,8 @@ export async function GET(req: NextRequest) {
           fd.room_name,
           fd.rate_name,
           MAX(CASE WHEN fd.source = 'amello' THEN fd.price END) as price_amello,
-          MAX(CASE WHEN fd.source IN ('booking', 'booking_member') THEN fd.price END) as price_booking,
+          MAX(CASE WHEN fd.source = 'booking' THEN fd.price END) as price_booking,
+          MAX(CASE WHEN fd.source = 'booking_member' THEN fd.price END) as price_booking_member,
           MAX(CASE WHEN fd.source = 'amello' THEN fd.status END) as status_amello,
           MAX(CASE WHEN fd.source IN ('booking', 'booking_member') THEN fd.status END) as status_booking,
           COALESCE(MAX(fd.currency), 'EUR') as currency

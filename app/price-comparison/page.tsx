@@ -33,6 +33,7 @@ type RawRow = {
   rate_name: string | null;
   price_amello: string | null;
   price_booking: string | null;
+  price_booking_member: string | null;
   status_amello: 'green' | 'red' | null;
   status_booking: 'green' | 'red' | null;
   currency: string;
@@ -47,6 +48,7 @@ type DisplayRow = {
   rate_name: string | null;
   price_amello: number | null;
   price_booking: number | null;
+  price_booking_member: number | null;
   status_amello: 'green' | 'red' | null;
   status_booking: 'green' | 'red' | null;
   currency: string;
@@ -187,6 +189,7 @@ function buildDisplayRows(rawRows: RawRow[], mappingsByHotel: Map<number, RoomMa
         rate_name: amelloRow?.rate_name ?? null,
         price_amello: toNum(amelloRow?.price_amello),
         price_booking: toNum(bookingRow?.price_booking),
+        price_booking_member: toNum(bookingRow?.price_booking_member),
         status_amello: amelloRow?.status_amello ?? null,
         status_booking: bookingRow?.status_booking ?? null,
         currency: (amelloRow ?? bookingRow)!.currency ?? 'EUR',
@@ -202,7 +205,7 @@ function buildDisplayRows(rawRows: RawRow[], mappingsByHotel: Map<number, RoomMa
       check_in_date: normalizeDate(row.check_in_date),
       amello_room: row.room_name, booking_room: null,
       rate_name: row.rate_name,
-      price_amello: toNum(row.price_amello), price_booking: null,
+      price_amello: toNum(row.price_amello), price_booking: null, price_booking_member: null,
       status_amello: row.status_amello, status_booking: null,
       currency: row.currency ?? 'EUR', mapped: false,
     });
@@ -215,7 +218,7 @@ function buildDisplayRows(rawRows: RawRow[], mappingsByHotel: Map<number, RoomMa
       check_in_date: normalizeDate(row.check_in_date),
       amello_room: null, booking_room: row.room_name,
       rate_name: null,
-      price_amello: null, price_booking: toNum(row.price_booking),
+      price_amello: null, price_booking: toNum(row.price_booking), price_booking_member: toNum(row.price_booking_member),
       status_amello: null, status_booking: row.status_booking,
       currency: row.currency ?? 'EUR', mapped: false,
     });
@@ -432,6 +435,7 @@ function PriceComparisonPage() {
             <th>Rate</th>
             <SortTh label="Amello Price"  col="price_amello"   sort={sort} onSort={handleSort} className="text-end" />
             <SortTh label="Booking Price" col="price_booking"  sort={sort} onSort={handleSort} className="text-end" />
+            <th className="text-end text-nowrap">Member Price</th>
             <SortTh label="Diff (A−B)"    col="diff"           sort={sort} onSort={handleSort} className="text-end" />
             <th>Status</th>
           </tr>
@@ -450,6 +454,9 @@ function PriceComparisonPage() {
                 </td>
                 <td className="text-end text-nowrap">
                   {r.price_booking != null ? formatPrice(r.price_booking, r.currency) : <span className="text-muted">—</span>}
+                </td>
+                <td className="text-end text-nowrap">
+                  {r.price_booking_member != null ? <span className="text-primary fw-semibold">{formatPrice(r.price_booking_member, r.currency)}</span> : <span className="text-muted">—</span>}
                 </td>
                 <DiffCell a={r.price_amello} b={r.price_booking} currency={r.currency} />
                 <td><span className={pillCls} style={pillStyle}>{label}</span></td>

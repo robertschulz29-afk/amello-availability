@@ -288,16 +288,16 @@ export default function Page() {
       <table className="table table-sm table-striped mb-0">
         <thead className="table-light">
           <tr>
-            <SortTh label="Check-In"   col="check_in_date"         sort={sort} onSort={handleSort} />
+            <SortTh label="Check-In"        col="check_in_date"           sort={sort} onSort={handleSort} />
             <th>Amello Room</th>
             <th>Amello Rate</th>
-            <SortTh label="Amello Price"    col="amello_min_price"    sort={sort} onSort={handleSort} className="text-end" />
             <th>Booking Room</th>
             <th>Booking Rate</th>
-            <SortTh label="Booking Price"   col="booking_min_price"   sort={sort} onSort={handleSort} className="text-end" />
+            <SortTh label="Amello Price"    col="amello_min_price"        sort={sort} onSort={handleSort} className="text-end" />
+            <SortTh label="Booking Price"   col="booking_min_price"       sort={sort} onSort={handleSort} className="text-end" />
             <th className="text-end text-nowrap">Member Price</th>
-            <SortTh label="Diff (A−B)"      col="price_difference"    sort={sort} onSort={handleSort} className="text-end" />
-            <SortTh label="% Diff"          col="percentage_difference" sort={sort} onSort={handleSort} className="text-end" />
+            <SortTh label="Diff (A−B)"      col="price_difference"        sort={sort} onSort={handleSort} className="text-end" />
+            <th className="text-end text-nowrap">Diff (A−BM)</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -305,31 +305,29 @@ export default function Page() {
           {rows.map((r, i) => {
             const a = r.amello_min_price;
             const b = r.booking_min_price;
+            const bm = r.booking_member_min_price;
             const currency = r.amello_currency || r.booking_currency || 'EUR';
             const { label, className: pillCls, style: pillStyle } = pillProps(r);
-            const diffCls = r.price_difference == null ? 'text-muted'
-              : r.price_difference > 0 ? 'text-danger'
-              : r.price_difference < 0 ? 'text-success'
-              : 'text-muted';
+            const diffAB = r.price_difference;
+            const diffABM = a != null && bm != null ? a - bm : null;
+            const diffClsFn = (d: number | null) => d == null ? 'text-muted' : d > 0 ? 'text-danger' : d < 0 ? 'text-success' : 'text-muted';
             return (
               <tr key={i} className={rowBgClass(r)}>
                 <td className="text-nowrap">{fmtDate(r.check_in_date)}</td>
                 <td className="small">{r.amello_room_name  || <span className="text-muted">—</span>}</td>
                 <td className="small">{r.amello_rate_name  || <span className="text-muted">—</span>}</td>
-                <td className="text-end text-nowrap">{a != null ? formatPrice(a, currency) : <span className="text-muted">—</span>}</td>
                 <td className="small">{r.booking_room_name || <span className="text-muted">—</span>}</td>
                 <td className="small">{r.booking_rate_name || <span className="text-muted">—</span>}</td>
+                <td className="text-end text-nowrap">{a != null ? formatPrice(a, currency) : <span className="text-muted">—</span>}</td>
                 <td className="text-end text-nowrap">{b != null ? formatPrice(b, currency) : <span className="text-muted">—</span>}</td>
                 <td className="text-end text-nowrap">
-                  {r.booking_member_min_price != null
-                    ? <span className="text-primary fw-semibold">{formatPrice(r.booking_member_min_price, currency)}</span>
-                    : <span className="text-muted">—</span>}
+                  {bm != null ? <span className="text-primary fw-semibold">{formatPrice(bm, currency)}</span> : <span className="text-muted">—</span>}
                 </td>
-                <td className={`text-end fw-bold ${diffCls}`}>
-                  {r.price_difference != null ? (r.price_difference > 0 ? '+' : '') + formatPrice(r.price_difference, currency) : <span className="text-muted">—</span>}
+                <td className={`text-end fw-bold ${diffClsFn(diffAB)}`}>
+                  {diffAB != null ? (diffAB > 0 ? '+' : '') + formatPrice(diffAB, currency) : <span className="text-muted">—</span>}
                 </td>
-                <td className={`text-end fw-bold ${diffCls}`}>
-                  {r.percentage_difference != null ? (r.percentage_difference > 0 ? '+' : '') + r.percentage_difference.toFixed(1) + '%' : <span className="text-muted">—</span>}
+                <td className={`text-end fw-bold ${diffClsFn(diffABM)}`}>
+                  {diffABM != null ? (diffABM > 0 ? '+' : '') + formatPrice(diffABM, currency) : <span className="text-muted">—</span>}
                 </td>
                 <td><span className={pillCls} style={pillStyle}>{label}</span></td>
               </tr>
