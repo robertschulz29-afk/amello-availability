@@ -114,14 +114,28 @@ export default function Page() {
 
   async function startScan() {
     setBusy(true); setError(null); setSuccess(null);
+    const enabledSources = sources.filter(s => s.enabled === true).map(s => s.name);
     try {
+      if (enabledSources.includes('booking_member')) {
+        const cookieRes = await fetchJSON('/api/settings?key=booking_com_cookies');
+        const cookies: string = cookieRes?.value || '';
+        const testRes = await fetch('/api/settings/booking-cookies/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cookies }),
+        });
+        const testData = await testRes.json();
+        if (!testData.loggedIn) {
+          setError('__member_login__');
+          setBusy(false);
+          return;
+        }
+      }
+
       const res = await fetchJSON('/api/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          baseCheckIn, days, stayNights, adultCount,
-          sources: sources.filter(s => s.enabled === true).map(s => s.name),
-        }),
+        body: JSON.stringify({ baseCheckIn, days, stayNights, adultCount, sources: enabledSources }),
       });
       const scanId = Number(res?.scanId);
       if (!Number.isFinite(scanId) || scanId <= 0) throw new Error('Invalid scanId from server');
@@ -166,7 +180,17 @@ export default function Page() {
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
 
         {success && <div className="alert alert-success alert-dismissible" role="alert">{success}<button type="button" className="btn-close" onClick={() => setSuccess(null)} /></div>}
-        {error && <div className="alert alert-danger alert-dismissible" role="alert">{error}<button type="button" className="btn-close" onClick={() => setError(null)} /></div>}
+        {error && (
+          <div className="alert alert-danger alert-dismissible" role="alert">
+            {error === '__member_login__' ? (
+              <>
+                <strong>Not logged in to Booking.com.</strong> Booking (Member) scans require valid session cookies.{' '}
+                <a href="/settings" className="alert-link">Update cookies in Settings</a>.
+              </>
+            ) : error}
+            <button type="button" className="btn-close" onClick={() => setError(null)} />
+          </div>
+        )}
 
         {/* ── Create new scan ── */}
         <div className="card mb-4">
