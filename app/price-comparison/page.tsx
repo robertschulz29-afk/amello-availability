@@ -480,19 +480,6 @@ function PriceComparisonPage() {
 
         {/* ── controls ── */}
         <div className="d-flex gap-3 mb-3 flex-wrap">
-          <select
-            className="form-select"
-            style={{ minWidth: 300 }}
-            value={selectedScanId ?? ''}
-            onChange={e => setSelectedScanId(Number(e.target.value))}
-          >
-            {scans.map(s => (
-              <option key={s.id} value={s.id}>
-                #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status}
-              </option>
-            ))}
-          </select>
-
           <HotelCombobox
             hotels={hotels}
             selectedIds={selectedHotelIds}
@@ -525,19 +512,26 @@ function PriceComparisonPage() {
         </div>
 
         {/* ── scan parameters ── */}
-        {scanDetails && (
-          <div className="card mb-3">
-            <div className="card-header">Scan Parameters</div>
-            <div className="card-body small row g-2">
-              <div className="col-md-4"><strong>Scan ID:</strong> {scanDetails.scanId}</div>
-              <div className="col-md-4"><strong>Scanned at:</strong> {fmtDateTime(scanDetails.scannedAt)}</div>
-              <div className="col-md-4"><strong>Timezone:</strong> {scanDetails.timezone}</div>
-              <div className="col-md-4"><strong>Base check-in:</strong> {scanDetails.baseCheckIn}</div>
-              <div className="col-md-4"><strong>Days scanned:</strong> {scanDetails.days}</div>
-              <div className="col-md-4"><strong>Stay nights:</strong> {scanDetails.stayNights}</div>
-            </div>
+        <div className="card mb-3">
+          <div className="card-header">Scan Parameters</div>
+          <div className="card-body small">
+            <select className="form-select form-select-sm mb-2" style={{ maxWidth: 500 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
+              {scans.map(s => (
+                <option key={s.id} value={s.id}>#{s.id} • {fmtDateTime(s.scanned_at)} • {s.status}</option>
+              ))}
+            </select>
+            {scanDetails && (
+              <div className="row g-2">
+                <div className="col-md-4"><strong>Scan ID:</strong> {scanDetails.scanId}</div>
+                <div className="col-md-4"><strong>Scanned at:</strong> {fmtDateTime(scanDetails.scannedAt)}</div>
+                <div className="col-md-4"><strong>Timezone:</strong> {scanDetails.timezone}</div>
+                <div className="col-md-4"><strong>Base check-in:</strong> {scanDetails.baseCheckIn}</div>
+                <div className="col-md-4"><strong>Days scanned:</strong> {scanDetails.days}</div>
+                <div className="col-md-4"><strong>Stay nights:</strong> {scanDetails.stayNights}</div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
         {/* ── summary ── */}
         {filteredRows.length > 0 && (

@@ -28,7 +28,7 @@ export async function GET() {
   `;
 
   const { rows: unassigned } = await sql`
-    SELECT global_type
+    SELECT global_type, global_type_label
     FROM global_types
     WHERE group_id IS NULL
     ORDER BY global_type ASC

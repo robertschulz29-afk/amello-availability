@@ -3,6 +3,8 @@
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
 
+type Hotel = { id: number; country: string; brand: string };
+
 type ScanRow = {
   id: number;
   scanned_at: string;
@@ -154,16 +156,54 @@ function computeSourceCounts(fullSet: FullSetEntry[]) {
   return { amelloGreen, amelloTotal, bookingGreen, bookingTotal };
 }
 
+// ── Grouped availability ──────────────────────────────────────────────────────
+
+function computeGroupedAvailability(
+  fullSet: FullSetEntry[],
+  hotelMap: Map<number, Hotel>,
+  groupBy: 'country' | 'brand',
+): { label: string; green: number; total: number }[] {
+  const deduped = new Map<string, 'green' | 'red'>();
+  for (const row of fullSet) {
+    if (row.source !== 'amello') continue;
+    const key = `${row.hotel_id}__${String(row.check_in_date).slice(0, 10)}`;
+    deduped.set(key, row.status === 'green' ? 'green' : 'red');
+  }
+
+  const grouped = new Map<string, { green: number; total: number }>();
+  for (const [key, status] of deduped) {
+    const hotelId = Number(key.split('__')[0]);
+    const hotel = hotelMap.get(hotelId);
+    const label = (hotel?.[groupBy] || '(unknown)').trim() || '(unknown)';
+    if (!grouped.has(label)) grouped.set(label, { green: 0, total: 0 });
+    const g = grouped.get(label)!;
+    g.total++;
+    if (status === 'green') g.green++;
+  }
+
+  return Array.from(grouped.entries())
+    .map(([label, { green, total }]) => ({ label, green, total }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export default function Page() {
   const [scans, setScans] = React.useState<ScanRow[]>([]);
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
   const [fullSet, setFullSet] = React.useState<FullSetEntry[]>([]);
+  const [hotelMap, setHotelMap] = React.useState<Map<number, Hotel>>(new Map());
   const [pricingConflicts, setPricingConflicts] = React.useState<{ cheaper: number; total: number } | null>(null);
   const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
+    fetchJSON('/api/hotels', { cache: 'no-store' })
+      .then((list: Hotel[]) => {
+        const m = new Map<number, Hotel>();
+        for (const h of (Array.isArray(list) ? list : [])) m.set(h.id, h);
+        setHotelMap(m);
+      })
+      .catch(() => {});
     fetchJSON('/api/scans', { cache: 'no-store' })
       .then((list: ScanRow[]) => {
         const arr = Array.isArray(list) ? list : [];
@@ -195,28 +235,12 @@ export default function Page() {
   const avail = React.useMemo(() => computeAvailability(fullSet), [fullSet]);
   const src = React.useMemo(() => computeSourceCounts(fullSet), [fullSet]);
   const uniqueHotels = React.useMemo(() => new Set(fullSet.map(r => r.hotel_id)).size, [fullSet]);
+  const byCountry = React.useMemo(() => computeGroupedAvailability(fullSet, hotelMap, 'country'), [fullSet, hotelMap]);
+  const byBrand = React.useMemo(() => computeGroupedAvailability(fullSet, hotelMap, 'brand'), [fullSet, hotelMap]);
 
   return (
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
-
-        {/* Scan selector */}
-        <div className="mb-4 d-flex gap-2 align-items-center">
-          <select
-            className="form-select"
-            style={{ maxWidth: 380 }}
-            value={selectedScanId ?? ''}
-            onChange={e => setSelectedScanId(Number(e.target.value))}
-          >
-            {scans.length === 0
-              ? <option value="">No scans</option>
-              : scans.map(s => (
-                <option key={s.id} value={s.id}>
-                  #{s.id} · {fmtDateTime(s.scanned_at)} · {s.status}
-                </option>
-              ))}
-          </select>
-        </div>
 
         {loading && (
           <div className="text-center my-5">
@@ -224,7 +248,8 @@ export default function Page() {
           </div>
         )}
 
-        {!loading && selectedScan && (
+        {!loading && (
+          <>
           <div className="row g-3">
 
             {/* ── Scan Info ── */}
@@ -232,7 +257,20 @@ export default function Page() {
               <div className="card h-100">
                 <div className="card-header fw-semibold">Scan Info</div>
                 <div className="card-body small">
-                  <div><strong>Date:</strong> {fmtDateTime(selectedScan.scanned_at)}</div>
+                  <select
+                    className="form-select form-select-sm mb-2"
+                    value={selectedScanId ?? ''}
+                    onChange={e => setSelectedScanId(Number(e.target.value))}
+                  >
+                    {scans.length === 0
+                      ? <option value="">No scans</option>
+                      : scans.map(s => (
+                        <option key={s.id} value={s.id}>
+                          #{s.id} · {fmtDateTime(s.scanned_at)} · {s.status}
+                        </option>
+                      ))}
+                  </select>
+                  {selectedScan && (<>
                   <div><strong>Status:</strong> {selectedScan.status}</div>
                   <div><strong>Hotels:</strong> {uniqueHotels}</div>
                   <div><strong>Days scanned:</strong> {selectedScan.days ?? '—'}</div>
@@ -241,6 +279,7 @@ export default function Page() {
                   {selectedScan.base_checkin && (
                     <div><strong>Check-in from:</strong> {selectedScan.base_checkin}</div>
                   )}
+                  </>)}
                 </div>
               </div>
             </div>
@@ -320,6 +359,79 @@ export default function Page() {
             </div>
 
           </div>
+
+          {/* ── By Country / By Brand ── */}
+          {(byCountry.length > 0 || byBrand.length > 0) && (
+            <div className="row g-3 mt-1">
+
+              <div className="col-md-6">
+                <div className="card h-100">
+                  <div className="card-header fw-semibold">Availability by Country</div>
+                  <div className="card-body p-0">
+                    <table className="table table-sm table-hover mb-0">
+                      <thead>
+                        <tr>
+                          <th className="ps-3">Country</th>
+                          <th className="text-end">Available</th>
+                          <th className="text-end">Total</th>
+                          <th className="text-end pe-3" style={{ width: 60 }}>%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {byCountry.map(({ label, green, total }) => {
+                          const pct = total > 0 ? Math.round((green / total) * 100) : 0;
+                          const cls = pct >= 75 ? 'text-success' : pct >= 50 ? 'text-warning' : 'text-danger';
+                          return (
+                            <tr key={label}>
+                              <td className="ps-3">{label}</td>
+                              <td className="text-end">{green}</td>
+                              <td className="text-end">{total}</td>
+                              <td className={`text-end pe-3 fw-semibold ${cls}`}>{pct}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="col-md-6">
+                <div className="card h-100">
+                  <div className="card-header fw-semibold">Availability by Brand</div>
+                  <div className="card-body p-0">
+                    <table className="table table-sm table-hover mb-0">
+                      <thead>
+                        <tr>
+                          <th className="ps-3">Brand</th>
+                          <th className="text-end">Available</th>
+                          <th className="text-end">Total</th>
+                          <th className="text-end pe-3" style={{ width: 60 }}>%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {byBrand.map(({ label, green, total }) => {
+                          const pct = total > 0 ? Math.round((green / total) * 100) : 0;
+                          const cls = pct >= 75 ? 'text-success' : pct >= 50 ? 'text-warning' : 'text-danger';
+                          return (
+                            <tr key={label}>
+                              <td className="ps-3">{label}</td>
+                              <td className="text-end">{green}</td>
+                              <td className="text-end">{total}</td>
+                              <td className={`text-end pe-3 fw-semibold ${cls}`}>{pct}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          </>
         )}
       </div>
     </main>

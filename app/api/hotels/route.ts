@@ -17,12 +17,12 @@ type IncomingHotel = {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const globalTypesParam = searchParams.get('globalTypes');
-  const selectedTypes = globalTypesParam
-    ? globalTypesParam.split(',').map(s => s.trim()).filter(Boolean)
+  const collectorsParam = searchParams.get('collectors');
+  const collectorIds = collectorsParam
+    ? collectorsParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
     : [];
 
-  if (selectedTypes.length === 0) {
+  if (collectorIds.length === 0) {
     const { rows } = await sql`
       SELECT id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country,
              booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"
@@ -32,22 +32,48 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(rows);
   }
 
-  // For each selected type, the hotel's "globalTypes" JSON array must contain an element
-  // equal to the type code or starting with "<code>/" (slash-separated suffix format).
-  // All selected types must match (AND logic).
-  const conditions = selectedTypes.map((_, i) => `
-    EXISTS (
-      SELECT 1 FROM jsonb_array_elements_text("globalTypes"::jsonb) AS elem
-      WHERE elem = $${i + 1} OR elem LIKE ($${i + 1} || '/%')
-    )`).join(' AND ');
+  // For each collector: OR across its assigned global_type codes (hotel must have at least one).
+  // Between collectors: AND (hotel must satisfy every selected collector).
+  // Code matching: exact OR prefix "code/..." (slash-separated subtype format).
+  const { rows: typeRows } = await query(
+    `SELECT group_id, global_type FROM global_types WHERE group_id = ANY($1)`,
+    [collectorIds],
+  );
+
+  // Group codes by collector id
+  const byCollector: Record<number, string[]> = {};
+  for (const { group_id, global_type } of typeRows) {
+    if (!byCollector[group_id]) byCollector[group_id] = [];
+    byCollector[group_id].push(global_type);
+  }
+
+  // Build one OR-block per collector, AND the blocks together
+  const params: string[] = [];
+  const andClauses = collectorIds.map(cid => {
+    const codes = byCollector[cid] ?? [];
+    if (codes.length === 0) return 'FALSE';
+    const orParts = codes.map(code => {
+      params.push(code);
+      const i = params.length;
+      return `EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text("globalTypes"::jsonb) AS elem
+        WHERE elem = $${i} OR elem LIKE ($${i} || '/%')
+      )`;
+    });
+    return `(${orParts.join(' OR ')})`;
+  });
+
+  if (andClauses.every(c => c === 'FALSE')) {
+    return NextResponse.json([]);
+  }
 
   const { rows } = await query(
     `SELECT id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country,
             booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"
      FROM hotels
-     WHERE "globalTypes" IS NOT NULL AND ${conditions}
+     WHERE "globalTypes" IS NOT NULL AND ${andClauses.join(' AND ')}
      ORDER BY id ASC`,
-    selectedTypes,
+    params,
   );
   return NextResponse.json(rows);
 }

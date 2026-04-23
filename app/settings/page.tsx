@@ -53,7 +53,13 @@ type Collector = {
   types: CollectorType[];
 };
 type Category = { id: number; global_type_category: string };
-type UnassignedType = { global_type: string };
+type UnassignedType = {
+  global_type_label: React.ReactNode; global_type: string 
+};
+
+function toTitleCase(s: string): string {
+  return s.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
 
 function CollectorsSection() {
   const [collectors, setCollectors] = React.useState<Collector[]>([]);
@@ -103,13 +109,16 @@ function CollectorsSection() {
     .concat(
       collectors.flatMap(c => c.types
         .filter(t => pending.get(t.global_type) === null)
-        .map(t => ({ global_type: t.global_type }))
+        .map(t => ({ global_type: t.global_type, global_type_label: t.global_type }))
       )
     );
 
-  const filteredUnassigned = effectiveUnassigned.filter(u =>
-    !searchTerm || u.global_type.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  const filteredUnassigned = effectiveUnassigned.filter(u => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    const label = typeof u.global_type_label === 'string' ? u.global_type_label.toLowerCase() : '';
+    return u.global_type.toLowerCase().includes(term) || label.includes(term);
+  });
 
   const assign = (global_type: string, collector_id: number | null) =>
     setPending(prev => new Map(prev).set(global_type, collector_id));
@@ -174,7 +183,7 @@ function CollectorsSection() {
 
       <div className="row g-3">
         {/* ── collector list + create ── */}
-        <div className="col-md-4">
+        <div className="col-md">
           {/* create form */}
           <div className="border rounded p-2 mb-2 bg-light">
             <div className="fw-semibold small mb-2">New Collector</div>
@@ -189,48 +198,58 @@ function CollectorsSection() {
             </button>
           </div>
 
-          {/* list */}
+          {/* list grouped by category */}
           <div className="list-group" style={{ maxHeight: 360, overflowY: 'auto' }}>
             {collectors.length === 0 && (
               <div className="list-group-item text-muted small fst-italic">No collectors yet</div>
             )}
-            {collectors.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                className={`list-group-item list-group-item-action py-2 ${selectedId === c.id ? 'active' : ''}`}
-                onClick={() => { setSelectedId(c.id); setSearchTerm(''); }}
-              >
-                <div className="d-flex justify-content-between align-items-center">
-                  <span className="small fw-semibold">{c.name}</span>
-                  <div className="d-flex gap-1 align-items-center">
-                    <span className="badge bg-secondary rounded-pill">{effectiveTypes(c).length}</span>
+            {(() => {
+              const groups = new Map<string, Collector[]>();
+              for (const c of collectors) {
+                const cat = c.global_type_category ?? '(Uncategorized)';
+                if (!groups.has(cat)) groups.set(cat, []);
+                groups.get(cat)!.push(c);
+              }
+              return Array.from(groups.entries()).map(([cat, items]) => (
+                <React.Fragment key={cat}>
+                  <div className="list-group-item list-group-item-secondary py-1 px-3 small fw-semibold text-muted" style={{ fontSize: '0.7rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                    {cat}
+                  </div>
+                  {items.map(c => (
                     <button
+                      key={c.id}
                       type="button"
-                      className={`btn btn-sm p-0 ms-1 ${selectedId === c.id ? 'text-white' : 'text-danger'}`}
-                      style={{ lineHeight: 1 }}
-                      onClick={e => { e.stopPropagation(); deleteCollector(c.id); }}
-                      title="Delete collector"
+                      className={`list-group-item list-group-item-action py-2 px-3 ${selectedId === c.id ? 'active' : ''}`}
+                      onClick={() => { setSelectedId(c.id); setSearchTerm(''); }}
                     >
-                      <i className="fas fa-trash-can" style={{ fontSize: '0.7rem' }} />
+                      <div className="d-flex justify-content-between align-items-center">
+                        <span className="small fw-semibold">{toTitleCase(c.name)}</span>
+                        <div className="d-flex gap-1 align-items-center">
+                          <span className="badge bg-secondary rounded-pill">{effectiveTypes(c).length}</span>
+                          <button
+                            type="button"
+                            className={`btn btn-sm p-0 ms-1 ${selectedId === c.id ? 'text-white' : 'text-danger'}`}
+                            style={{ lineHeight: 1 }}
+                            onClick={e => { e.stopPropagation(); deleteCollector(c.id); }}
+                            title="Delete collector"
+                          >
+                            <i className="fas fa-trash-can" style={{ fontSize: '0.7rem' }} />
+                          </button>
+                        </div>
+                      </div>
                     </button>
-                  </div>
-                </div>
-                {c.global_type_category && (
-                  <div className={`small ${selectedId === c.id ? 'text-white-50' : 'text-muted'}`} style={{ fontSize: '0.7rem' }}>
-                    {c.global_type_category}
-                  </div>
-                )}
-              </button>
-            ))}
+                  ))}
+                </React.Fragment>
+              ));
+            })()}
           </div>
         </div>
 
         {/* ── collector detail ── */}
-        <div className="col-md-8">
+        <div className="col-md">
           {selected ? (
             <>
-              <div className="fw-semibold mb-1">{selected.name}</div>
+              <div className="fw-semibold mb-2">{toTitleCase(selected.name)}</div>
               {selected.description && <div className="text-muted small mb-2">{selected.description}</div>}
 
               <div className="fw-semibold small text-muted mb-1">Assigned global types</div>
@@ -248,7 +267,7 @@ function CollectorsSection() {
               </div>
 
               <div className="fw-semibold small text-muted mb-1">Add unassigned global types</div>
-              <input className="form-control form-control-sm mb-2" placeholder="Search by code…"
+              <input className="form-control form-control-sm mb-2" placeholder="Search by code or label…"
                 value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               <div style={{ maxHeight: 220, overflowY: 'auto' }} className="border rounded">
                 {filteredUnassigned.length === 0 && (
@@ -256,10 +275,10 @@ function CollectorsSection() {
                 )}
                 {filteredUnassigned.map(u => (
                   <button key={u.global_type} type="button"
-                    className="btn btn-link btn-sm w-100 text-start text-decoration-none px-3 py-1 border-bottom text-body"
-                    onClick={() => assign(u.global_type, selected.id)}
+                  className="btn btn-link btn-sm w-100 text-start text-decoration-none px-3 py-1 border-bottom text-body"
+                  onClick={() => assign(u.global_type, selected.id)}
                   >
-                    {u.global_type}
+                  {u.global_type}- {u.global_type_label}
                   </button>
                 ))}
               </div>
@@ -344,7 +363,7 @@ export default function SettingsPage() {
       <h4 className="mb-4">Settings</h4>
 
       {/* ── Booking cookies ── */}
-      <div className="card mb-4" style={{ maxWidth: 760 }}>
+      <div className="card mb-4" >
         <div className="card-header fw-semibold">Booking.com Cookies</div>
         <div className="card-body">
           <p className="text-muted small mb-4">
@@ -409,7 +428,7 @@ export default function SettingsPage() {
       </div>
 
       {/* ── Global type collectors ── */}
-      <div className="card mb-4" style={{ maxWidth: 900 }}>
+      <div className="card mb-4" style={{ marginTop: '1rem' }}>
         <div className="card-header fw-semibold">Global Type Collectors</div>
         <div className="card-body">
           <CollectorsSection />

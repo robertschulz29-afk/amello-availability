@@ -181,17 +181,14 @@ export default function Page() {
         
 
         {/* Scan selector */}
-        <div className="d-flex flex-wrap gap-3 align-items-center mb-3">
-          <div className="d-flex align-items-center gap-2">
-            <label className="form-label mb-0">Scan ID:</label>
-            <select 
-              className="form-select" 
-              style={{ minWidth: 300 }} 
-              value={selectedScanId ?? ''} 
-              onChange={e => {
-                setSelectedScanId(Number(e.target.value));
-                setPage(1); // Reset to first page when changing scan
-              }}
+        <div className="card mb-3">
+          <div className="card-header">Scan</div>
+          <div className="card-body small">
+            <select
+              className="form-select form-select-sm"
+              style={{ maxWidth: 500 }}
+              value={selectedScanId ?? ''}
+              onChange={e => { setSelectedScanId(Number(e.target.value)); setPage(1); }}
             >
               {scans.length === 0 ? (
                 <option value="">No scans</option>
@@ -203,9 +200,10 @@ export default function Page() {
                 ))
               )}
             </select>
-            
           </div>
+        </div>
 
+        <div className="d-flex flex-wrap gap-3 align-items-center mb-3">
           <div className="d-flex align-items-center gap-2">
             <label className="form-label mb-0">Hotel:</label>
             <div className="d-flex flex-column gap-1">

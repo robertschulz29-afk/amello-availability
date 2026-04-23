@@ -543,31 +543,27 @@ function PortfolioHealth() {
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
         
 
-        {/* Scan Selection */}
-        <div className="mb-3 d-flex gap-2 align-items-center">
-          <select className="form-select" style={{ minWidth: 250, maxWidth: '100%' }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
-            {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
-              <option key={s.id} value={s.id}>
-                #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
-              </option>
-            ))}
-          </select>
-        </div>
-
         {/* Scan Parameters */}
-        {matrix && (
-          <div className="card mb-3">
-            <div className="card-header">Scan Parameters</div>
-            <div className="card-body small">
+        <div className="card mb-3">
+          <div className="card-header">Scan Parameters</div>
+          <div className="card-body small">
+            <select className="form-select form-select-sm mb-2" style={{ maxWidth: 500 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
+              {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
+                <option key={s.id} value={s.id}>
+                  #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
+                </option>
+              ))}
+            </select>
+            {matrix && (
               <div className="row g-2">
                 <div className="col-sm-6 col-md-3"><strong>Scan Date:</strong> {fmtDateTime(matrix.scannedAt)}</div>
                 <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong>{matrix.baseCheckIn ? (`${matrix.baseCheckIn} to ${addDaysISO(matrix.baseCheckIn, (matrix.days ?? 0) - 1)}`) : ('—')}</div>
                 <div className="col-sm-6 col-md-3"><strong>Days Scanned:</strong> {matrix.days ?? '—'}</div>
                 <div className="col-sm-6 col-md-3"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
               </div>
-            </div>
+            )}
           </div>
-        )}
+        </div>
 
         <AvailabilityOverviewTile matrix={matrix} />
 

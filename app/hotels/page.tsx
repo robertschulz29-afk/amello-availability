@@ -86,10 +86,10 @@ export default function Page() {
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
-  const loadHotels = React.useCallback(async (globalTypeCodes: string[] = []) => {
+  const loadHotels = React.useCallback(async (collectorIds: number[] = []) => {
     try {
       const params = new URLSearchParams();
-      if (globalTypeCodes.length > 0) params.set('globalTypes', globalTypeCodes.join(','));
+      if (collectorIds.length > 0) params.set('collectors', collectorIds.join(','));
       const url = params.toString() ? `/api/hotels?${params}` : '/api/hotels';
       const data = await fetchJSON(url, { cache: 'no-store' } as RequestInit);
       setHotels(Array.isArray(data) ? data : []);
@@ -104,16 +104,9 @@ export default function Page() {
       .catch(() => {});
   }, []);
 
-  // Single effect: re-runs when selection or available options change.
-  // Waits for options to load before applying a collector filter.
   React.useEffect(() => {
-    if (selectedCollectorIds.size > 0 && globalTypeOptions.length === 0) return;
-    const codes = globalTypeOptions
-      .filter(gt => gt.collector_id != null && selectedCollectorIds.has(gt.collector_id!))
-      .map(gt => gt.global_type);
-    if (selectedCollectorIds.size > 0 && codes.length === 0) return;
-    loadHotels(codes);
-  }, [selectedCollectorIds, globalTypeOptions, loadHotels]);
+    loadHotels([...selectedCollectorIds]);
+  }, [selectedCollectorIds, loadHotels]);
 
   React.useEffect(() => {
     if (!successMsg) return;

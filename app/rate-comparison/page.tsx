@@ -62,8 +62,9 @@ type DisplayRow = {
   hotel_name: string;
   check_in_date: string;
   amello_room: string | null;
+  amello_rate_name: string | null;
   booking_room: string | null;
-  rate_name: string | null;
+  booking_rate_name: string | null;
   price_amello: number | null;
   price_booking: number | null;
   price_booking_member: number | null;
@@ -253,8 +254,9 @@ function buildDisplayRows(rawRows: RawRow[], mappingsByHotel: Map<number, RoomMa
         hotel_name: (amelloRow ?? bookingRow)!.hotel_name,
         check_in_date: date,
         amello_room: mapping.amello_room,
+        amello_rate_name: amelloRow?.rate_name ?? null,
         booking_room: mapping.booking_room,
-        rate_name: amelloRow?.rate_name ?? null,
+        booking_rate_name: bookingRow?.rate_name ?? null,
         price_amello: toNum(amelloRow?.price_amello),
         price_booking: toNum(bookingRow?.price_booking),
         price_booking_member: toNum(bookingRow?.price_booking_member),
@@ -271,8 +273,8 @@ function buildDisplayRows(rawRows: RawRow[], mappingsByHotel: Map<number, RoomMa
     display.push({
       hotel_id: row.hotel_id, hotel_name: row.hotel_name,
       check_in_date: normalizeDate(row.check_in_date),
-      amello_room: row.room_name, booking_room: null,
-      rate_name: row.rate_name,
+      amello_room: row.room_name, amello_rate_name: row.rate_name,
+      booking_room: null, booking_rate_name: null,
       price_amello: toNum(row.price_amello), price_booking: null, price_booking_member: null,
       status_amello: row.status_amello, status_booking: null,
       currency: row.currency ?? 'EUR', mapped: false,
@@ -284,8 +286,8 @@ function buildDisplayRows(rawRows: RawRow[], mappingsByHotel: Map<number, RoomMa
     display.push({
       hotel_id: row.hotel_id, hotel_name: row.hotel_name,
       check_in_date: normalizeDate(row.check_in_date),
-      amello_room: null, booking_room: row.room_name,
-      rate_name: null,
+      amello_room: null, amello_rate_name: null,
+      booking_room: row.room_name, booking_rate_name: row.rate_name,
       price_amello: null, price_booking: toNum(row.price_booking), price_booking_member: toNum(row.price_booking_member),
       status_amello: null, status_booking: row.status_booking,
       currency: row.currency ?? 'EUR', mapped: false,
@@ -616,24 +618,29 @@ export default function Page() {
           <tr>
             <SortTh label="Check-In"      col="check_in_date"  sortKey={allRatesSort.key} sortDir={allRatesSort.dir} onSort={handleAllRatesSort} />
             <th>Amello Room</th>
+            <th>Amello Rate</th>
             <th>Booking Room</th>
-            <th>Rate</th>
+            <th>Booking Rate</th>
             <SortTh label="Amello Price"  col="price_amello"   sortKey={allRatesSort.key} sortDir={allRatesSort.dir} onSort={handleAllRatesSort} className="text-end" />
             <SortTh label="Booking Price" col="price_booking"  sortKey={allRatesSort.key} sortDir={allRatesSort.dir} onSort={handleAllRatesSort} className="text-end" />
             <th className="text-end text-nowrap">Member Price</th>
             <SortTh label="Diff (A−B)"    col="diff"           sortKey={allRatesSort.key} sortDir={allRatesSort.dir} onSort={handleAllRatesSort} className="text-end" />
+            <th className="text-end text-nowrap">Diff (A−BM)</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => {
             const { label, className: pillCls, style: pillStyle } = allRatesPillProps(r.price_amello, r.price_booking);
+            const diffABM = r.price_amello != null && r.price_booking_member != null ? r.price_amello - r.price_booking_member : null;
+            const diffClsFn = (d: number | null) => d == null ? 'text-muted' : d > 0 ? 'text-danger' : d < 0 ? 'text-success' : 'text-muted';
             return (
               <tr key={i} className={allRatesBgClass(r)}>
                 <td className="text-nowrap">{fmtDate(r.check_in_date)}</td>
-                <td>{r.amello_room  ?? <span className="text-muted fst-italic">—</span>}</td>
-                <td>{r.booking_room ?? <span className="text-muted fst-italic">—</span>}</td>
-                <td className="small">{r.rate_name || '—'}</td>
+                <td className="small">{r.amello_room  ?? <span className="text-muted">—</span>}</td>
+                <td className="small">{r.amello_rate_name  || <span className="text-muted">—</span>}</td>
+                <td className="small">{r.booking_room ?? <span className="text-muted">—</span>}</td>
+                <td className="small">{r.booking_rate_name || <span className="text-muted">—</span>}</td>
                 <td className="text-end text-nowrap">
                   {r.price_amello != null ? formatPrice(r.price_amello, r.currency) : <span className="text-muted">—</span>}
                 </td>
@@ -644,6 +651,9 @@ export default function Page() {
                   {r.price_booking_member != null ? <span className="text-primary fw-semibold">{formatPrice(r.price_booking_member, r.currency)}</span> : <span className="text-muted">—</span>}
                 </td>
                 <DiffCell a={r.price_amello} b={r.price_booking} currency={r.currency} />
+                <td className={`text-end fw-bold ${diffClsFn(diffABM)}`}>
+                  {diffABM != null ? (diffABM > 0 ? '+' : '') + formatPrice(diffABM, r.currency) : <span className="text-muted">—</span>}
+                </td>
                 <td><span className={pillCls} style={pillStyle}>{label}</span></td>
               </tr>
             );
@@ -701,19 +711,6 @@ export default function Page() {
 
         {/* ── controls ── */}
         <div className="d-flex gap-3 mb-3 flex-wrap">
-          <select
-            className="form-select"
-            style={{ minWidth: 300 }}
-            value={selectedScanId ?? ''}
-            onChange={e => setSelectedScanId(e.target.value ? Number(e.target.value) : null)}
-          >
-            {scans.map(s => (
-              <option key={s.id} value={s.id}>
-                #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status}
-              </option>
-            ))}
-          </select>
-
           <HotelCombobox
             hotels={hotels}
             selectedIds={selectedHotelIds}
@@ -751,19 +748,26 @@ export default function Page() {
         </div>
 
         {/* ── scan parameters ── */}
-        {scanDetails && (
-          <div className="card mb-3">
-            <div className="card-header">Scan Parameters</div>
-            <div className="card-body small row g-2">
-              <div className="col-md-4"><strong>Scan ID:</strong> {scanDetails.scanId}</div>
-              <div className="col-md-4"><strong>Scanned at:</strong> {fmtDateTime(scanDetails.scannedAt)}</div>
-              <div className="col-md-4"><strong>Timezone:</strong> {scanDetails.timezone}</div>
-              <div className="col-md-4"><strong>Base check-in:</strong> {scanDetails.baseCheckIn ? fmtDate(scanDetails.baseCheckIn) : '—'}</div>
-              <div className="col-md-4"><strong>Days scanned:</strong> {scanDetails.days ?? '—'}</div>
-              <div className="col-md-4"><strong>Stay nights:</strong> {scanDetails.stayNights ?? '—'}</div>
-            </div>
+        <div className="card mb-3">
+          <div className="card-header">Scan Parameters</div>
+          <div className="card-body small">
+            <select className="form-select form-select-sm mb-2" style={{ maxWidth: 500 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(e.target.value ? Number(e.target.value) : null)}>
+              {scans.map(s => (
+                <option key={s.id} value={s.id}>#{s.id} • {fmtDateTime(s.scanned_at)} • {s.status}</option>
+              ))}
+            </select>
+            {scanDetails && (
+              <div className="row g-2">
+                <div className="col-md-4"><strong>Scan ID:</strong> {scanDetails.scanId}</div>
+                <div className="col-md-4"><strong>Scanned at:</strong> {fmtDateTime(scanDetails.scannedAt)}</div>
+                <div className="col-md-4"><strong>Timezone:</strong> {scanDetails.timezone}</div>
+                <div className="col-md-4"><strong>Base check-in:</strong> {scanDetails.baseCheckIn ? fmtDate(scanDetails.baseCheckIn) : '—'}</div>
+                <div className="col-md-4"><strong>Days scanned:</strong> {scanDetails.days ?? '—'}</div>
+                <div className="col-md-4"><strong>Stay nights:</strong> {scanDetails.stayNights ?? '—'}</div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
         {/* ── summary ── */}
         {summary.total > 0 && (
