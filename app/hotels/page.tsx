@@ -7,6 +7,7 @@ type GlobalType = {
   global_type: string;
   type_description: string | null;
   type_category: string | null;
+  filter_group: string | null;
   global_type_category: string | null;
 };
 
@@ -386,34 +387,50 @@ export default function Page() {
               {globalTypeFilterOpen && (
                 <div className="card-body py-3">
                   <div className="d-flex flex-wrap gap-4 mb-3">
-                    {categories.map(cat => (
-                      <div key={cat || '_'}>
-                        <div className="fw-semibold small text-muted mb-1">{cat || 'Uncategorized'}</div>
-                        <div className="d-flex flex-wrap gap-1">
-                          {globalTypeOptions.filter(gt => (gt.global_type_category ?? '') === cat).map(gt => {
-                            const active = selectedGlobalTypes.has(gt.global_type);
+                    {categories.map(cat => {
+                      const catTypes = globalTypeOptions.filter(gt => (gt.global_type_category ?? '') === cat);
+                      const groups = [...new Set(catTypes.map(gt => gt.filter_group ?? ''))].sort();
+                      return (
+                        <div key={cat || '_'} style={{ minWidth: 180 }}>
+                          <div className="fw-semibold small text-muted mb-2">{cat || 'Uncategorized'}</div>
+                          {groups.map(group => {
+                            const groupTypes = catTypes.filter(gt => (gt.filter_group ?? '') === group);
                             return (
-                              <button
-                                key={gt.global_type}
-                                type="button"
-                                className={`btn btn-sm ${active ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  setSelectedGlobalTypes(prev => {
-                                    const next = new Set(prev);
-                                    next.has(gt.global_type) ? next.delete(gt.global_type) : next.add(gt.global_type);
-                                    return next;
-                                  });
-                                }}
-                                title={gt.global_type}
-                              >
-                                {gt.type_description || gt.global_type}
-                              </button>
+                              <div key={group || '_none'} className="mb-2">
+                                {group && (
+                                  <div className="small fw-semibold mb-1" style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}>
+                                    {group}
+                                  </div>
+                                )}
+                                <div className="d-flex flex-wrap gap-1">
+                                  {groupTypes.map(gt => {
+                                    const active = selectedGlobalTypes.has(gt.global_type);
+                                    return (
+                                      <button
+                                        key={gt.global_type}
+                                        type="button"
+                                        className={`btn btn-sm ${active ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          setSelectedGlobalTypes(prev => {
+                                            const next = new Set(prev);
+                                            next.has(gt.global_type) ? next.delete(gt.global_type) : next.add(gt.global_type);
+                                            return next;
+                                          });
+                                        }}
+                                        title={gt.global_type}
+                                      >
+                                        {gt.type_description || gt.global_type}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             );
                           })}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {selectedGlobalTypes.size > 0 && (

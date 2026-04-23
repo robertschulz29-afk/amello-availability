@@ -10,12 +10,13 @@ export async function GET() {
       gt.global_type,
       gt.type_description,
       gt.type_category,
+      gt.filter_group,
       gtc.global_type_category
     FROM global_types gt
     LEFT JOIN global_types_categories gtc
       ON gt.type_category::bigint = gtc.id
     WHERE gt.global_type IS NOT NULL
-    ORDER BY gtc.global_type_category ASC, gt.type_description ASC, gt.global_type ASC
+    ORDER BY gtc.global_type_category ASC, gt.filter_group ASC, gt.type_description ASC, gt.global_type ASC
   `;
   return NextResponse.json(rows);
 }
