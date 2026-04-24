@@ -57,7 +57,9 @@ export async function GET(req: NextRequest) {
       const i = params.length;
       return `EXISTS (
         SELECT 1 FROM jsonb_array_elements_text("globalTypes"::jsonb) AS elem
-        WHERE elem = $${i} OR elem LIKE ($${i} || '/%')
+        WHERE elem = $${i}
+           OR elem LIKE ($${i} || '/%')
+           OR $${i} LIKE (elem || '/%')
       )`;
     });
     return `(${orParts.join(' OR ')})`;
