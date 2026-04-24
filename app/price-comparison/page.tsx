@@ -285,6 +285,7 @@ function PriceComparisonPage() {
   const [mappingsByHotel, setMappingsByHotel] = React.useState<Map<number, RoomMapping[]>>(new Map());
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [loadingHotels, setLoadingHotels] = React.useState(false);
 
   const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir }>({ key: 'check_in_date', dir: 'asc' });
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>(
@@ -301,9 +302,6 @@ function PriceComparisonPage() {
   const handleSort = (key: SortKey) =>
     setSort(prev => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
 
-  // Reset to page 1 when scan, hotel selection, or page size changes
-  React.useEffect(() => { setDisplayPage(1); }, [selectedScanId, selectedHotelIds, hotelsPerPage]);
-
   // ── data loading ─────────────────────────────────────────────────────────
 
   const loadScans = React.useCallback(async () => {
@@ -312,7 +310,7 @@ function PriceComparisonPage() {
     arr.sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
     setScans(arr);
     setSelectedScanId(prev => prev ?? (arr.length > 0 ? arr[0].id : null));
-  }, [selectedScanId]);
+  }, []);
 
   const loadHotels = React.useCallback(async () => {
     const list = await fetchJSON('/api/hotels', { cache: 'no-store' });
@@ -333,51 +331,50 @@ function PriceComparisonPage() {
     });
   }, []);
 
-  // Step 1: load the distinct hotel list for the selected scan (lightweight)
-  const loadScanHotels = React.useCallback(async () => {
+  // Step 1: fetch hotel list for the scan (lightweight), reset page when scan/filter changes
+  React.useEffect(() => {
     if (!selectedScanId) { setScanHotels([]); return; }
-    try {
-      const params = new URLSearchParams({ scanID: selectedScanId.toString() });
-      if (selectedHotelIds.length > 0) params.append('hotelID', selectedHotelIds.join(','));
-      const rows = await fetchJSON(`/api/scan-results/hotels?${params}`, { cache: 'no-store' });
-      setScanHotels(Array.isArray(rows) ? rows : []);
-    } catch (e: any) {
-      setError(e.message || 'Failed to load hotel list');
-      setScanHotels([]);
-    }
-  }, [selectedScanId, selectedHotelIds]);
+    setLoadingHotels(true);
+    setDisplayPage(1);
+    const params = new URLSearchParams({ scanID: selectedScanId.toString() });
+    if (selectedHotelIds.length > 0) params.append('hotelID', selectedHotelIds.join(','));
+    fetchJSON(`/api/scan-results/hotels?${params}`, { cache: 'no-store' })
+      .then(rows => setScanHotels(Array.isArray(rows) ? rows : []))
+      .catch(e => { setError(e.message); setScanHotels([]); })
+      .finally(() => setLoadingHotels(false));
+    loadScanDetails(selectedScanId);
+  }, [selectedScanId, selectedHotelIds, loadScanDetails]);
 
-  // Step 2: load comparison rows for only the current page's hotel IDs
-  const loadResults = React.useCallback(async (pageHotelIds: number[]) => {
-    if (!selectedScanId || pageHotelIds.length === 0) { setRawRows([]); return; }
+  // Step 2: fetch comparison rows for current page's hotel slice whenever page/size/hotels change
+  React.useEffect(() => {
+    if (!selectedScanId || scanHotels.length === 0) { setRawRows([]); return; }
+    const pageStart = (displayPage - 1) * hotelsPerPage;
+    const pageHotelIds = scanHotels.slice(pageStart, pageStart + hotelsPerPage).map(h => h.hotel_id);
+    if (pageHotelIds.length === 0) { setRawRows([]); return; }
+
     setLoading(true);
     setError(null);
-    try {
-      const params = new URLSearchParams({
-        scanID: selectedScanId.toString(),
-        format: 'comparison',
-        limit: '5000',
-        hotelID: pageHotelIds.join(','),
-      });
-      const res: PaginatedResponse = await fetchJSON(`/api/scan-results?${params}`, { cache: 'no-store' });
-      setRawRows(res.data || []);
-
-      const mappingsData = await fetchJSON('/api/room-mappings', { cache: 'no-store' });
+    const params = new URLSearchParams({
+      scanID: selectedScanId.toString(),
+      format: 'comparison',
+      limit: '5000',
+      hotelID: pageHotelIds.join(','),
+    });
+    Promise.all([
+      fetchJSON(`/api/scan-results?${params}`, { cache: 'no-store' }),
+      fetchJSON('/api/room-mappings', { cache: 'no-store' }),
+    ]).then(([res, mappingsData]) => {
+      setRawRows((res as PaginatedResponse).data || []);
       const map = new Map<number, RoomMapping[]>();
       for (const h of (mappingsData.hotels ?? [])) map.set(h.id, h.mappings ?? []);
       setMappingsByHotel(map);
-    } catch (e: any) {
+    }).catch(e => {
       setError(e.message || 'Failed to load results');
       setRawRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedScanId]);
+    }).finally(() => setLoading(false));
+  }, [selectedScanId, scanHotels, displayPage, hotelsPerPage]);
 
-  React.useEffect(() => { loadScans(); loadHotels(); }, [loadScans, loadHotels]);
-  React.useEffect(() => {
-    if (selectedScanId) { loadScanDetails(selectedScanId); loadScanHotels(); }
-  }, [selectedScanId, loadScanDetails, loadScanHotels]);
+  React.useEffect(() => { loadScans(); loadHotels(); }, []);
 
   // ── derived ──────────────────────────────────────────────────────────────
 
@@ -420,26 +417,15 @@ function PriceComparisonPage() {
     return new Map([...outer.entries()].sort((a, b) => a[0].localeCompare(b[0])));
   }, [groupBy, groupedByHotel, hotelMeta]);
 
-  // Paginate the scan hotel list; fetch data whenever the page slice changes
+  // Pagination derived values
   const totalHotels = scanHotels.length;
   const totalPages = Math.max(1, Math.ceil(totalHotels / hotelsPerPage));
   const safePage = Math.min(displayPage, totalPages);
   const pageStart = (safePage - 1) * hotelsPerPage;
-  const pageHotelIds = React.useMemo(
-    () => scanHotels.slice(pageStart, pageStart + hotelsPerPage).map(h => h.hotel_id),
-    [scanHotels, pageStart, hotelsPerPage],
-  );
 
-  React.useEffect(() => { loadResults(pageHotelIds); }, [pageHotelIds, loadResults]);
-
-  // For grouped dimension view, still derive groups from loaded rows
-  const paginationUnits = React.useMemo(() => {
-    if (groupedByDimension) return Array.from(groupedByDimension.keys());
-    return Array.from(groupedByHotel.keys());
-  }, [groupedByDimension, groupedByHotel]);
-
+  // Current page's render units (groups or hotel IDs from loaded rows)
   const pageUnits = groupedByDimension
-    ? paginationUnits  // groups are already scoped to loaded hotels
+    ? Array.from(groupedByDimension.keys())
     : Array.from(groupedByHotel.keys());
 
   const summary = React.useMemo(() => {
