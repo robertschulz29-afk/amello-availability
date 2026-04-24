@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
             WHEN sr.response_json->'rooms' IS NOT NULL THEN
               (SELECT jsonb_agg(
                 jsonb_build_object(
-                  'room_name', room->>'name',
+                  'room_name', COALESCE(room->>'name', room->>'roomName', room->>'room_name', room->>'title', room->>'type'),
                   'rate_name', rate->>'name',
                   'price', (rate->>'price')::numeric,
                   'member_price', CASE WHEN rate->>'memberPrice' IS NOT NULL THEN (rate->>'memberPrice')::numeric ELSE NULL END,
@@ -171,7 +171,7 @@ export async function GET(req: NextRequest) {
             WHEN sr.response_json->'rooms' IS NOT NULL THEN
               (SELECT jsonb_agg(
                 jsonb_build_object(
-                  'room_name', room->>'name',
+                  'room_name', COALESCE(room->>'name', room->>'roomName', room->>'room_name', room->>'title', room->>'type'),
                   'rate_name', rate->>'name',
                   'price', (rate->>'price')::numeric,
                   'currency', rate->>'currency'
