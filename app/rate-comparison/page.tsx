@@ -364,6 +364,9 @@ export default function Page() {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
+  // tracks which views have data loaded for the current scan+hotel combo
+  const [loadedViews, setLoadedViews] = React.useState<Set<ViewMode>>(new Set());
+
   const toggleGroup = (key: string) =>
     setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
@@ -417,10 +420,11 @@ export default function Page() {
       percentage_difference:    toNum(r.percentage_difference),
     }));
     setRateRows(rows);
+    setLoadedViews(prev => new Set(prev).add('best_rate'));
   }, []);
 
   const loadAllRates = React.useCallback(async (scanId: number, hotelIds: number[]) => {
-    const params = new URLSearchParams({ scanID: String(scanId), format: 'comparison', limit: '1000' });
+    const params = new URLSearchParams({ scanID: String(scanId), format: 'comparison', limit: '5000' });
     if (hotelIds.length > 0) params.append('hotelID', hotelIds.join(','));
     const [res, mappingsData] = await Promise.all([
       fetchJSON(`/api/scan-results?${params}`, { cache: 'no-store' }),
@@ -430,28 +434,36 @@ export default function Page() {
     const map = new Map<number, RoomMapping[]>();
     for (const h of (mappingsData.hotels ?? [])) map.set(h.id, h.mappings ?? []);
     setMappingsByHotel(map);
+    setLoadedViews(prev => new Set(prev).add('all_rates'));
   }, []);
 
-  const loadData = React.useCallback(async () => {
+  // On scan or hotel filter change: reset loaded state and load only the active view
+  React.useEffect(() => {
     if (!selectedScanId) return;
+    setLoadedViews(new Set());
+    setRateRows([]);
+    setRawRows([]);
+    setError(null);
+    setLoading(true);
+    loadScanDetails(selectedScanId);
+    const loader = viewMode === 'best_rate'
+      ? loadBestRate(selectedScanId, selectedHotelIds)
+      : loadAllRates(selectedScanId, selectedHotelIds);
+    loader.catch(e => setError(e.message || 'Failed to load data')).finally(() => setLoading(false));
+  }, [selectedScanId, selectedHotelIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On view mode switch: load the new view if not yet loaded for the current scan+filter
+  React.useEffect(() => {
+    if (!selectedScanId || loadedViews.has(viewMode)) return;
     setLoading(true);
     setError(null);
-    try {
-      await Promise.all([
-        loadBestRate(selectedScanId, selectedHotelIds),
-        loadAllRates(selectedScanId, selectedHotelIds),
-      ]);
-    } catch (e: any) {
-      setError(e.message || 'Failed to load data');
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedScanId, selectedHotelIds, loadBestRate, loadAllRates]);
+    const loader = viewMode === 'best_rate'
+      ? loadBestRate(selectedScanId, selectedHotelIds)
+      : loadAllRates(selectedScanId, selectedHotelIds);
+    loader.catch(e => setError(e.message || 'Failed to load data')).finally(() => setLoading(false));
+  }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  React.useEffect(() => { loadScans(); loadHotels(); }, [loadScans, loadHotels]);
-  React.useEffect(() => {
-    if (selectedScanId) { loadScanDetails(selectedScanId); loadData(); }
-  }, [selectedScanId, loadScanDetails, loadData]);
+  React.useEffect(() => { loadScans(); loadHotels(); }, []);
 
   // ── derived ────────────────────────────────────────────────────────────────
 
