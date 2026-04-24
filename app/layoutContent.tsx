@@ -70,6 +70,7 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
               <Link
                 key={link.href}
                 href={link.href}
+                prefetch={false}
                 className={`sidebar-link${pathname === link.href ? ' active' : ''}`}
               >
                 <i className={`fas ${link.icon}`} />
