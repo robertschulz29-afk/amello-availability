@@ -47,20 +47,21 @@ export async function GET(req: NextRequest) {
     byCollector[group_id].push(global_type);
   }
 
-  // Build one OR-block per collector, AND the blocks together
+  // Build one OR-block per collector, AND the blocks together.
+  // Use text LIKE matching on the raw "globalTypes" column to avoid jsonb cast issues.
+  // Each code matches if it appears as a substring, covering exact codes and slash-subtype variants.
+  // For slash-subtype codes (e.g. ST03-VEGC/TUI-G123) we also match on the base part before the slash.
   const params: string[] = [];
   const andClauses = collectorIds.map(cid => {
     const codes = byCollector[cid] ?? [];
     if (codes.length === 0) return 'FALSE';
-    const orParts = codes.map(code => {
-      params.push(code);
-      const i = params.length;
-      return `EXISTS (
-        SELECT 1 FROM jsonb_array_elements_text("globalTypes"::jsonb) AS elem
-        WHERE elem = $${i}
-           OR elem LIKE ($${i} || '/%')
-           OR $${i} LIKE (elem || '/%')
-      )`;
+    const orParts = codes.flatMap(code => {
+      const base = code.includes('/') ? code.split('/')[0] : code;
+      const patterns = Array.from(new Set([code, base]));
+      return patterns.map(pat => {
+        params.push(`%${pat}%`);
+        return `"globalTypes" LIKE $${params.length}`;
+      });
     });
     return `(${orParts.join(' OR ')})`;
   });
