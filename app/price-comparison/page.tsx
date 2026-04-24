@@ -291,12 +291,17 @@ function PriceComparisonPage() {
   );
   const [groupBy, setGroupBy] = React.useState<'none' | 'brand' | 'country' | 'region'>('none');
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(new Set());
+  const [displayPage, setDisplayPage] = React.useState(1);
+  const [hotelsPerPage, setHotelsPerPage] = React.useState(10);
 
   const toggleGroup = (key: string) =>
     setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   const handleSort = (key: SortKey) =>
     setSort(prev => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
+
+  // Reset to page 1 when filters/scan/grouping change
+  React.useEffect(() => { setDisplayPage(1); }, [selectedScanId, selectedHotelIds, statusFilter, groupBy, hotelsPerPage]);
 
   // ── data loading ─────────────────────────────────────────────────────────
 
@@ -399,6 +404,17 @@ function PriceComparisonPage() {
     }
     return new Map([...outer.entries()].sort((a, b) => a[0].localeCompare(b[0])));
   }, [groupBy, groupedByHotel, hotelMeta]);
+
+  // Pagination over hotels (ungrouped) or groups (grouped)
+  const paginationUnits = React.useMemo(() => {
+    if (groupedByDimension) return Array.from(groupedByDimension.keys());
+    return Array.from(groupedByHotel.keys());
+  }, [groupedByDimension, groupedByHotel]);
+
+  const totalPages = Math.max(1, Math.ceil(paginationUnits.length / hotelsPerPage));
+  const safePage = Math.min(displayPage, totalPages);
+  const pageStart = (safePage - 1) * hotelsPerPage;
+  const pageUnits = paginationUnits.slice(pageStart, pageStart + hotelsPerPage);
 
   const summary = React.useMemo(() => {
     let amelloOnly = 0, bookingOnly = 0, both = 0, amelloCheaper = 0, bookingCheaper = 0, same = 0;
@@ -509,6 +525,17 @@ function PriceComparisonPage() {
             <option value="country">Group by Country</option>
             <option value="region">Group by Region</option>
           </select>
+
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0 text-nowrap small">{groupBy === 'none' ? 'Hotels' : 'Groups'} per page:</label>
+            <select className="form-select form-select-sm" style={{ width: 'auto' }} value={hotelsPerPage} onChange={e => setHotelsPerPage(Number(e.target.value))}>
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
         </div>
 
         {/* ── scan parameters ── */}
@@ -566,35 +593,73 @@ function PriceComparisonPage() {
           </div>
         )}
 
+        {/* ── pagination controls (top) ── */}
+        {paginationUnits.length > 0 && (
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <div className="text-muted small">
+              Showing {groupBy === 'none' ? 'hotels' : 'groups'} {pageStart + 1}–{Math.min(pageStart + hotelsPerPage, paginationUnits.length)} of {paginationUnits.length}
+            </div>
+            <div className="d-flex gap-2">
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(1)} disabled={safePage === 1}>First</button>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>Prev</button>
+              <span className="align-self-center px-2 small">Page {safePage} of {totalPages}</span>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>Next</button>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(totalPages)} disabled={safePage === totalPages}>Last</button>
+            </div>
+          </div>
+        )}
+
         {/* ── tables grouped by hotel (optionally wrapped in dimension groups) ── */}
         {groupedByDimension
-          ? Array.from(groupedByDimension.entries()).map(([groupLabel, hotelIds]) => (
-            <div key={groupLabel} className="mb-4">
-              <button
-                className="btn btn-light border w-100 text-start fw-semibold d-flex justify-content-between align-items-center mb-2 px-3 py-2"
-                onClick={() => toggleGroup(groupLabel)}
-              >
-                <span>{groupLabel} <span className="text-muted fw-normal small ms-1">({hotelIds.length} hotel{hotelIds.length !== 1 ? 's' : ''})</span></span>
-                <i className={`fas fa-chevron-${collapsedGroups.has(groupLabel) ? 'down' : 'up'} small`} />
-              </button>
-              {!collapsedGroups.has(groupLabel) && hotelIds.map(hotelId => {
-                const rows = groupedByHotel.get(hotelId)!;
-                return (
-                  <div key={hotelId} className="mb-4 ms-3">
-                    <h5 className="mb-2">{rows[0].hotel_name}</h5>
-                    {hotelTable(rows)}
-                  </div>
-                );
-              })}
-            </div>
-          ))
-          : Array.from(groupedByHotel.entries()).map(([hotelId, rows]) => (
-            <div key={hotelId} className="mb-5">
-              <h4 className="mb-2">{rows[0].hotel_name}</h4>
-              {hotelTable(rows)}
-            </div>
-          ))
+          ? pageUnits.map(groupLabel => {
+            const hotelIds = groupedByDimension.get(groupLabel)!;
+            return (
+              <div key={groupLabel} className="mb-4">
+                <button
+                  className="btn btn-light border w-100 text-start fw-semibold d-flex justify-content-between align-items-center mb-2 px-3 py-2"
+                  onClick={() => toggleGroup(groupLabel)}
+                >
+                  <span>{groupLabel} <span className="text-muted fw-normal small ms-1">({hotelIds.length} hotel{hotelIds.length !== 1 ? 's' : ''})</span></span>
+                  <i className={`fas fa-chevron-${collapsedGroups.has(groupLabel) ? 'down' : 'up'} small`} />
+                </button>
+                {!collapsedGroups.has(groupLabel) && hotelIds.map(hotelId => {
+                  const rows = groupedByHotel.get(hotelId)!;
+                  return (
+                    <div key={hotelId} className="mb-4 ms-3">
+                      <h5 className="mb-2">{rows[0].hotel_name}</h5>
+                      {hotelTable(rows)}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })
+          : pageUnits.map(hotelId => {
+            const rows = groupedByHotel.get(hotelId as number)!;
+            return (
+              <div key={hotelId} className="mb-5">
+                <h4 className="mb-2">{rows[0].hotel_name}</h4>
+                {hotelTable(rows)}
+              </div>
+            );
+          })
         }
+
+        {/* ── pagination controls (bottom) ── */}
+        {paginationUnits.length > 0 && (
+          <div className="d-flex justify-content-between align-items-center mt-2 mb-4">
+            <div className="text-muted small">
+              Showing {groupBy === 'none' ? 'hotels' : 'groups'} {pageStart + 1}–{Math.min(pageStart + hotelsPerPage, paginationUnits.length)} of {paginationUnits.length}
+            </div>
+            <div className="d-flex gap-2">
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(1)} disabled={safePage === 1}>First</button>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>Prev</button>
+              <span className="align-self-center px-2 small">Page {safePage} of {totalPages}</span>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>Next</button>
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(totalPages)} disabled={safePage === totalPages}>Last</button>
+            </div>
+          </div>
+        )}
 
         {!loading && groupedByHotel.size === 0 && !error && (
           <p className="text-muted">No results found for this scan.</p>
