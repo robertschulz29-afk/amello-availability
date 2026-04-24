@@ -7,15 +7,29 @@ export const dynamic = 'force-dynamic';
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = parseInt(params.id, 10);
-    const { name, description, type_category_id } = await req.json();
+    const body = await req.json();
+    const setClauses: string[] = [];
+    const values: any[] = [];
+
+    if ('name' in body && body.name?.trim()) {
+      values.push(body.name.trim());
+      setClauses.push(`name = $${values.length}`);
+    }
+    if ('description' in body) {
+      values.push(body.description ?? null);
+      setClauses.push(`description = $${values.length}`);
+    }
+    if ('type_category_id' in body) {
+      values.push(body.type_category_id ?? null);
+      setClauses.push(`type_category_id = $${values.length}`);
+    }
+
+    if (setClauses.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
+
+    values.push(id);
     const { rows } = await query(
-      `UPDATE global_type_collector
-       SET name = COALESCE($1, name),
-           description = COALESCE($2, description),
-           type_category_id = COALESCE($3, type_category_id)
-       WHERE id = $4
-       RETURNING id, name, description, type_category_id`,
-      [name ?? null, description ?? null, type_category_id ?? null, id],
+      `UPDATE global_type_collector SET ${setClauses.join(', ')} WHERE id = $${values.length} RETURNING id, name, description, type_category_id`,
+      values,
     );
     if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(rows[0]);

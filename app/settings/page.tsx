@@ -67,15 +67,28 @@ function CollectorsSection() {
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+
+  // collector list selection
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
+
+  // new collector form
   const [newName, setNewName] = React.useState('');
   const [newDesc, setNewDesc] = React.useState('');
   const [newCatId, setNewCatId] = React.useState<number | ''>('');
   const [creating, setCreating] = React.useState(false);
+
+  // edit collector category inline
+  const [editCatId, setEditCatId] = React.useState<number | ''>('');
+  const [savingCat, setSavingCat] = React.useState(false);
+
+  // new category form
+  const [newCatName, setNewCatName] = React.useState('');
+  const [creatingCat, setCreatingCat] = React.useState(false);
+
+  // global type assignments
   const [saving, setSaving] = React.useState(false);
   const [savedMsg, setSavedMsg] = React.useState(false);
-  // pending assignment changes: global_type → collector_id | null
   const [pending, setPending] = React.useState<Map<string, number | null>>(new Map());
 
   const reload = React.useCallback(() => {
@@ -94,7 +107,11 @@ function CollectorsSection() {
 
   const selected = collectors.find(c => c.id === selectedId) ?? null;
 
-  // effective types for a collector (incorporating pending changes)
+  // sync editCatId when selection changes
+  React.useEffect(() => {
+    setEditCatId(selected?.type_category_id ?? '');
+  }, [selectedId, selected?.type_category_id]);
+
   const effectiveTypes = (c: Collector): string[] => {
     const base = c.types.map(t => t.global_type).filter(gt => pending.get(gt) !== null);
     const added = [...pending.entries()]
@@ -171,20 +188,93 @@ function CollectorsSection() {
     reload();
   };
 
+  const saveCollectorCategory = async () => {
+    if (!selected) return;
+    setSavingCat(true);
+    try {
+      await fetch(`/api/global_types/collectors/${selected.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type_category_id: editCatId || null }),
+      });
+      reload();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSavingCat(false);
+    }
+  };
+
+  const createCategory = async () => {
+    if (!newCatName.trim()) return;
+    setCreatingCat(true);
+    try {
+      await fetch('/api/global_types/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCatName.trim() }),
+      });
+      setNewCatName('');
+      reload();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setCreatingCat(false);
+    }
+  };
+
+  const deleteCategory = async (id: number, name: string) => {
+    if (!confirm(`Delete category "${name}"? Collectors in this category will become uncategorized.`)) return;
+    await fetch(`/api/global_types/categories/${id}`, { method: 'DELETE' });
+    reload();
+  };
+
   if (loading) return <div className="text-muted small">Loading…</div>;
   if (error) return <div className="alert alert-danger small">{error}</div>;
 
   return (
     <div>
       <p className="text-muted small mb-3">
-        Create collectors (e.g. "All Inclusive"), assign them to a category, and map global type codes to them.
+        Manage categories and collectors. Assign global type codes to collectors, and collectors to categories.
         Collectors appear as filter buttons on the Hotels page.
       </p>
+
+      {/* ── Categories ── */}
+      <div className="border rounded p-3 mb-4 bg-light">
+        <div className="fw-semibold small mb-2">Categories</div>
+        <div className="d-flex flex-wrap gap-2 mb-2">
+          {categories.length === 0 && <span className="text-muted small fst-italic">No categories yet</span>}
+          {categories.map(cat => (
+            <span key={cat.id} className="badge bg-secondary d-flex align-items-center gap-1" style={{ fontSize: '0.85rem' }}>
+              {cat.global_type_category}
+              <button
+                type="button"
+                className="btn-close btn-close-white ms-1"
+                style={{ fontSize: '0.55rem' }}
+                onClick={() => deleteCategory(cat.id, cat.global_type_category)}
+                aria-label="Delete category"
+              />
+            </span>
+          ))}
+        </div>
+        <div className="d-flex gap-2">
+          <input
+            className="form-control form-control-sm"
+            style={{ maxWidth: 220 }}
+            placeholder="New category name"
+            value={newCatName}
+            onChange={e => setNewCatName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') createCategory(); }}
+          />
+          <button className="btn btn-sm btn-outline-primary" onClick={createCategory} disabled={creatingCat || !newCatName.trim()}>
+            {creatingCat ? 'Adding…' : '+ Add'}
+          </button>
+        </div>
+      </div>
 
       <div className="row g-3">
         {/* ── collector list + create ── */}
         <div className="col-md">
-          {/* create form */}
           <div className="border rounded p-2 mb-2 bg-light">
             <div className="fw-semibold small mb-2">New Collector</div>
             <input className="form-control form-control-sm mb-1" placeholder="Name" value={newName} onChange={e => setNewName(e.target.value)} />
@@ -198,7 +288,6 @@ function CollectorsSection() {
             </button>
           </div>
 
-          {/* list grouped by category */}
           <div className="list-group" style={{ maxHeight: 360, overflowY: 'auto' }}>
             {collectors.length === 0 && (
               <div className="list-group-item text-muted small fst-italic">No collectors yet</div>
@@ -249,8 +338,28 @@ function CollectorsSection() {
         <div className="col-md">
           {selected ? (
             <>
-              <div className="fw-semibold mb-2">{toTitleCase(selected.name)}</div>
+              <div className="fw-semibold mb-1">{toTitleCase(selected.name)}</div>
               {selected.description && <div className="text-muted small mb-2">{selected.description}</div>}
+
+              {/* Category assignment */}
+              <div className="d-flex align-items-center gap-2 mb-3">
+                <label className="form-label mb-0 small text-muted text-nowrap">Category:</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={editCatId}
+                  onChange={e => setEditCatId(e.target.value ? Number(e.target.value) : '')}
+                >
+                  <option value="">— None —</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.global_type_category}</option>)}
+                </select>
+                <button
+                  className="btn btn-sm btn-outline-secondary text-nowrap"
+                  onClick={saveCollectorCategory}
+                  disabled={savingCat || editCatId === (selected.type_category_id ?? '')}
+                >
+                  {savingCat ? 'Saving…' : 'Save'}
+                </button>
+              </div>
 
               <div className="fw-semibold small text-muted mb-1">Assigned global types</div>
               <div className="d-flex flex-wrap gap-1 mb-3 p-2 border rounded" style={{ minHeight: 42 }}>
@@ -275,16 +384,16 @@ function CollectorsSection() {
                 )}
                 {filteredUnassigned.map(u => (
                   <button key={u.global_type} type="button"
-                  className="btn btn-link btn-sm w-100 text-start text-decoration-none px-3 py-1 border-bottom text-body"
-                  onClick={() => assign(u.global_type, selected.id)}
+                    className="btn btn-link btn-sm w-100 text-start text-decoration-none px-3 py-1 border-bottom text-body"
+                    onClick={() => assign(u.global_type, selected.id)}
                   >
-                  {u.global_type}- {u.global_type_label}
+                    {u.global_type} — {u.global_type_label}
                   </button>
                 ))}
               </div>
             </>
           ) : (
-            <div className="text-muted small fst-italic mt-2">Select a collector to manage its global types</div>
+            <div className="text-muted small fst-italic mt-2">Select a collector to manage its category and global types</div>
           )}
         </div>
       </div>
