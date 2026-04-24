@@ -16,7 +16,7 @@ type ScanRow = {
   status: 'queued' | 'running' | 'done' | 'error';
 };
 
-type HotelRow = { id: number; name: string; code: string; brand?: string; country?: string; region?: string };
+type HotelRow = { id: number; name: string; code: string; brand?: string; country?: string; region?: string; tuiamello_url?: string | null; booking_url?: string | null };
 
 type RoomMapping = {
   id: number;
@@ -225,6 +225,36 @@ function buildDisplayRows(rawRows: RawRow[], mappingsByHotel: Map<number, RoomMa
   }
 
   return display;
+}
+
+// ─── URL helpers ─────────────────────────────────────────────────────────────
+
+function buildAmelloUrl(tuiamelloUrl: string | null | undefined, checkIn: string, stayNights: number | null): string | null {
+  if (!tuiamelloUrl) return null;
+  try {
+    const base = tuiamelloUrl.endsWith('/') ? tuiamelloUrl : tuiamelloUrl + '/';
+    const dep = new Date(checkIn);
+    if (isNaN(dep.getTime())) return null;
+    const ret = new Date(dep);
+    ret.setDate(ret.getDate() + (stayNights ?? 7));
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    return `${base}?departure-date=${fmt(dep)}&return-date=${fmt(ret)}&rooms=2`;
+  } catch { return null; }
+}
+
+function buildBookingUrl(bookingUrl: string | null | undefined, checkIn: string, stayNights: number | null): string | null {
+  if (!bookingUrl) return null;
+  try {
+    const url = new URL(bookingUrl);
+    url.searchParams.set('checkin', checkIn);
+    const dep = new Date(checkIn);
+    if (!isNaN(dep.getTime())) {
+      const checkout = new Date(dep);
+      checkout.setDate(checkout.getDate() + (stayNights ?? 7));
+      url.searchParams.set('checkout', checkout.toISOString().slice(0, 10));
+    }
+    return url.toString();
+  } catch { return null; }
 }
 
 // ─── SortTh ───────────────────────────────────────────────────────────────────
@@ -452,7 +482,10 @@ function PriceComparisonPage() {
 
   // ── render ────────────────────────────────────────────────────────────────
 
-  const hotelTable = (rows: DisplayRow[]) => (
+  const hotelTable = (rows: DisplayRow[], hotelId: number) => {
+    const meta = hotelMeta.get(hotelId);
+    const stayNights = scanDetails?.stayNights ?? null;
+    return (<>
     <div className="table-responsive border rounded">
       <table className="table table-sm table-striped mb-0">
         <thead className="table-light">
@@ -478,13 +511,28 @@ function PriceComparisonPage() {
                 <td>{r.booking_room ?? <span className="text-muted fst-italic">—</span>}</td>
                 <td className="small">{r.rate_name || '—'}</td>
                 <td className="text-end text-nowrap">
-                  {r.price_amello != null ? formatPrice(r.price_amello, r.currency) : <span className="text-muted">—</span>}
+                  {r.price_amello != null ? (() => {
+                    const href = buildAmelloUrl(meta?.tuiamello_url, r.check_in_date, stayNights);
+                    return href
+                      ? <a href={href} target="_blank" rel="noopener noreferrer" className="text-decoration-none">{formatPrice(r.price_amello, r.currency)}</a>
+                      : formatPrice(r.price_amello, r.currency);
+                  })() : <span className="text-muted">—</span>}
                 </td>
                 <td className="text-end text-nowrap">
-                  {r.price_booking != null ? formatPrice(r.price_booking, r.currency) : <span className="text-muted">—</span>}
+                  {r.price_booking != null ? (() => {
+                    const href = buildBookingUrl(meta?.booking_url, r.check_in_date, stayNights);
+                    return href
+                      ? <a href={href} target="_blank" rel="noopener noreferrer" className="text-decoration-none">{formatPrice(r.price_booking, r.currency)}</a>
+                      : formatPrice(r.price_booking, r.currency);
+                  })() : <span className="text-muted">—</span>}
                 </td>
                 <td className="text-end text-nowrap">
-                  {r.price_booking_member != null ? <span className="text-primary fw-semibold">{formatPrice(r.price_booking_member, r.currency)}</span> : <span className="text-muted">—</span>}
+                  {r.price_booking_member != null ? (() => {
+                    const href = buildBookingUrl(meta?.booking_url, r.check_in_date, stayNights);
+                    return href
+                      ? <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary fw-semibold text-decoration-none">{formatPrice(r.price_booking_member, r.currency)}</a>
+                      : <span className="text-primary fw-semibold">{formatPrice(r.price_booking_member, r.currency)}</span>;
+                  })() : <span className="text-muted">—</span>}
                 </td>
                 <DiffCell a={r.price_amello} b={r.price_booking} currency={r.currency} />
                 <td><span className={pillCls} style={pillStyle}>{label}</span></td>
@@ -494,7 +542,8 @@ function PriceComparisonPage() {
         </tbody>
       </table>
     </div>
-  );
+    </>);
+  };
 
   return (
     <main>
@@ -639,7 +688,7 @@ function PriceComparisonPage() {
                   return (
                     <div key={hotelId} className="mb-4 ms-3">
                       <h5 className="mb-2">{rows[0].hotel_name}</h5>
-                      {hotelTable(rows)}
+                      {hotelTable(rows, hotelId)}
                     </div>
                   );
                 })}
@@ -651,7 +700,7 @@ function PriceComparisonPage() {
             return (
               <div key={hotelId} className="mb-5">
                 <h4 className="mb-2">{rows[0].hotel_name}</h4>
-                {hotelTable(rows)}
+                {hotelTable(rows, hotelId as number)}
               </div>
             );
           })
