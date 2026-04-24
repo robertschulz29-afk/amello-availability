@@ -408,7 +408,7 @@ export default function Page() {
   }, []);
 
   const loadBestRate = React.useCallback(async (scanId: number, hotelIds: number[]) => {
-    const params = new URLSearchParams({ scanID: String(scanId), limit: '5000' });
+    const params = new URLSearchParams({ scanID: String(scanId), limit: '500' });
     if (hotelIds.length > 0) params.append('hotelID', hotelIds.join(','));
     const res = await fetchJSON(`/api/rate-comparison?${params}`, { cache: 'no-store' });
     const rows: RateRow[] = (res.data ?? []).map((r: any) => ({
@@ -424,7 +424,7 @@ export default function Page() {
   }, []);
 
   const loadAllRates = React.useCallback(async (scanId: number, hotelIds: number[]) => {
-    const params = new URLSearchParams({ scanID: String(scanId), format: 'comparison', limit: '5000' });
+    const params = new URLSearchParams({ scanID: String(scanId), format: 'comparison', limit: '500' });
     if (hotelIds.length > 0) params.append('hotelID', hotelIds.join(','));
     const [res, mappingsData] = await Promise.all([
       fetchJSON(`/api/scan-results?${params}`, { cache: 'no-store' }),
