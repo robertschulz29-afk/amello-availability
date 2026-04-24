@@ -350,7 +350,7 @@ function PriceComparisonPage() {
   }, []);
 
   const loadScanDetails = React.useCallback(async (scanId: number) => {
-    const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
+    const data = await fetchJSON(`/api/scans/${scanId}?meta=1`, { cache: 'no-store' });
     setScanDetails({
       scanId,
       scannedAt: String(data?.scannedAt ?? ''),

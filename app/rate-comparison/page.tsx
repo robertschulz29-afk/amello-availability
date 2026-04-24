@@ -395,7 +395,7 @@ export default function Page() {
 
   const loadScanDetails = React.useCallback(async (scanId: number) => {
     try {
-      const d = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
+      const d = await fetchJSON(`/api/scans/${scanId}?meta=1`, { cache: 'no-store' });
       setScanDetails({
         scanId: d.scanId ?? scanId,
         scannedAt: d.scannedAt ?? '',
