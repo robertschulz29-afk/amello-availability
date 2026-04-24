@@ -280,6 +280,7 @@ function PriceComparisonPage() {
     stayNights: number | null; timezone: string | null;
   } | null>(null);
 
+  const [scanHotels, setScanHotels] = React.useState<{ hotel_id: number; hotel_name: string }[]>([]);
   const [rawRows, setRawRows] = React.useState<RawRow[]>([]);
   const [mappingsByHotel, setMappingsByHotel] = React.useState<Map<number, RoomMapping[]>>(new Map());
   const [error, setError] = React.useState<string | null>(null);
@@ -300,8 +301,8 @@ function PriceComparisonPage() {
   const handleSort = (key: SortKey) =>
     setSort(prev => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
 
-  // Reset to page 1 when filters/scan/grouping change
-  React.useEffect(() => { setDisplayPage(1); }, [selectedScanId, selectedHotelIds, statusFilter, groupBy, hotelsPerPage]);
+  // Reset to page 1 when scan, hotel selection, or page size changes
+  React.useEffect(() => { setDisplayPage(1); }, [selectedScanId, selectedHotelIds, hotelsPerPage]);
 
   // ── data loading ─────────────────────────────────────────────────────────
 
@@ -332,18 +333,32 @@ function PriceComparisonPage() {
     });
   }, []);
 
-  const loadResults = React.useCallback(async () => {
-    if (!selectedScanId) return;
+  // Step 1: load the distinct hotel list for the selected scan (lightweight)
+  const loadScanHotels = React.useCallback(async () => {
+    if (!selectedScanId) { setScanHotels([]); return; }
+    try {
+      const params = new URLSearchParams({ scanID: selectedScanId.toString() });
+      if (selectedHotelIds.length > 0) params.append('hotelID', selectedHotelIds.join(','));
+      const rows = await fetchJSON(`/api/scan-results/hotels?${params}`, { cache: 'no-store' });
+      setScanHotels(Array.isArray(rows) ? rows : []);
+    } catch (e: any) {
+      setError(e.message || 'Failed to load hotel list');
+      setScanHotels([]);
+    }
+  }, [selectedScanId, selectedHotelIds]);
+
+  // Step 2: load comparison rows for only the current page's hotel IDs
+  const loadResults = React.useCallback(async (pageHotelIds: number[]) => {
+    if (!selectedScanId || pageHotelIds.length === 0) { setRawRows([]); return; }
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({
         scanID: selectedScanId.toString(),
         format: 'comparison',
-        limit: '1000',
+        limit: '5000',
+        hotelID: pageHotelIds.join(','),
       });
-      if (selectedHotelIds.length > 0) params.append('hotelID', selectedHotelIds.join(','));
-
       const res: PaginatedResponse = await fetchJSON(`/api/scan-results?${params}`, { cache: 'no-store' });
       setRawRows(res.data || []);
 
@@ -357,12 +372,12 @@ function PriceComparisonPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedScanId, selectedHotelIds]);
+  }, [selectedScanId]);
 
   React.useEffect(() => { loadScans(); loadHotels(); }, [loadScans, loadHotels]);
   React.useEffect(() => {
-    if (selectedScanId) { loadScanDetails(selectedScanId); loadResults(); }
-  }, [selectedScanId, loadScanDetails, loadResults]);
+    if (selectedScanId) { loadScanDetails(selectedScanId); loadScanHotels(); }
+  }, [selectedScanId, loadScanDetails, loadScanHotels]);
 
   // ── derived ──────────────────────────────────────────────────────────────
 
@@ -405,16 +420,27 @@ function PriceComparisonPage() {
     return new Map([...outer.entries()].sort((a, b) => a[0].localeCompare(b[0])));
   }, [groupBy, groupedByHotel, hotelMeta]);
 
-  // Pagination over hotels (ungrouped) or groups (grouped)
+  // Paginate the scan hotel list; fetch data whenever the page slice changes
+  const totalHotels = scanHotels.length;
+  const totalPages = Math.max(1, Math.ceil(totalHotels / hotelsPerPage));
+  const safePage = Math.min(displayPage, totalPages);
+  const pageStart = (safePage - 1) * hotelsPerPage;
+  const pageHotelIds = React.useMemo(
+    () => scanHotels.slice(pageStart, pageStart + hotelsPerPage).map(h => h.hotel_id),
+    [scanHotels, pageStart, hotelsPerPage],
+  );
+
+  React.useEffect(() => { loadResults(pageHotelIds); }, [pageHotelIds, loadResults]);
+
+  // For grouped dimension view, still derive groups from loaded rows
   const paginationUnits = React.useMemo(() => {
     if (groupedByDimension) return Array.from(groupedByDimension.keys());
     return Array.from(groupedByHotel.keys());
   }, [groupedByDimension, groupedByHotel]);
 
-  const totalPages = Math.max(1, Math.ceil(paginationUnits.length / hotelsPerPage));
-  const safePage = Math.min(displayPage, totalPages);
-  const pageStart = (safePage - 1) * hotelsPerPage;
-  const pageUnits = paginationUnits.slice(pageStart, pageStart + hotelsPerPage);
+  const pageUnits = groupedByDimension
+    ? paginationUnits  // groups are already scoped to loaded hotels
+    : Array.from(groupedByHotel.keys());
 
   const summary = React.useMemo(() => {
     let amelloOnly = 0, bookingOnly = 0, both = 0, amelloCheaper = 0, bookingCheaper = 0, same = 0;
@@ -527,7 +553,7 @@ function PriceComparisonPage() {
           </select>
 
           <div className="d-flex align-items-center gap-2">
-            <label className="form-label mb-0 text-nowrap small">{groupBy === 'none' ? 'Hotels' : 'Groups'} per page:</label>
+            <label className="form-label mb-0 text-nowrap small">Hotels per page:</label>
             <select className="form-select form-select-sm" style={{ width: 'auto' }} value={hotelsPerPage} onChange={e => setHotelsPerPage(Number(e.target.value))}>
               <option value="5">5</option>
               <option value="10">10</option>
@@ -594,10 +620,10 @@ function PriceComparisonPage() {
         )}
 
         {/* ── pagination controls (top) ── */}
-        {paginationUnits.length > 0 && (
+        {totalHotels > 0 && (
           <div className="d-flex justify-content-between align-items-center mb-3">
             <div className="text-muted small">
-              Showing {groupBy === 'none' ? 'hotels' : 'groups'} {pageStart + 1}–{Math.min(pageStart + hotelsPerPage, paginationUnits.length)} of {paginationUnits.length}
+              Showing hotels {pageStart + 1}–{Math.min(pageStart + hotelsPerPage, totalHotels)} of {totalHotels}
             </div>
             <div className="d-flex gap-2">
               <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(1)} disabled={safePage === 1}>First</button>
@@ -646,10 +672,10 @@ function PriceComparisonPage() {
         }
 
         {/* ── pagination controls (bottom) ── */}
-        {paginationUnits.length > 0 && (
+        {totalHotels > 0 && (
           <div className="d-flex justify-content-between align-items-center mt-2 mb-4">
             <div className="text-muted small">
-              Showing {groupBy === 'none' ? 'hotels' : 'groups'} {pageStart + 1}–{Math.min(pageStart + hotelsPerPage, paginationUnits.length)} of {paginationUnits.length}
+              Showing hotels {pageStart + 1}–{Math.min(pageStart + hotelsPerPage, totalHotels)} of {totalHotels}
             </div>
             <div className="d-flex gap-2">
               <button className="btn btn-outline-secondary btn-sm" onClick={() => setDisplayPage(1)} disabled={safePage === 1}>First</button>

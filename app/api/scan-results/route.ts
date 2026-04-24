@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
     const sourceParam = searchParams.get('source');
     const formatParam = searchParams.get('format'); // 'comparison' for price comparison format
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-    const limit = Math.min(500, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
+    const maxLimit = formatParam === 'comparison' ? 5000 : 500;
+    const limit = Math.min(maxLimit, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
     const offset = (page - 1) * limit;
 
     const scanID = scanIDParam ? parseInt(scanIDParam, 10) : null;
