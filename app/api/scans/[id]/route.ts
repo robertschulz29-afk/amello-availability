@@ -45,7 +45,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       status: scan.status ?? null,
     };
 
-    if (metaOnly) return NextResponse.json(meta);
+    if (metaOnly) {
+      const snapQ = await query(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE bookable) ::int AS bookable,
+                COUNT(*) FILTER (WHERE active)   ::int AS active
+         FROM scan_hotels WHERE scan_id = $1`,
+        [scanId],
+      );
+      const snap = snapQ.rows[0] ?? { total: null, bookable: null, active: null };
+      return NextResponse.json({
+        ...meta,
+        hotelTotal:    snap.total,
+        hotelBookable: snap.bookable,
+        hotelActive:   snap.active,
+      });
+    }
 
     const hotelsQ = await sql`
       SELECT id, name, code, brand, region, country

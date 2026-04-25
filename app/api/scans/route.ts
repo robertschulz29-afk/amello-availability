@@ -1,6 +1,6 @@
 // app/api/scans/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { sql, query } from '@/lib/db';
 import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
 import { ymdToUTC, toYMDUTC } from '@/lib/scrapers/process-helpers';
 
@@ -166,6 +166,14 @@ export async function POST(req: NextRequest) {
       RETURNING id
     `;
     const scanId = ins.rows[0].id as number;
+
+    // ── Snapshot hotels at scan creation time ─────────────────────────────────
+    await query(
+      `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
+       SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
+       ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
+      [scanId],
+    );
 
     // ── Create one source job per enabled source ──────────────────────────────
     const jobs: Array<{ jobId: number; source: string }> = [];

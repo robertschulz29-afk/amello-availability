@@ -441,8 +441,16 @@ function PortfolioHealth() {
   const hotelsByCodeRef = React.useRef(hotelsByCode);
   React.useEffect(() => { hotelsByCodeRef.current = hotelsByCode; }, [hotelsByCode]);
 
-  const loadHotels = React.useCallback(async () => {
+  const loadHotels = React.useCallback(async (scanId?: number) => {
     try {
+      if (scanId != null) {
+        // Use scan's hotel snapshot when available
+        const data = await fetchJSON(`/api/scans/${scanId}/hotels`, { cache: 'no-store' });
+        if (Array.isArray(data?.hotels) && data.hotels.length > 0) {
+          setHotels(data.hotels);
+          return;
+        }
+      }
       const data = await fetchJSON('/api/hotels', { cache: 'no-store' });
       setHotels(Array.isArray(data) ? data : []);
     } catch (e: any) {}
@@ -460,6 +468,7 @@ function PortfolioHealth() {
 
   const loadScanById = React.useCallback(async (scanId: number) => {
     setLoading(true); setError(null); setMatrix(null);
+    loadHotels(scanId);
     try {
       const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
       const fullSet: FullSetEntry[] = Array.isArray(data?.fullSet) ? data.fullSet : [];
@@ -481,7 +490,7 @@ function PortfolioHealth() {
     } finally { setLoading(false); }
   }, []);
 
-  React.useEffect(() => { loadHotels(); loadScans(); }, [loadHotels, loadScans]);
+  React.useEffect(() => { loadScans(); }, [loadScans]);
   React.useEffect(() => { if (selectedScanId != null) loadScanById(selectedScanId); }, [selectedScanId, loadScanById]);
 
   const dates = matrix?.dates ?? [];
@@ -489,9 +498,10 @@ function PortfolioHealth() {
   const groups = React.useMemo(() => {
     const gmap = new Map<string, string[]>();
     const byCode = hotelsByCode;
-    // Union of scanned codes and all known hotel codes so unscanned hotels still appear in groups
+    // All hotel codes from the scan snapshot (or current hotels if no snapshot)
     const scannedCodes = new Set(Object.keys(matrix?.results ?? {}));
-    const universe = [...new Set([...scannedCodes, ...hotels.map(h => h.code)])];
+    const allHotelCodes = hotels.length > 0 ? hotels.map(h => h.code) : [];
+    const universe = [...new Set([...allHotelCodes, ...scannedCodes])];
 
     function keyFor(h: Hotel): string {
       if (groupBy === 'hotel') return (h.name && h.name.trim()) || '(no hotel)';

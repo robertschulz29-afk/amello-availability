@@ -370,6 +370,7 @@ export default function Page() {
     scanId: number; scannedAt: string;
     baseCheckIn: string | null; days: number | null;
     stayNights: number | null; timezone: string | null;
+    hotelTotal: number | null; hotelBookable: number | null; hotelActive: number | null;
   } | null>(null);
 
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
@@ -431,6 +432,9 @@ export default function Page() {
         days: d.days ?? null,
         stayNights: d.stayNights ?? null,
         timezone: d.timezone ?? null,
+        hotelTotal:    d.hotelTotal    ?? null,
+        hotelBookable: d.hotelBookable ?? null,
+        hotelActive:   d.hotelActive   ?? null,
       });
     } catch { setScanDetails(null); }
   }, []);
@@ -809,6 +813,11 @@ export default function Page() {
                 <div className="col-md-4"><strong>Base check-in:</strong> {scanDetails.baseCheckIn ? fmtDate(scanDetails.baseCheckIn) : '—'}</div>
                 <div className="col-md-4"><strong>Days scanned:</strong> {scanDetails.days ?? '—'}</div>
                 <div className="col-md-4"><strong>Stay nights:</strong> {scanDetails.stayNights ?? '—'}</div>
+                {scanDetails.hotelTotal != null && (<>
+                  <div className="col-md-4"><strong>Hotels (total):</strong> {scanDetails.hotelTotal}</div>
+                  <div className="col-md-4"><strong>Hotels (bookable):</strong> {scanDetails.hotelBookable}</div>
+                  <div className="col-md-4"><strong>Hotels (active):</strong> {scanDetails.hotelActive}</div>
+                </>)}
               </div>
             )}
           </div>
