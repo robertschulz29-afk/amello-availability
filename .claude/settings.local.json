@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl -s \"https://prod.api.tui/content/hotels/FJR10012?locale=de_DE&details=true\")",
+      "Bash(curl -s \"https://test.api.tui/content/hotels/FJR10012?locale=de_DE&details=true\")",
       "Bash(2)",
       "Bash(npx tsc *)",
       "Bash(sed -i 's|<h1 className=\"mb-4\">Portfolio Health</h1>||' \"/c/Users/ro_sc/Projects/amello-availability/app/portfolio-health/page.tsx\")",
@@ -9,7 +9,30 @@
       "Bash(sed -i 's|<h1 className=\"h3 mb-3\">Scan Results</h1>||' \"/c/Users/ro_sc/Projects/amello-availability/app/scan-results/page.tsx\")",
       "Bash(sed -i 's|<h1 className=\"mb-4\">Scan Setup</h1>||' \"/c/Users/ro_sc/Projects/amello-availability/app/status-overview/page.tsx\")",
       "Bash(xargs grep *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "WebFetch(domain:docs.tui-info.com)",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT02_GT_Accommodation-Types.28519608.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT02_ST_Accommodation-Types.cf3f151f.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT02_AT_Accommodation-Types.077d41e5.csv\")",
+      "Bash(wait)",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT03_GT_Accommodation-Attributes.ea238e14.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT03_ST_Accommodation-Attributes.dd65fa92.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT03_AT_Accommodation-Attributes.848262a8.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT04_GT_Room-Types.a4dbfa54.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT04_ST_Room-Types.08ae3e91.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT04_AT_Room-Types.1ed77ddf.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT05_GT_Room-Attributes.9713ce03.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT05_ST_Room-Attributes.8743a94f.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT05_AT_Room-Attributes.38019f5e.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT06_GT_Boards.494013b7.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT06_ST_Boards.5921f01a.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT08_GT_Additional-Services.41d01f00.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT08_ST_Additional-Services.06adeef2.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT08_AT_Additional-Services.64066dc9.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT13_GT_Room-Locations.04b02f47.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT13_AT_Room-Locations.3308e171.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT18_GT_Payment-Types.9050c7b1.csv\")",
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT18_ST_Payment-Types.e957bc64.csv\")"
     ]
   }
 }

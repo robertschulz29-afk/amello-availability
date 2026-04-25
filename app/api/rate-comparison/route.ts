@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { extractLowestPrice } from '@/lib/price-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
