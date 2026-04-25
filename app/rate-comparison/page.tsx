@@ -365,8 +365,6 @@ export default function Page() {
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
   const [hotels, setHotels] = React.useState<HotelRow[]>([]);
   const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
-  const [collectors, setCollectors] = React.useState<{ id: number; name: string; category: string }[]>([]);
-  const [selectedCollectorId, setSelectedCollectorId] = React.useState<number | null>(null);
 
   const [scanDetails, setScanDetails] = React.useState<{
     scanId: number; scannedAt: string;
@@ -416,31 +414,11 @@ export default function Page() {
     if (arr.length > 0) setSelectedScanId(prev => prev ?? arr[0].id);
   }, []);
 
-  const loadHotels = React.useCallback(async (collectorId: number | null = null) => {
-    const url = collectorId ? `/api/hotels?slim=1&collectors=${collectorId}` : '/api/hotels?slim=1';
-    const list = await fetchJSON(url, { cache: 'no-store' });
+  const loadHotels = React.useCallback(async () => {
+    const list = await fetchJSON('/api/hotels?slim=1', { cache: 'no-store' });
     const arr: HotelRow[] = Array.isArray(list) ? list : [];
     arr.sort((a, b) => a.name.localeCompare(b.name));
     setHotels(arr);
-    // Auto-select all hotels for the chosen collector; clear selection when no collector
-    setSelectedHotelIds(collectorId ? arr.map(h => h.id) : []);
-  }, []);
-
-  const loadCollectors = React.useCallback(async () => {
-    const list = await fetchJSON('/api/global_types', { cache: 'no-store' });
-    const arr: { group_id: number; collector_name: string | null; global_type_category: string | null }[] =
-      Array.isArray(list) ? list : [];
-    const map = new Map<number, { id: number; name: string; category: string }>();
-    for (const gt of arr) {
-      if (gt.group_id != null && !map.has(gt.group_id)) {
-        map.set(gt.group_id, {
-          id: gt.group_id,
-          name: gt.collector_name ?? String(gt.group_id),
-          category: gt.global_type_category ?? '',
-        });
-      }
-    }
-    setCollectors([...map.values()].sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name)));
   }, []);
 
   const loadScanDetails = React.useCallback(async (scanId: number) => {
@@ -511,7 +489,7 @@ export default function Page() {
     loader.catch(e => setError(e.message || 'Failed to load data')).finally(() => setLoading(false));
   }, [selectedScanId, scanHotels, displayPage, hotelsPerPage, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  React.useEffect(() => { loadScans(); loadHotels(); loadCollectors(); }, []);
+  React.useEffect(() => { loadScans(); loadHotels(); }, []);
 
   // ── derived ────────────────────────────────────────────────────────────────
 
@@ -778,29 +756,6 @@ export default function Page() {
 
         {/* ── controls ── */}
         <div className="d-flex gap-3 mb-3 flex-wrap">
-          <select
-            className="form-select"
-            style={{ maxWidth: 230 }}
-            value={selectedCollectorId ?? ''}
-            onChange={e => {
-              const id = e.target.value ? Number(e.target.value) : null;
-              setSelectedCollectorId(id);
-              loadHotels(id);
-            }}
-          >
-            <option value="">All Collectors</option>
-            {(() => {
-              const categories = [...new Set(collectors.map(c => c.category))];
-              return categories.map(cat => (
-                <optgroup key={cat} label={cat || '(uncategorised)'}>
-                  {collectors.filter(c => c.category === cat).map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </optgroup>
-              ));
-            })()}
-          </select>
-
           <HotelCombobox
             hotels={hotels}
             selectedIds={selectedHotelIds}
