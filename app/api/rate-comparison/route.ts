@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { extractLowestPrice } from '@/lib/price-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,18 +22,14 @@ interface RateComparisonRow {
   percentage_difference: number | null;
 }
 
-/**
- * GET: Fetch rate comparison data showing the cheapest rates from Amello and Booking.com
- * per scan/hotel/check-in day
- */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    
+
     const scanIDParam = searchParams.get('scanID');
     const hotelIDParam = searchParams.get('hotelID');
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-    const limit = Math.min(500, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
+    const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
     const offset = (page - 1) * limit;
 
     const scanID = scanIDParam ? parseInt(scanIDParam, 10) : null;
@@ -42,44 +37,54 @@ export async function GET(req: NextRequest) {
       ? hotelIDParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => isFinite(n))
       : [];
 
-    // Build WHERE conditions
-    const conditions: string[] = ['sr.status = $1']; // Only include successful scans
-    const params: (string | number)[] = ['green'];
-    let paramCount = 1;
+    // Build base conditions (scan + hotel filter, no status filter)
+    const baseConditions: string[] = [];
+    const params: (string | number)[] = [];
+    let paramCount = 0;
 
     if (scanID !== null) {
       paramCount++;
-      conditions.push(`sr.scan_id = $${paramCount}`);
+      baseConditions.push(`sr.scan_id = $${paramCount}`);
       params.push(scanID);
     }
     if (hotelIDs.length === 1) {
       paramCount++;
-      conditions.push(`sr.hotel_id = $${paramCount}`);
+      baseConditions.push(`sr.hotel_id = $${paramCount}`);
       params.push(hotelIDs[0]);
     } else if (hotelIDs.length > 1) {
       const placeholders = hotelIDs.map(() => `$${++paramCount}`).join(', ');
-      conditions.push(`sr.hotel_id IN (${placeholders})`);
+      baseConditions.push(`sr.hotel_id IN (${placeholders})`);
       params.push(...hotelIDs);
     }
 
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const baseWhere = baseConditions.length > 0 ? `WHERE ${baseConditions.join(' AND ')}` : '';
+    // price_data additionally requires green status
+    const priceWhere = baseConditions.length > 0
+      ? `WHERE ${baseConditions.join(' AND ')} AND sr.status = 'green'`
+      : `WHERE sr.status = 'green'`;
 
-    // Query to extract the minimum price per scan/hotel/check-in day/source
     const dataQuery = `
-      WITH price_data AS (
-        SELECT 
+      WITH scan_base AS (
+        SELECT DISTINCT
           sr.scan_id,
           sr.hotel_id,
-          h.name as hotel_name,
+          COALESCE(h.name, 'Hotel ' || sr.hotel_id) AS hotel_name,
+          sr.check_in_date
+        FROM scan_results sr
+        LEFT JOIN hotels h ON sr.hotel_id = h.id
+        ${baseWhere}
+      ),
+      price_data AS (
+        SELECT
+          sr.scan_id,
+          sr.hotel_id,
           sr.check_in_date,
           sr.source,
-          sr.response_json,
-          -- Extract all room/rate combinations from the response_json
           CASE
             WHEN sr.response_json->'rooms' IS NOT NULL THEN
               (SELECT jsonb_agg(
                 jsonb_build_object(
-                  'room_name', room->>'name',
+                  'room_name', COALESCE(room->>'name', room->>'roomName', room->>'room_name', room->>'title', room->>'type'),
                   'rate_name', rate->>'name',
                   'price', (rate->>'price')::numeric,
                   'member_price', CASE WHEN rate->>'memberPrice' IS NOT NULL THEN (rate->>'memberPrice')::numeric ELSE NULL END,
@@ -90,19 +95,17 @@ export async function GET(req: NextRequest) {
                    jsonb_array_elements(room->'rates') AS rate
               WHERE (rate->>'price')::numeric IS NOT NULL)
             ELSE NULL
-          END as room_rates
+          END AS room_rates
         FROM scan_results sr
-        LEFT JOIN hotels h ON sr.hotel_id = h.id
-        ${whereClause}
+        ${priceWhere}
       ),
       min_prices AS (
         SELECT
           pd.scan_id,
           pd.hotel_id,
-          pd.hotel_name,
           pd.check_in_date,
           pd.source,
-          MIN((rr->>'price')::numeric) as min_price,
+          MIN((rr->>'price')::numeric) AS min_price,
           (
             SELECT jsonb_build_object(
               'room_name', rr2->>'room_name',
@@ -113,104 +116,64 @@ export async function GET(req: NextRequest) {
             FROM jsonb_array_elements(pd.room_rates) AS rr2
             WHERE (rr2->>'price')::numeric = MIN((rr->>'price')::numeric)
             LIMIT 1
-          ) as min_rate_details
+          ) AS min_rate_details
         FROM price_data pd,
              jsonb_array_elements(COALESCE(pd.room_rates, '[]'::jsonb)) AS rr
         WHERE pd.room_rates IS NOT NULL
-        GROUP BY pd.scan_id, pd.hotel_id, pd.hotel_name, pd.check_in_date, pd.source, pd.room_rates
+        GROUP BY pd.scan_id, pd.hotel_id, pd.check_in_date, pd.source, pd.room_rates
       )
       SELECT
-        mp.scan_id,
-        mp.hotel_id,
-        mp.hotel_name,
-        mp.check_in_date::text,
-        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_price END) as amello_min_price,
-        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'currency' END) as amello_currency,
-        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'room_name' END) as amello_room_name,
-        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'rate_name' END) as amello_rate_name,
-        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) as booking_min_price,
-        MAX(CASE WHEN mp.source = 'booking_member' THEN mp.min_price END) as booking_member_min_price,
-        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'currency' END) as booking_currency,
-        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'room_name' END) as booking_room_name,
-        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'rate_name' END) as booking_rate_name,
-        -- Calculate price difference (Amello - Booking)
-        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_price END) - 
-        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) as price_difference,
-        -- Calculate percentage difference
-        CASE 
-          WHEN MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) IS NOT NULL 
-           AND MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) > 0
-          THEN 
-            ((MAX(CASE WHEN mp.source = 'amello' THEN mp.min_price END) - 
-              MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END)) / 
-              MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) * 100)
+        sb.scan_id,
+        sb.hotel_id,
+        sb.hotel_name,
+        sb.check_in_date::text,
+        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_price END) AS amello_min_price,
+        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'currency' END) AS amello_currency,
+        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'room_name' END) AS amello_room_name,
+        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'rate_name' END) AS amello_rate_name,
+        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) AS booking_min_price,
+        MAX(CASE WHEN mp.source = 'booking_member' THEN mp.min_price END) AS booking_member_min_price,
+        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'currency' END) AS booking_currency,
+        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'room_name' END) AS booking_room_name,
+        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'rate_name' END) AS booking_rate_name,
+        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_price END) -
+        MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) AS price_difference,
+        CASE
+          WHEN MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) > 0
+          THEN (
+            (MAX(CASE WHEN mp.source = 'amello' THEN mp.min_price END) -
+             MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END)) /
+             MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) * 100
+          )
           ELSE NULL
-        END as percentage_difference
-      FROM min_prices mp
-      GROUP BY mp.scan_id, mp.hotel_id, mp.hotel_name, mp.check_in_date
-      HAVING MAX(CASE WHEN mp.source = 'amello' THEN mp.min_price END) IS NOT NULL
-         OR MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) IS NOT NULL
-         OR MAX(CASE WHEN mp.source = 'booking_member' THEN mp.min_price END) IS NOT NULL
-      ORDER BY mp.scan_id DESC, mp.hotel_id, mp.check_in_date
+        END AS percentage_difference
+      FROM scan_base sb
+      LEFT JOIN min_prices mp
+        ON mp.scan_id = sb.scan_id
+       AND mp.hotel_id = sb.hotel_id
+       AND mp.check_in_date = sb.check_in_date
+      GROUP BY sb.scan_id, sb.hotel_id, sb.hotel_name, sb.check_in_date
+      ORDER BY sb.scan_id DESC, sb.hotel_id, sb.check_in_date
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `;
 
-    const { rows: dataRows } = await query<RateComparisonRow>(dataQuery, [...params, limit, offset]);
-
-    // Count query
     const countQuery = `
-      WITH price_data AS (
-        SELECT 
-          sr.scan_id,
-          sr.hotel_id,
-          h.name as hotel_name,
-          sr.check_in_date,
-          sr.source,
-          sr.response_json,
-          CASE 
-            WHEN sr.response_json->'rooms' IS NOT NULL THEN
-              (SELECT jsonb_agg(
-                jsonb_build_object(
-                  'room_name', room->>'name',
-                  'rate_name', rate->>'name',
-                  'price', (rate->>'price')::numeric,
-                  'currency', rate->>'currency'
-                )
-              )
-              FROM jsonb_array_elements(sr.response_json->'rooms') AS room,
-                   jsonb_array_elements(room->'rates') AS rate
-              WHERE (rate->>'price')::numeric IS NOT NULL)
-            ELSE NULL
-          END as room_rates
-        FROM scan_results sr
-        LEFT JOIN hotels h ON sr.hotel_id = h.id
-        ${whereClause}
-      ),
-      min_prices AS (
-        SELECT 
-          pd.scan_id,
-          pd.hotel_id,
-          pd.check_in_date,
-          pd.source,
-          MIN((rr->>'price')::numeric) as min_price
-        FROM price_data pd,
-             jsonb_array_elements(COALESCE(pd.room_rates, '[]'::jsonb)) AS rr
-        WHERE pd.room_rates IS NOT NULL
-        GROUP BY pd.scan_id, pd.hotel_id, pd.check_in_date, pd.source
-      )
-      SELECT COUNT(DISTINCT (mp.scan_id, mp.hotel_id, mp.check_in_date))::int as total
-      FROM min_prices mp
+      SELECT COUNT(DISTINCT (sr.scan_id, sr.hotel_id, sr.check_in_date))::int AS total
+      FROM scan_results sr
+      ${baseWhere}
     `;
 
-    const { rows: countRows } = await query<{ total: number }>(countQuery, params);
-    const total = countRows[0]?.total || 0;
+    const [{ rows: dataRows }, { rows: countRows }] = await Promise.all([
+      query<RateComparisonRow>(dataQuery, [...params, limit, offset]),
+      query<{ total: number }>(countQuery, params),
+    ]);
 
     return NextResponse.json({
       data: dataRows,
-      total,
+      total: countRows[0]?.total || 0,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil((countRows[0]?.total || 0) / limit),
     });
   } catch (e: any) {
     console.error('[GET /api/rate-comparison] error', e);
