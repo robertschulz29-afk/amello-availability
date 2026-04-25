@@ -343,14 +343,14 @@ function PriceComparisonPage() {
   }, []);
 
   const loadHotels = React.useCallback(async () => {
-    const list = await fetchJSON('/api/hotels', { cache: 'no-store' });
+    const list = await fetchJSON('/api/hotels?slim=1', { cache: 'no-store' });
     const arr: HotelRow[] = Array.isArray(list) ? list : [];
     arr.sort((a, b) => a.name.localeCompare(b.name));
     setHotels(arr);
   }, []);
 
   const loadScanDetails = React.useCallback(async (scanId: number) => {
-    const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
+    const data = await fetchJSON(`/api/scans/${scanId}?meta=1`, { cache: 'no-store' });
     setScanDetails({
       scanId,
       scannedAt: String(data?.scannedAt ?? ''),

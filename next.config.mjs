@@ -1,11 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: [
-      'puppeteer-core',
-      '@sparticuz/chromium-min',
-    ],
-  },
+  reactStrictMode: false,
 };
 
 export default nextConfig;

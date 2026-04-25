@@ -11,6 +11,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: 'invalid scan id' }, { status: 400 });
   }
 
+  const metaOnly = new URL(req.url).searchParams.get('meta') === '1';
+
   try {
     const scanQ = await sql`
       SELECT
@@ -29,6 +31,21 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     `;
     if (scanQ.rows.length === 0) return NextResponse.json({ error: 'scan not found' }, { status: 404 });
     const scan = scanQ.rows[0];
+
+    const meta = {
+      scanId: scan.id,
+      scannedAt: scan.scanned_at,
+      baseCheckIn: scan.base_checkin ? (normalizeYMD(scan.base_checkin) ?? '') : null,
+      fixedCheckout: scan.fixed_checkout ? (normalizeYMD(scan.fixed_checkout) ?? '') : null,
+      days: scan.days ?? null,
+      stayNights: scan.stay_nights ?? null,
+      timezone: scan.timezone ?? null,
+      totalCells: scan.total_cells ?? null,
+      doneCells: scan.done_cells ?? null,
+      status: scan.status ?? null,
+    };
+
+    if (metaOnly) return NextResponse.json(meta);
 
     const hotelsQ = await sql`
       SELECT id, name, code, brand, region, country
@@ -74,26 +91,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       });
     }
 
-    return NextResponse.json({
-      // identity
-      scanId: scan.id,
-      scannedAt: scan.scanned_at,
-
-      // parameters
-      baseCheckIn: scan.base_checkin ? (normalizeYMD(scan.base_checkin) ?? '') : null,
-      fixedCheckout: scan.fixed_checkout ? (normalizeYMD(scan.fixed_checkout) ?? '') : null,
-      days: scan.days ?? null,
-      stayNights: scan.stay_nights ?? null,
-      timezone: scan.timezone ?? null,
-
-      // progress
-      totalCells: scan.total_cells ?? null,
-      doneCells: scan.done_cells ?? null,
-      status: scan.status ?? null,
-
-      // full raw data
-      fullSet,
-    });
+    return NextResponse.json({ ...meta, fullSet });
   } catch (err: any) {
     console.error('[GET /api/scans/[id]] error', err);
     return NextResponse.json({ error: 'internal error' }, { status: 500 });

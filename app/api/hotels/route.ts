@@ -18,17 +18,17 @@ type IncomingHotel = {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const collectorsParam = searchParams.get('collectors');
+  const slim = searchParams.get('slim') === '1';
   const collectorIds = collectorsParam
     ? collectorsParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
     : [];
 
+  const selectCols = slim
+    ? `id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country, booking_url, tuiamello_url, expedia_url, bookable, active`
+    : `id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country, booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"`;
+
   if (collectorIds.length === 0) {
-    const { rows } = await sql`
-      SELECT id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country,
-             booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"
-      FROM hotels
-      ORDER BY id ASC
-    `;
+    const { rows } = await query(`SELECT ${selectCols} FROM hotels ORDER BY id ASC`, []);
     return NextResponse.json(rows);
   }
 
@@ -71,11 +71,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { rows } = await query(
-    `SELECT id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country,
-            booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"
-     FROM hotels
-     WHERE "globalTypes" IS NOT NULL AND ${andClauses.join(' AND ')}
-     ORDER BY id ASC`,
+    `SELECT ${selectCols} FROM hotels WHERE "globalTypes" IS NOT NULL AND ${andClauses.join(' AND ')} ORDER BY id ASC`,
     params,
   );
   return NextResponse.json(rows);

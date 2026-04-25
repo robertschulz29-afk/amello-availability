@@ -332,6 +332,30 @@ function DiffCell({ a, b, currency }: { a: number | null; b: number | null; curr
   );
 }
 
+function PaginationBar({ page, totalPages, totalHotels, hotelsPerPage, onPage, onPerPage }: {
+  page: number; totalPages: number; totalHotels: number;
+  hotelsPerPage: number; onPage: (p: number) => void; onPerPage: (n: number) => void;
+}) {
+  if (totalHotels === 0) return null;
+  return (
+    <div className="d-flex align-items-center gap-3 flex-wrap">
+      <div className="d-flex align-items-center gap-2">
+        <label className="form-label mb-0 text-nowrap small">Hotels/page:</label>
+        <select className="form-select form-select-sm" style={{ width: 80 }} value={hotelsPerPage} onChange={e => onPerPage(Number(e.target.value))}>
+          {[5, 10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </div>
+      <div className="d-flex align-items-center gap-1">
+        <button className="btn btn-outline-secondary btn-sm" disabled={page <= 1} onClick={() => onPage(1)}>«</button>
+        <button className="btn btn-outline-secondary btn-sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>‹</button>
+        <span className="small px-2">Page {page} of {totalPages} <span className="text-muted">({totalHotels} hotels)</span></span>
+        <button className="btn btn-outline-secondary btn-sm" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>›</button>
+        <button className="btn btn-outline-secondary btn-sm" disabled={page >= totalPages} onClick={() => onPage(totalPages)}>»</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function Page() {
@@ -364,8 +388,12 @@ export default function Page() {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
-  // tracks which views have data loaded for the current scan+hotel combo
-  const [loadedViews, setLoadedViews] = React.useState<Set<ViewMode>>(new Set());
+  // hotel list for the current scan (lightweight, for pagination)
+  const [scanHotels, setScanHotels] = React.useState<{ hotel_id: number; hotel_name: string }[]>([]);
+  const [loadingHotels, setLoadingHotels] = React.useState(false);
+
+  const [displayPage, setDisplayPage] = React.useState(1);
+  const [hotelsPerPage, setHotelsPerPage] = React.useState(10);
 
   const toggleGroup = (key: string) =>
     setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
@@ -387,7 +415,7 @@ export default function Page() {
   }, []);
 
   const loadHotels = React.useCallback(async () => {
-    const list = await fetchJSON('/api/hotels', { cache: 'no-store' });
+    const list = await fetchJSON('/api/hotels?slim=1', { cache: 'no-store' });
     const arr: HotelRow[] = Array.isArray(list) ? list : [];
     arr.sort((a, b) => a.name.localeCompare(b.name));
     setHotels(arr);
@@ -395,7 +423,7 @@ export default function Page() {
 
   const loadScanDetails = React.useCallback(async (scanId: number) => {
     try {
-      const d = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
+      const d = await fetchJSON(`/api/scans/${scanId}?meta=1`, { cache: 'no-store' });
       setScanDetails({
         scanId: d.scanId ?? scanId,
         scannedAt: d.scannedAt ?? '',
@@ -407,61 +435,59 @@ export default function Page() {
     } catch { setScanDetails(null); }
   }, []);
 
-  const loadBestRate = React.useCallback(async (scanId: number, hotelIds: number[]) => {
-    const params = new URLSearchParams({ scanID: String(scanId), limit: '5000' });
-    if (hotelIds.length > 0) params.append('hotelID', hotelIds.join(','));
-    const res = await fetchJSON(`/api/rate-comparison?${params}`, { cache: 'no-store' });
-    const rows: RateRow[] = (res.data ?? []).map((r: any) => ({
-      ...r,
-      amello_min_price:         toNum(r.amello_min_price),
-      booking_min_price:        toNum(r.booking_min_price),
-      booking_member_min_price: toNum(r.booking_member_min_price),
-      price_difference:         toNum(r.price_difference),
-      percentage_difference:    toNum(r.percentage_difference),
-    }));
-    setRateRows(rows);
-    setLoadedViews(prev => new Set(prev).add('best_rate'));
-  }, []);
-
-  const loadAllRates = React.useCallback(async (scanId: number, hotelIds: number[]) => {
-    const params = new URLSearchParams({ scanID: String(scanId), format: 'comparison', limit: '5000' });
-    if (hotelIds.length > 0) params.append('hotelID', hotelIds.join(','));
-    const [res, mappingsData] = await Promise.all([
-      fetchJSON(`/api/scan-results?${params}`, { cache: 'no-store' }),
-      fetchJSON('/api/room-mappings', { cache: 'no-store' }),
-    ]);
-    setRawRows(res.data || []);
-    const map = new Map<number, RoomMapping[]>();
-    for (const h of (mappingsData.hotels ?? [])) map.set(h.id, h.mappings ?? []);
-    setMappingsByHotel(map);
-    setLoadedViews(prev => new Set(prev).add('all_rates'));
-  }, []);
-
-  // On scan or hotel filter change: reset loaded state and load only the active view
+  // Step 1: when scan or hotel filter changes, fetch the lightweight hotel list and reset page
   React.useEffect(() => {
-    if (!selectedScanId) return;
-    setLoadedViews(new Set());
+    if (!selectedScanId) { setScanHotels([]); return; }
+    setLoadingHotels(true);
+    setDisplayPage(1);
     setRateRows([]);
     setRawRows([]);
     setError(null);
-    setLoading(true);
+    const params = new URLSearchParams({ scanID: String(selectedScanId) });
+    if (selectedHotelIds.length > 0) params.append('hotelID', selectedHotelIds.join(','));
+    fetchJSON(`/api/scan-results/hotels?${params}`, { cache: 'no-store' })
+      .then((rows: { hotel_id: number; hotel_name: string }[]) => setScanHotels(Array.isArray(rows) ? rows : []))
+      .catch(() => setScanHotels([]))
+      .finally(() => setLoadingHotels(false));
     loadScanDetails(selectedScanId);
-    const loader = viewMode === 'best_rate'
-      ? loadBestRate(selectedScanId, selectedHotelIds)
-      : loadAllRates(selectedScanId, selectedHotelIds);
-    loader.catch(e => setError(e.message || 'Failed to load data')).finally(() => setLoading(false));
   }, [selectedScanId, selectedHotelIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On view mode switch: load the new view if not yet loaded for the current scan+filter
+  // Step 2: when page, perPage, view mode, or hotel list changes, fetch data for the current page
   React.useEffect(() => {
-    if (!selectedScanId || loadedViews.has(viewMode)) return;
+    if (!selectedScanId || scanHotels.length === 0) { setRateRows([]); setRawRows([]); return; }
+    const pageStart = (displayPage - 1) * hotelsPerPage;
+    const pageHotelIds = scanHotels.slice(pageStart, pageStart + hotelsPerPage).map(h => h.hotel_id);
+    if (pageHotelIds.length === 0) return;
     setLoading(true);
     setError(null);
     const loader = viewMode === 'best_rate'
-      ? loadBestRate(selectedScanId, selectedHotelIds)
-      : loadAllRates(selectedScanId, selectedHotelIds);
+      ? (async () => {
+          const params = new URLSearchParams({ scanID: String(selectedScanId), limit: '5000' });
+          params.append('hotelID', pageHotelIds.join(','));
+          const res = await fetchJSON(`/api/rate-comparison?${params}`, { cache: 'no-store' });
+          setRateRows((res.data ?? []).map((r: any) => ({
+            ...r,
+            amello_min_price:         toNum(r.amello_min_price),
+            booking_min_price:        toNum(r.booking_min_price),
+            booking_member_min_price: toNum(r.booking_member_min_price),
+            price_difference:         toNum(r.price_difference),
+            percentage_difference:    toNum(r.percentage_difference),
+          })));
+        })()
+      : (async () => {
+          const params = new URLSearchParams({ scanID: String(selectedScanId), format: 'comparison', limit: '5000' });
+          params.append('hotelID', pageHotelIds.join(','));
+          const [res, mappingsData] = await Promise.all([
+            fetchJSON(`/api/scan-results?${params}`, { cache: 'no-store' }),
+            fetchJSON('/api/room-mappings', { cache: 'no-store' }),
+          ]);
+          setRawRows(res.data || []);
+          const map = new Map<number, RoomMapping[]>();
+          for (const h of (mappingsData.hotels ?? [])) map.set(h.id, h.mappings ?? []);
+          setMappingsByHotel(map);
+        })();
     loader.catch(e => setError(e.message || 'Failed to load data')).finally(() => setLoading(false));
-  }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedScanId, scanHotels, displayPage, hotelsPerPage, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => { loadScans(); loadHotels(); }, []);
 
@@ -568,6 +594,13 @@ export default function Page() {
   }, [filteredDisplayRows]);
 
   const summary = viewMode === 'best_rate' ? rateSummary : allRatesSummary;
+
+  // hotel-level pagination driven by the server-fetched hotel list
+  const totalHotels = scanHotels.length;
+  const totalPages = Math.max(1, Math.ceil(totalHotels / hotelsPerPage));
+  const safePage = Math.min(displayPage, totalPages);
+  const pageStart = (safePage - 1) * hotelsPerPage;
+  const pagedHotelIds = scanHotels.slice(pageStart, pageStart + hotelsPerPage).map(h => h.hotel_id);
 
   // ── table renderers ────────────────────────────────────────────────────────
 
@@ -807,14 +840,25 @@ export default function Page() {
 
         {error && <div className="alert alert-danger">{error}</div>}
 
-        {loading && (
+        {(loading || loadingHotels) && (
           <div className="text-center my-4">
             <div className="spinner-border text-primary" role="status" />
-            <div className="mt-2 text-muted">Loading…</div>
+            <div className="mt-2 text-muted">{loadingHotels ? 'Loading hotels…' : 'Loading…'}</div>
           </div>
         )}
 
         {/* ── tables ── */}
+        {!loading && totalHotels > 0 && (
+          <div className="mb-3">
+            <PaginationBar
+              page={safePage} totalPages={totalPages} totalHotels={totalHotels}
+              hotelsPerPage={hotelsPerPage}
+              onPage={setDisplayPage}
+              onPerPage={n => { setHotelsPerPage(n); setDisplayPage(1); }}
+            />
+          </div>
+        )}
+
         {groupedByDimension
           ? Array.from(groupedByDimension.entries()).map(([groupLabel, hotelIds]) => (
             <div key={groupLabel} className="mb-4">
@@ -833,7 +877,7 @@ export default function Page() {
               ))}
             </div>
           ))
-          : Array.from(activeGroupedByHotel.keys()).map(hotelId => (
+          : pagedHotelIds.map(hotelId => (
             <div key={hotelId} className="mb-5">
               <h4 className="mb-2">{hotelName(hotelId)}</h4>
               {renderHotelTable(hotelId)}
@@ -841,7 +885,18 @@ export default function Page() {
           ))
         }
 
-        {!loading && activeGroupedByHotel.size === 0 && !error && (
+        {!loading && totalHotels > 0 && !groupedByDimension && (
+          <div className="mt-2 mb-4">
+            <PaginationBar
+              page={safePage} totalPages={totalPages} totalHotels={totalHotels}
+              hotelsPerPage={hotelsPerPage}
+              onPage={setDisplayPage}
+              onPerPage={n => { setHotelsPerPage(n); setDisplayPage(1); }}
+            />
+          </div>
+        )}
+
+        {!loading && !loadingHotels && totalHotels === 0 && selectedScanId && !error && (
           <p className="text-muted">No results found for this scan.</p>
         )}
       </div>
