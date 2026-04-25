@@ -422,7 +422,8 @@ export default function Page() {
     const arr: HotelRow[] = Array.isArray(list) ? list : [];
     arr.sort((a, b) => a.name.localeCompare(b.name));
     setHotels(arr);
-    setSelectedHotelIds([]);
+    // Auto-select all hotels for the chosen collector; clear selection when no collector
+    setSelectedHotelIds(collectorId ? arr.map(h => h.id) : []);
   }, []);
 
   const loadCollectors = React.useCallback(async () => {
