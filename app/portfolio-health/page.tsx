@@ -489,8 +489,9 @@ function PortfolioHealth() {
   const groups = React.useMemo(() => {
     const gmap = new Map<string, string[]>();
     const byCode = hotelsByCode;
-    const allCodes = Object.keys(matrix?.results ?? {});
-    const universe = allCodes.length ? allCodes : hotels.map(h => h.code);
+    // Union of scanned codes and all known hotel codes so unscanned hotels still appear in groups
+    const scannedCodes = new Set(Object.keys(matrix?.results ?? {}));
+    const universe = [...new Set([...scannedCodes, ...hotels.map(h => h.code)])];
 
     function keyFor(h: Hotel): string {
       if (groupBy === 'hotel') return (h.name && h.name.trim()) || '(no hotel)';
