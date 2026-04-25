@@ -332,6 +332,30 @@ function DiffCell({ a, b, currency }: { a: number | null; b: number | null; curr
   );
 }
 
+function PaginationBar({ page, totalPages, totalHotels, hotelsPerPage, onPage, onPerPage }: {
+  page: number; totalPages: number; totalHotels: number;
+  hotelsPerPage: number; onPage: (p: number) => void; onPerPage: (n: number) => void;
+}) {
+  if (totalHotels === 0) return null;
+  return (
+    <div className="d-flex align-items-center gap-3 flex-wrap">
+      <div className="d-flex align-items-center gap-2">
+        <label className="form-label mb-0 text-nowrap small">Hotels/page:</label>
+        <select className="form-select form-select-sm" style={{ width: 80 }} value={hotelsPerPage} onChange={e => onPerPage(Number(e.target.value))}>
+          {[5, 10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </div>
+      <div className="d-flex align-items-center gap-1">
+        <button className="btn btn-outline-secondary btn-sm" disabled={page <= 1} onClick={() => onPage(1)}>«</button>
+        <button className="btn btn-outline-secondary btn-sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>‹</button>
+        <span className="small px-2">Page {page} of {totalPages} <span className="text-muted">({totalHotels} hotels)</span></span>
+        <button className="btn btn-outline-secondary btn-sm" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>›</button>
+        <button className="btn btn-outline-secondary btn-sm" disabled={page >= totalPages} onClick={() => onPage(totalPages)}>»</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function Page() {
@@ -366,6 +390,9 @@ export default function Page() {
 
   // tracks which views have data loaded for the current scan+hotel combo
   const [loadedViews, setLoadedViews] = React.useState<Set<ViewMode>>(new Set());
+
+  const [displayPage, setDisplayPage] = React.useState(1);
+  const [hotelsPerPage, setHotelsPerPage] = React.useState(10);
 
   const toggleGroup = (key: string) =>
     setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
@@ -443,6 +470,7 @@ export default function Page() {
     setLoadedViews(new Set());
     setRateRows([]);
     setRawRows([]);
+    setDisplayPage(1);
     setError(null);
     setLoading(true);
     loadScanDetails(selectedScanId);
@@ -451,6 +479,9 @@ export default function Page() {
       : loadAllRates(selectedScanId, selectedHotelIds);
     loader.catch(e => setError(e.message || 'Failed to load data')).finally(() => setLoading(false));
   }, [selectedScanId, selectedHotelIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset page on view mode switch
+  React.useEffect(() => { setDisplayPage(1); }, [viewMode]);
 
   // On view mode switch: load the new view if not yet loaded for the current scan+filter
   React.useEffect(() => {
@@ -568,6 +599,14 @@ export default function Page() {
   }, [filteredDisplayRows]);
 
   const summary = viewMode === 'best_rate' ? rateSummary : allRatesSummary;
+
+  // hotel-level pagination (flat view only; grouped view shows all)
+  const allHotelIds = React.useMemo(() => Array.from(activeGroupedByHotel.keys()), [activeGroupedByHotel]);
+  const totalHotels = allHotelIds.length;
+  const totalPages = Math.max(1, Math.ceil(totalHotels / hotelsPerPage));
+  const safePage = Math.min(displayPage, totalPages);
+  const pageStart = (safePage - 1) * hotelsPerPage;
+  const pagedHotelIds = allHotelIds.slice(pageStart, pageStart + hotelsPerPage);
 
   // ── table renderers ────────────────────────────────────────────────────────
 
@@ -815,6 +854,17 @@ export default function Page() {
         )}
 
         {/* ── tables ── */}
+        {!loading && totalHotels > 0 && (
+          <div className="mb-3">
+            <PaginationBar
+              page={safePage} totalPages={totalPages} totalHotels={totalHotels}
+              hotelsPerPage={hotelsPerPage}
+              onPage={setDisplayPage}
+              onPerPage={n => { setHotelsPerPage(n); setDisplayPage(1); }}
+            />
+          </div>
+        )}
+
         {groupedByDimension
           ? Array.from(groupedByDimension.entries()).map(([groupLabel, hotelIds]) => (
             <div key={groupLabel} className="mb-4">
@@ -833,13 +883,24 @@ export default function Page() {
               ))}
             </div>
           ))
-          : Array.from(activeGroupedByHotel.keys()).map(hotelId => (
+          : pagedHotelIds.map(hotelId => (
             <div key={hotelId} className="mb-5">
               <h4 className="mb-2">{hotelName(hotelId)}</h4>
               {renderHotelTable(hotelId)}
             </div>
           ))
         }
+
+        {!loading && totalHotels > 0 && !groupedByDimension && (
+          <div className="mt-2 mb-4">
+            <PaginationBar
+              page={safePage} totalPages={totalPages} totalHotels={totalHotels}
+              hotelsPerPage={hotelsPerPage}
+              onPage={setDisplayPage}
+              onPerPage={n => { setHotelsPerPage(n); setDisplayPage(1); }}
+            />
+          </div>
+        )}
 
         {!loading && activeGroupedByHotel.size === 0 && !error && (
           <p className="text-muted">No results found for this scan.</p>
