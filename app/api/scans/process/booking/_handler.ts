@@ -141,39 +141,42 @@ function parseBookingHTML(html: string): BookingRoom[] {
     const roomRow = $(el).closest('tr, .hprt-table-row');
     const rates: BookingRoom['rates'] = [];
 
-    let rateEls = roomRow.find('.bui-list__item.e2e-cancellation');
+    // Collect the scope: the room row itself plus all following rows until the next room
+    const nextRows = roomRow.nextAll();
+    const nextRoomIdx = nextRows.toArray().findIndex(r => $(r).find('.hprt-roomtype-link').length > 0);
+    const scopeRows = [
+      roomRow,
+      ...(nextRoomIdx >= 0 ? nextRows.slice(0, nextRoomIdx) : nextRows).toArray().map(r => $(r)),
+    ];
 
-    if (!rateEls.length) {
-      const nextRows = roomRow.nextAll();
-      const nextRoomIdx = nextRows.toArray().findIndex(r => $(r).find('.hprt-roomtype-link').length > 0);
-      const scope = nextRoomIdx >= 0 ? nextRows.slice(0, nextRoomIdx) : nextRows;
-      rateEls = scope.find('.bui-list__item.e2e-cancellation');
+    // Each row/cell that contains a price element is one rate
+    for (const $row of scopeRows) {
+      $row.find('.bui-price-display__value').each((_, priceEl) => {
+        const $priceEl = $(priceEl);
+        // Walk up to find the containing rate cell/row for context
+        const $rateContainer = $priceEl.closest('tr, .hprt-table-row, .hprt-table-cell, .bui-list__item');
+        const { standard, member } = extractPricesFromCell($, $rateContainer.length ? $rateContainer : $row);
+        if (!standard) return;
+
+        // Use the cancellation/rate label as the rate name if available
+        const rateName = $rateContainer.find('.e2e-cancellation, .bui-list__description, [data-testid="cancellation-policy"]').first().text().trim() || null;
+
+        const entry: BookingRoom['rates'][number] = member
+          ? { name: rateName, actualPrice: member.amount, basePrice: standard.amount, currency: standard.currency }
+          : { name: rateName, actualPrice: standard.amount, currency: standard.currency };
+        rates.push(entry);
+      });
     }
 
-    rateEls.each((_, rateEl) => {
-      const rateName = $(rateEl).text().trim() || null;
-      const priceCell = $(rateEl).find('.bui-price-display__value').length
-        ? $(rateEl)
-        : $(rateEl).closest('tr, .hprt-table-row, .hprt-table-cell');
-      const { standard, member } = extractPricesFromCell($, priceCell);
-      if (!standard) return;
-      const entry: BookingRoom['rates'][number] = member
-        ? { name: rateName, actualPrice: member.amount, basePrice: standard.amount, currency: standard.currency }
-        : { name: rateName, actualPrice: standard.amount, currency: standard.currency };
-      rates.push(entry);
+    // Deduplicate by actualPrice to avoid collecting the same price from nested elements
+    const seen = new Set<number>();
+    const deduped = rates.filter(r => {
+      if (seen.has(r.actualPrice)) return false;
+      seen.add(r.actualPrice);
+      return true;
     });
 
-    if (!rates.length) {
-      const { standard, member } = extractPricesFromCell($, roomRow);
-      if (standard) {
-        const entry: BookingRoom['rates'][number] = member
-          ? { name: null, actualPrice: member.amount, basePrice: standard.amount, currency: standard.currency }
-          : { name: null, actualPrice: standard.amount, currency: standard.currency };
-        rates.push(entry);
-      }
-    }
-
-    if (rates.length) rooms.push({ name: roomName, rates });
+    if (deduped.length) rooms.push({ name: roomName, rates: deduped });
   });
 
   return rooms;
