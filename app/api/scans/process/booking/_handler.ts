@@ -158,8 +158,11 @@ function parseBookingHTML(html: string): BookingRoom[] {
         const { standard, member } = extractPricesFromCell($, $rateContainer.length ? $rateContainer : $row);
         if (!standard) return;
 
-        // Use the cancellation/rate label as the rate name if available
-        const rateName = $rateContainer.find('.e2e-cancellation, .bui-list__description, [data-testid="cancellation-policy"]').first().text().trim() || null;
+        // Map cancellation policy text to a rate name
+        const cancellationText = $rateContainer.find('.e2e-cancellation, .bui-list__description, [data-testid="cancellation-policy"]').first().text().trim();
+        const rateName = cancellationText.includes('Kostenlose Stornierung') ? 'Flexi Rate'
+          : cancellationText.includes('Nicht kostenlos stornierbar') ? 'Fixed Rate'
+          : cancellationText || null;
 
         const entry: BookingRoom['rates'][number] = member
           ? { name: rateName, actualPrice: member.amount, basePrice: standard.amount, currency: standard.currency }
