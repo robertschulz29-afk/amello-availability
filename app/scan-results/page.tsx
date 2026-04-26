@@ -69,7 +69,18 @@ function buildSourceUrl(result: ScanResult, stayNights: number): string | null {
       return u.toString();
     } catch { return null; }
   }
-  if (result.source === 'amello') return result.tuiamello_url ?? null;
+  if (result.source === 'amello') {
+    const raw = result.tuiamello_url;
+    if (!raw) return null;
+    const checkIn = toYMD(result.check_in_date);
+    if (!checkIn) return raw;
+    try {
+      const u = new URL(raw.startsWith('http') ? raw : `https://www.tuiamello.com${raw}`);
+      u.searchParams.set('departure-date', checkIn);
+      u.searchParams.set('return-date', addDaysUTC(checkIn, stayNights));
+      return u.toString();
+    } catch { return raw; }
+  }
   return null;
 }
 
