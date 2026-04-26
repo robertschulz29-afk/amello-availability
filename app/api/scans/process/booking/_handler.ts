@@ -101,19 +101,36 @@ function parsePriceText(priceText: string): { amount: number; currency: string }
   return { amount, currency };
 }
 
-// Standard price: .js-strikethrough-price (crossed-out original)
-// Member price:   .bui-price-display__value (Genius discounted price)
+// basePrice  = .js-strikethrough-price (crossed-out original); prefers data-strikethrough-value attr
+// actualPrice = .bui-price-display__value visible span; screen-reader span excluded to avoid price concatenation
 function extractPricesFromCell($: ReturnType<typeof parseHTML>, cell: any): {
   standard: { amount: number; currency: string } | null;
   member: { amount: number; currency: string } | null;
 } {
   const $cell = $(cell);
 
-  const standardEl = $cell.find('.js-strikethrough-price').first();
-  const standardParsed = standardEl.length ? parsePriceText(standardEl.text().trim()) : null;
+  // Strikethrough (original) price — use data attribute when available, fall back to text
+  let standardParsed: { amount: number; currency: string } | null = null;
+  const strikethroughEl = $cell.find('[data-strikethrough-value]').first();
+  if (strikethroughEl.length) {
+    const val = parseFloat(strikethroughEl.attr('data-strikethrough-value') || '');
+    if (!isNaN(val) && val > 0) {
+      const currency = parsePriceText(strikethroughEl.text().trim())?.currency ?? DEFAULT_CURRENCY;
+      standardParsed = { amount: Math.round(val), currency };
+    }
+  }
+  if (!standardParsed) {
+    const standardEl = $cell.find('.js-strikethrough-price').first();
+    standardParsed = standardEl.length ? parsePriceText(standardEl.text().trim()) : null;
+  }
 
+  // Actual/discounted price — strip .bui-u-sr-only to avoid including "Originalpreis X Aktueller Preis Y"
+  let memberParsed: { amount: number; currency: string } | null = null;
   const memberEl = $cell.find('.bui-price-display__value').first();
-  const memberParsed = memberEl.length ? parsePriceText(memberEl.text().trim()) : null;
+  if (memberEl.length) {
+    const visibleText = memberEl.clone().find('.bui-u-sr-only').remove().end().text().trim();
+    memberParsed = parsePriceText(visibleText);
+  }
 
   if (standardParsed && memberParsed) {
     return { standard: standardParsed, member: memberParsed };
@@ -153,13 +170,13 @@ function parseBookingHTML(html: string): BookingRoom[] {
     for (const $row of scopeRows) {
       $row.find('.bui-price-display__value').each((_, priceEl) => {
         const $priceEl = $(priceEl);
-        // Walk up to find the containing rate cell/row for context
-        const $rateContainer = $priceEl.closest('tr, .hprt-table-row, .hprt-table-cell, .bui-list__item');
-        const { standard, member } = extractPricesFromCell($, $rateContainer.length ? $rateContainer : $row);
+        // Use the full <tr> so both the price cell and the conditions cell are in scope
+        const $tr = $priceEl.closest('tr, .hprt-table-row');
+        const { standard, member } = extractPricesFromCell($, $tr.length ? $tr : $row);
         if (!standard) return;
 
-        // Map cancellation policy text to a rate name
-        const cancellationText = $rateContainer.find('.e2e-cancellation, .bui-list__description, [data-testid="cancellation-policy"]').first().text().trim();
+        // Map cancellation policy text to a rate name; conditions cell is a sibling of the price cell
+        const cancellationText = $tr.find('.e2e-cancellation [data-testid="cancellation-policy"], [data-testid="cancellation-policy"]').first().text().trim();
         const rateName = cancellationText.includes('Kostenlose Stornierung') ? 'Flexi Rate'
           : cancellationText.includes('Nicht kostenlos stornierbar') ? 'Fixed Rate'
           : cancellationText || null;
