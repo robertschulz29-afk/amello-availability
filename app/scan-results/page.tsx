@@ -23,6 +23,7 @@ type ScanResult = {
   scan_id: number;
   hotel_id: number;
   hotel_name?: string;
+  hotel_code?: string | null;
   booking_url?: string | null;
   tuiamello_url?: string | null;
   check_in_date: string;
@@ -70,16 +71,20 @@ function buildSourceUrl(result: ScanResult, stayNights: number): string | null {
     } catch { return null; }
   }
   if (result.source === 'amello') {
-    const raw = result.tuiamello_url;
-    if (!raw) return null;
     const checkIn = toYMD(result.check_in_date);
-    if (!checkIn) return raw;
+    if (!checkIn) return null;
+    const base = result.tuiamello_url
+      ? (result.tuiamello_url.startsWith('http') ? result.tuiamello_url : `https://www.tuiamello.com${result.tuiamello_url}`)
+      : result.hotel_code
+        ? `https://www.tuiamello.com/en-DE/hotel/${result.hotel_code}/`
+        : null;
+    if (!base) return null;
     try {
-      const u = new URL(raw.startsWith('http') ? raw : `https://www.tuiamello.com${raw}`);
+      const u = new URL(base);
       u.searchParams.set('departure-date', checkIn);
       u.searchParams.set('return-date', addDaysUTC(checkIn, stayNights));
       return u.toString();
-    } catch { return raw; }
+    } catch { return null; }
   }
   return null;
 }

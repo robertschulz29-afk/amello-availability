@@ -209,7 +209,7 @@ export async function GET(req: NextRequest) {
     // Build and execute data query with JOIN to get hotel name
     const dataQuery = `
       SELECT sr.scan_id, sr.hotel_id, h.name as hotel_name,
-             h.booking_url, h.tuiamello_url,
+             h.booking_url, h.tuiamello_url, h.code AS hotel_code,
              sr.check_in_date::text AS check_in_date, sr.status, sr.response_json, sr.source
       FROM scan_results sr
       LEFT JOIN hotels h ON sr.hotel_id = h.id
