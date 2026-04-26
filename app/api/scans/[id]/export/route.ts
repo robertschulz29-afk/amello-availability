@@ -43,7 +43,7 @@ function extractPrice(responseJson: any): PriceInfo {
   if (!responseJson) return { roomName: null, rateName: null, basePrice: null, actualPrice: null, currency: null };
 
   const rooms: any[] = responseJson.rooms ?? [];
-  let best: { roomName: string; rateName: string; basePrice: number; actualPrice: number; currency: string } | null = null;
+  let best: { roomName: string; rateName: string; basePrice: number | null; actualPrice: number; currency: string } | null = null;
 
   for (const room of rooms) {
     for (const rate of room.rates ?? []) {
