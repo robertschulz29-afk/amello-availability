@@ -179,7 +179,7 @@ function parseBookingHTML(html: string): BookingRoom[] {
         const cancellationText = $tr.find('.e2e-cancellation [data-testid="cancellation-policy"], [data-testid="cancellation-policy"]').first().text().trim();
         const rateName = cancellationText.includes('Kostenlose Stornierung') ? 'Flexi Rate'
           : cancellationText.includes('Nicht kostenlos stornierbar') ? 'Fixed Rate'
-          : cancellationText || null;
+          : null;
 
         const entry: BookingRoom['rates'][number] = member
           ? { name: rateName, actualPrice: member.amount, basePrice: standard.amount, currency: standard.currency }
