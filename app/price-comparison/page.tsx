@@ -678,12 +678,12 @@ function PriceComparisonPage() {
               <div key={groupLabel} className="mb-4">
                 <button
                   className="btn btn-light border w-100 text-start fw-semibold d-flex justify-content-between align-items-center mb-2 px-3 py-2"
-                  onClick={() => toggleGroup(groupLabel)}
+                  onClick={() => toggleGroup(groupLabel as string)}
                 >
                   <span>{groupLabel} <span className="text-muted fw-normal small ms-1">({hotelIds.length} hotel{hotelIds.length !== 1 ? 's' : ''})</span></span>
-                  <i className={`fas fa-chevron-${collapsedGroups.has(groupLabel) ? 'down' : 'up'} small`} />
+                  <i className={`fas fa-chevron-${collapsedGroups.has(groupLabel as string) ? 'down' : 'up'} small`} />
                 </button>
-                {!collapsedGroups.has(groupLabel) && hotelIds.map(hotelId => {
+                {!collapsedGroups.has(groupLabel as string) && hotelIds.map(hotelId => {
                   const rows = groupedByHotel.get(hotelId)!;
                   return (
                     <div key={hotelId} className="mb-4 ms-3">

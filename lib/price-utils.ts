@@ -131,7 +131,7 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
         const rateName = room.rateName || room.planName || null;
         extractedRates.push({
           name: rateName,
-          price: directPrice,
+          actualPrice: directPrice,
           currency: roomCurrency,
         });
       }
