@@ -5,6 +5,8 @@ import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
 import { formatPrice } from '@/lib/price-utils';
 import { HotelCombobox } from '@/app/components/HotelCombobox';
+import { ScanInfoCard, ScanDetails } from '@/app/components/ScanInfoCard';
+import { PaginationBar } from '@/app/components/PaginationBar';
 
 // ─── shared types ─────────────────────────────────────────────────────────────
 
@@ -332,30 +334,6 @@ function DiffCell({ a, b, currency }: { a: number | null; b: number | null; curr
   );
 }
 
-function PaginationBar({ page, totalPages, totalHotels, hotelsPerPage, onPage, onPerPage }: {
-  page: number; totalPages: number; totalHotels: number;
-  hotelsPerPage: number; onPage: (p: number) => void; onPerPage: (n: number) => void;
-}) {
-  if (totalHotels === 0) return null;
-  return (
-    <div className="d-flex align-items-center gap-3 flex-wrap">
-      <div className="d-flex align-items-center gap-2">
-        <label className="form-label mb-0 text-nowrap small">Hotels/page:</label>
-        <select className="form-select form-select-sm" style={{ width: 80 }} value={hotelsPerPage} onChange={e => onPerPage(Number(e.target.value))}>
-          {[5, 10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-      </div>
-      <div className="d-flex align-items-center gap-1">
-        <button className="btn btn-outline-secondary btn-sm" disabled={page <= 1} onClick={() => onPage(1)}>«</button>
-        <button className="btn btn-outline-secondary btn-sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>‹</button>
-        <span className="small px-2">Page {page} of {totalPages} <span className="text-muted">({totalHotels} hotels)</span></span>
-        <button className="btn btn-outline-secondary btn-sm" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>›</button>
-        <button className="btn btn-outline-secondary btn-sm" disabled={page >= totalPages} onClick={() => onPage(totalPages)}>»</button>
-      </div>
-    </div>
-  );
-}
-
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function Page() {
@@ -366,12 +344,7 @@ export default function Page() {
   const [hotels, setHotels] = React.useState<HotelRow[]>([]);
   const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
 
-  const [scanDetails, setScanDetails] = React.useState<{
-    scanId: number; scannedAt: string;
-    baseCheckIn: string | null; days: number | null;
-    stayNights: number | null; timezone: string | null;
-    hotelTotal: number | null; hotelBookable: number | null; hotelActive: number | null;
-  } | null>(null);
+  const [scanDetails, setScanDetails] = React.useState<ScanDetails | null>(null);
 
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
   const [groupBy, setGroupBy] = React.useState<'none' | 'brand' | 'country' | 'region'>('none');
@@ -416,7 +389,7 @@ export default function Page() {
   }, []);
 
   const loadHotels = React.useCallback(async () => {
-    const list = await fetchJSON('/api/hotels?slim=1', { cache: 'no-store' });
+    const list = await fetchJSON('/api/hotels?slim=1&active=1&bookable=1', { cache: 'no-store' });
     const arr: HotelRow[] = Array.isArray(list) ? list : [];
     arr.sort((a, b) => a.name.localeCompare(b.name));
     setHotels(arr);
@@ -432,9 +405,8 @@ export default function Page() {
         days: d.days ?? null,
         stayNights: d.stayNights ?? null,
         timezone: d.timezone ?? null,
-        hotelTotal:    d.hotelTotal    ?? null,
-        hotelBookable: d.hotelBookable ?? null,
-        hotelActive:   d.hotelActive   ?? null,
+        hotelTotal:          d.hotelTotal          ?? null,
+        hotelBookableActive: d.hotelBookableActive ?? null,
       });
     } catch { setScanDetails(null); }
   }, []);
@@ -796,32 +768,12 @@ export default function Page() {
           </select>
         </div>
 
-        {/* ── scan parameters ── */}
-        <div className="card mb-3">
-          <div className="card-header">Scan Parameters</div>
-          <div className="card-body small">
-            <select className="form-select form-select-sm mb-2" style={{ maxWidth: 500 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(e.target.value ? Number(e.target.value) : null)}>
-              {scans.map(s => (
-                <option key={s.id} value={s.id}>#{s.id} • {fmtDateTime(s.scanned_at)} • {s.status}</option>
-              ))}
-            </select>
-            {scanDetails && (
-              <div className="row g-2">
-                <div className="col-md-4"><strong>Scan ID:</strong> {scanDetails.scanId}</div>
-                <div className="col-md-4"><strong>Scanned at:</strong> {fmtDateTime(scanDetails.scannedAt)}</div>
-                <div className="col-md-4"><strong>Timezone:</strong> {scanDetails.timezone}</div>
-                <div className="col-md-4"><strong>Base check-in:</strong> {scanDetails.baseCheckIn ? fmtDate(scanDetails.baseCheckIn) : '—'}</div>
-                <div className="col-md-4"><strong>Days scanned:</strong> {scanDetails.days ?? '—'}</div>
-                <div className="col-md-4"><strong>Stay nights:</strong> {scanDetails.stayNights ?? '—'}</div>
-                {scanDetails.hotelTotal != null && (<>
-                  <div className="col-md-4"><strong>Hotels (total):</strong> {scanDetails.hotelTotal}</div>
-                  <div className="col-md-4"><strong>Hotels (bookable):</strong> {scanDetails.hotelBookable}</div>
-                  <div className="col-md-4"><strong>Hotels (active):</strong> {scanDetails.hotelActive}</div>
-                </>)}
-              </div>
-            )}
-          </div>
-        </div>
+        <ScanInfoCard
+          scans={scans}
+          selectedScanId={selectedScanId}
+          onScanChange={setSelectedScanId}
+          scanDetails={scanDetails}
+        />
 
         {/* ── summary ── */}
         {summary.total > 0 && (
@@ -860,8 +812,8 @@ export default function Page() {
         {!loading && totalHotels > 0 && (
           <div className="mb-3">
             <PaginationBar
-              page={safePage} totalPages={totalPages} totalHotels={totalHotels}
-              hotelsPerPage={hotelsPerPage}
+              page={safePage} totalPages={totalPages} totalItems={totalHotels}
+              itemsPerPage={hotelsPerPage}
               onPage={setDisplayPage}
               onPerPage={n => { setHotelsPerPage(n); setDisplayPage(1); }}
             />
@@ -897,8 +849,8 @@ export default function Page() {
         {!loading && totalHotels > 0 && !groupedByDimension && (
           <div className="mt-2 mb-4">
             <PaginationBar
-              page={safePage} totalPages={totalPages} totalHotels={totalHotels}
-              hotelsPerPage={hotelsPerPage}
+              page={safePage} totalPages={totalPages} totalItems={totalHotels}
+              itemsPerPage={hotelsPerPage}
               onPage={setDisplayPage}
               onPerPage={n => { setHotelsPerPage(n); setDisplayPage(1); }}
             />

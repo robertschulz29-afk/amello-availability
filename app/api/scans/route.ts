@@ -171,6 +171,7 @@ export async function POST(req: NextRequest) {
     await query(
       `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
        SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
+       WHERE bookable = true AND active = true
        ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
       [scanId],
     );

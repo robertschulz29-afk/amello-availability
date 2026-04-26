@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
+import { HotelCombobox } from '@/app/components/HotelCombobox';
 
 type GlobalType = {
   global_type: string;
@@ -53,6 +54,7 @@ export default function Page() {
   const [globalTypeOptions, setGlobalTypeOptions] = React.useState<GlobalType[]>([]);
   const [selectedCollectorIds, setSelectedCollectorIds] = React.useState<Set<number>>(new Set());
 
+  const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
   const [filterActive,   setFilterActive]   = React.useState<FilterBool>('all');
   const [filterBookable, setFilterBookable] = React.useState<FilterBool>('all');
   const [sortField, setSortField] = React.useState<SortField>('name');
@@ -122,6 +124,10 @@ export default function Page() {
 
   const visibleHotels = React.useMemo(() => {
     let list = [...hotels];
+    if (selectedHotelIds.length > 0) {
+      const idSet = new Set(selectedHotelIds);
+      list = list.filter(h => idSet.has(h.id));
+    }
     if (filterActive !== 'all') {
       const want = filterActive === 'true';
       list = list.filter(h => h.active === want);
@@ -138,7 +144,7 @@ export default function Page() {
       return 0;
     });
     return list;
-  }, [hotels, filterActive, filterBookable, sortField, sortDir]);
+  }, [hotels, selectedHotelIds, filterActive, filterBookable, sortField, sortDir]);
 
   const activeCount       = hotels.filter(h => h.active === true).length;
   const inactiveCount     = hotels.filter(h => h.active === false).length;
@@ -287,6 +293,17 @@ export default function Page() {
           
           <div className="card-body d-flex flex-wrap align-items-end gap-3">
             <div>
+              <label className="form-label fw-semibold mb-1 d-block small">Hotel</label>
+              <HotelCombobox
+                hotels={hotels}
+                selectedIds={selectedHotelIds}
+                onChange={setSelectedHotelIds}
+                placeholder="All Hotels"
+                size="sm"
+                style={{ minWidth: 240 }}
+              />
+            </div>
+            <div>
               <label className="form-label fw-semibold mb-1 d-block small">Active</label>
               <div className="btn-group btn-group-sm" role="group">
                 {(['all', 'true', 'false'] as FilterBool[]).map(v => (
@@ -329,7 +346,8 @@ export default function Page() {
             <button
                   className="btn btn-outline-secondary"
                   onClick={() => {
-                    window.open(`/api/hotels/export/?format=long`, '_blank');
+                    const ids = visibleHotels.map(h => h.id).join(',');
+                    window.open(`/api/hotels/export/?format=long${ids ? `&ids=${ids}` : ''}`, '_blank');
                   }}
                 >
                   Export CSV

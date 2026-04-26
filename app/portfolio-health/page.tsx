@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { fetchJSON } from '@/lib/api-client';
+import { ScanInfoCard, ScanDetails } from '@/app/components/ScanInfoCard';
 
 type AvailFilter = 'all' | 'below50' | 'above50';
 
@@ -45,15 +46,6 @@ type PriceRow = {
   currency: string;
 };
 
-function addDaysISO(dateString: string, days: number) {
-  const d = new Date(dateString);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-function fmtDateTime(dt: string) {
-  try { return new Date(dt).toLocaleString(); } catch { return dt; }
-}
 
 function normalizeDateToYMD(d: string): string {
   const m = String(d ?? '').match(/^(\d{4}-\d{2}-\d{2})/);
@@ -408,6 +400,7 @@ function PortfolioHealth() {
   const [hotels, setHotels] = React.useState<Hotel[]>([]);
   const [scans, setScans] = React.useState<ScanRow[]>([]);
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
+  const [scanDetails, setScanDetails] = React.useState<ScanDetails | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
@@ -451,7 +444,7 @@ function PortfolioHealth() {
           return;
         }
       }
-      const data = await fetchJSON('/api/hotels', { cache: 'no-store' });
+      const data = await fetchJSON('/api/hotels?active=1&bookable=1', { cache: 'no-store' });
       setHotels(Array.isArray(data) ? data : []);
     } catch (e: any) {}
   }, []);
@@ -466,9 +459,26 @@ function PortfolioHealth() {
     } catch (e: any) { setError(e.message || 'Failed to load scans'); }
   }, []);
 
+  const loadScanDetails = React.useCallback(async (scanId: number) => {
+    try {
+      const d = await fetchJSON(`/api/scans/${scanId}?meta=1`, { cache: 'no-store' });
+      setScanDetails({
+        scanId: d.scanId ?? scanId,
+        scannedAt: d.scannedAt ?? '',
+        baseCheckIn: d.baseCheckIn ?? null,
+        days: d.days ?? null,
+        stayNights: d.stayNights ?? null,
+        timezone: d.timezone ?? null,
+        hotelTotal: d.hotelTotal ?? null,
+        hotelBookableActive: d.hotelBookableActive ?? null,
+      });
+    } catch { setScanDetails(null); }
+  }, []);
+
   const loadScanById = React.useCallback(async (scanId: number) => {
     setLoading(true); setError(null); setMatrix(null);
     loadHotels(scanId);
+    loadScanDetails(scanId);
     try {
       const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
       const fullSet: FullSetEntry[] = Array.isArray(data?.fullSet) ? data.fullSet : [];
@@ -554,27 +564,12 @@ function PortfolioHealth() {
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
         
 
-        {/* Scan Parameters */}
-        <div className="card mb-3">
-          <div className="card-header">Scan Parameters</div>
-          <div className="card-body small">
-            <select className="form-select form-select-sm mb-2" style={{ maxWidth: 500 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value))}>
-              {scans.length === 0 ? <option value="">No scans</option> : scans.map(s => (
-                <option key={s.id} value={s.id}>
-                  #{s.id} • {fmtDateTime(s.scanned_at)} • {s.status} ({s.done_cells}/{s.total_cells})
-                </option>
-              ))}
-            </select>
-            {matrix && (
-              <div className="row g-2">
-                <div className="col-sm-6 col-md-3"><strong>Scan Date:</strong> {fmtDateTime(matrix.scannedAt)}</div>
-                <div className="col-sm-6 col-md-3"><strong>Check-in Date:</strong>{matrix.baseCheckIn ? (`${matrix.baseCheckIn} to ${addDaysISO(matrix.baseCheckIn, (matrix.days ?? 0) - 1)}`) : ('—')}</div>
-                <div className="col-sm-6 col-md-3"><strong>Days Scanned:</strong> {matrix.days ?? '—'}</div>
-                <div className="col-sm-6 col-md-3"><strong>Stay (nights):</strong> {matrix.stayNights ?? '—'}</div>
-              </div>
-            )}
-          </div>
-        </div>
+        <ScanInfoCard
+          scans={scans}
+          selectedScanId={selectedScanId}
+          onScanChange={id => setSelectedScanId(id ?? null)}
+          scanDetails={scanDetails}
+        />
 
         <AvailabilityOverviewTile matrix={matrix} />
 
@@ -602,9 +597,20 @@ function PortfolioHealth() {
             <button
               className="btn btn-outline-secondary btn-sm"
               onClick={() => {
-                const rows = [['Group', 'Avg Availability (%)']];
-                for (const g of visibleGroups) rows.push([g.label, g.avg.toFixed(2)]);
-                const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+                const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+                const header = ['Hotel', 'Code', 'Brand', 'Avg (%)', ...dates];
+                const rows: string[][] = [header];
+                for (const g of visibleGroups) {
+                  for (const code of g.codes) {
+                    const h = hotelsByCode.get(code);
+                    const hotelRes = matrix?.results?.[code] ?? {};
+                    const greenCount = dates.filter(d => hotelRes[d] === 'green').length;
+                    const avg = dates.length > 0 ? ((greenCount / dates.length) * 100).toFixed(1) : '0';
+                    const dateStatuses = dates.map(d => hotelRes[d] ?? '—');
+                    rows.push([h?.name ?? code, code, g.label, avg, ...dateStatuses]);
+                  }
+                }
+                const csv = rows.map(r => r.map(esc).join(',')).join('\r\n');
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
                 a.download = `portfolio-health-${availFilter}.csv`;

@@ -12,9 +12,9 @@ export interface LowestPriceInfo {
 
 export interface RateInfo {
   name: string | null;
-  price: number;
+  actualPrice: number;    // price you pay (always present)
   currency: string;
-  memberPrice?: number | null; // Genius / member-only price (Booking.com logged-in)
+  basePrice?: number | null; // strikethrough price (only when a discount is shown)
 }
 
 export interface RoomInfo {
@@ -121,15 +121,7 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
           
           const rateCurrency = extractCurrency(rate) || roomCurrency;
 
-          const rateEntry: RateInfo = {
-            name: rateName,
-            price: price,
-            currency: rateCurrency,
-          };
-          if (rate.memberPrice != null && typeof rate.memberPrice === 'number' && isFinite(rate.memberPrice)) {
-            rateEntry.memberPrice = rate.memberPrice;
-          }
-          extractedRates.push(rateEntry);
+          extractedRates.push({ name: rateName, actualPrice: price, currency: rateCurrency });
         }
       }
     } else {
@@ -190,17 +182,35 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
       if (!room || !Array.isArray(room.rates)) continue;
 
       for (const rate of room.rates) {
-        if (!rate || typeof rate.price !== 'number' || !isFinite(rate.price)) continue;
+        // New format: { actualPrice, basePrice? }
+        // Old format with discount: { price (original/strikethrough), memberPrice (discounted) }
+        // Old format without discount: { price (actual) }
+        let actualPrice: number;
+        let basePrice: number | null;
 
-        if (rate.price < lowestPrice) {
-          lowestPrice = rate.price;
+        if (typeof rate?.actualPrice === 'number') {
+          actualPrice = rate.actualPrice;
+          basePrice = typeof rate.basePrice === 'number' ? rate.basePrice : null;
+        } else if (typeof rate?.price === 'number' && typeof rate?.memberPrice === 'number') {
+          // Old format with discount: price = strikethrough (original), memberPrice = actual
+          actualPrice = rate.memberPrice;
+          basePrice = rate.price;
+        } else if (typeof rate?.price === 'number') {
+          actualPrice = rate.price;
+          basePrice = null;
+        } else {
+          continue;
+        }
+
+        if (!isFinite(actualPrice)) continue;
+
+        if (actualPrice < lowestPrice) {
+          lowestPrice = actualPrice;
           result.roomName = room.name || null;
           result.rateName = rate.name || null;
-          result.price = rate.price;
+          result.price = actualPrice;
           result.currency = rate.currency || 'EUR';
-          result.memberPrice = (rate.memberPrice != null && typeof rate.memberPrice === 'number' && isFinite(rate.memberPrice))
-            ? rate.memberPrice
-            : null;
+          result.memberPrice = basePrice;
         }
       }
     }

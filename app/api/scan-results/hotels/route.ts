@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
         conditions.push(`hotel_id IN (${ph})`);
         params.push(...hotelIDs);
       }
+      conditions.push(`bookable = true`, `active = true`);
       const res = await query(
         `SELECT hotel_id, name AS hotel_name FROM scan_hotels
          WHERE ${conditions.join(' AND ')} ORDER BY hotel_name`,
@@ -57,6 +58,7 @@ export async function GET(req: NextRequest) {
         conditions.push(`sr.hotel_id IN (${ph})`);
         params.push(...hotelIDs);
       }
+      conditions.push(`h.bookable = true`, `h.active = true`);
       const res = await query(
         `SELECT DISTINCT sr.hotel_id, COALESCE(h.name, 'Hotel ' || sr.hotel_id) AS hotel_name
          FROM scan_results sr LEFT JOIN hotels h ON h.id = sr.hotel_id

@@ -8,7 +8,7 @@ import {
   toYMDUTC, normalizeYMD, ymdToUTC, datesFromBase,
 } from '@/lib/scrapers/process-helpers';
 import { parseHTML } from '@/lib/scrapers/utils/html-parser';
-import { getBookingCookies } from '@/lib/app-settings';
+import { getBookingCookies } from '@/app/api/settings/booking-cookies/get';
 
 const SCRAPINGANT_API_KEY = process.env.SCRAPINGANT_API_KEY || '';
 const SCRAPINGANT_URL = 'https://api.scrapingant.com/v2/general';
@@ -58,9 +58,9 @@ interface BookingRoom {
   name: string;
   rates: Array<{
     name: string | null;
-    price: number;
+    actualPrice: number;   // price you pay (non-strikethrough, always present)
+    basePrice?: number;    // strikethrough price (only when a discount is shown)
     currency: string;
-    memberPrice?: number;
   }>;
 }
 
@@ -157,16 +157,18 @@ function parseBookingHTML(html: string): BookingRoom[] {
         : $(rateEl).closest('tr, .hprt-table-row, .hprt-table-cell');
       const { standard, member } = extractPricesFromCell($, priceCell);
       if (!standard) return;
-      const entry: BookingRoom['rates'][number] = { name: rateName, price: standard.amount, currency: standard.currency };
-      if (member) entry.memberPrice = member.amount;
+      const entry: BookingRoom['rates'][number] = member
+        ? { name: rateName, actualPrice: member.amount, basePrice: standard.amount, currency: standard.currency }
+        : { name: rateName, actualPrice: standard.amount, currency: standard.currency };
       rates.push(entry);
     });
 
     if (!rates.length) {
       const { standard, member } = extractPricesFromCell($, roomRow);
       if (standard) {
-        const entry: BookingRoom['rates'][number] = { name: null, price: standard.amount, currency: standard.currency };
-        if (member) entry.memberPrice = member.amount;
+        const entry: BookingRoom['rates'][number] = member
+          ? { name: null, actualPrice: member.amount, basePrice: standard.amount, currency: standard.currency }
+          : { name: null, actualPrice: standard.amount, currency: standard.currency };
         rates.push(entry);
       }
     }
@@ -177,17 +179,9 @@ function parseBookingHTML(html: string): BookingRoom[] {
   return rooms;
 }
 
-// For booking_member: rewrite rooms so the member price becomes the primary price.
-// Rates without a member price are dropped (not applicable to this source).
+// For booking_member: keep all rates; include basePrice only when a Genius strikethrough was found.
 function asMemberRooms(rooms: BookingRoom[]): BookingRoom[] {
-  const result: BookingRoom[] = [];
-  for (const room of rooms) {
-    const memberRates = room.rates
-      .filter(r => r.memberPrice != null)
-      .map(r => ({ name: r.name, price: r.memberPrice as number, currency: r.currency }));
-    if (memberRates.length) result.push({ name: room.name, rates: memberRates });
-  }
-  return result;
+  return rooms;
 }
 
 // ─── Shared handler ───────────────────────────────────────────────────────────
@@ -239,9 +233,12 @@ export async function handleBookingJob(
     }
 
     const hotels = (await sql`
-      SELECT id, booking_url FROM hotels
-      WHERE active = true AND bookable = true AND booking_url IS NOT NULL AND booking_url != ''
-      ORDER BY id ASC
+      SELECT sh.hotel_id AS id, h.booking_url
+      FROM scan_hotels sh
+      JOIN hotels h ON h.id = sh.hotel_id
+      WHERE sh.scan_id = ${scanId}
+        AND h.booking_url IS NOT NULL AND h.booking_url != ''
+      ORDER BY sh.hotel_id ASC
     `).rows as Array<{ id: number; booking_url: string }>;
 
     if (!hotels.length) {
@@ -326,7 +323,7 @@ export async function handleBookingJob(
     if (processed > 0) {
       await sql`
         UPDATE scan_source_jobs
-        SET done_cells = LEAST(done_cells + ${processed}, ${total}), updated_at = NOW()
+        SET done_cells = GREATEST(done_cells, LEAST(${startIndex} + ${processed}, ${total})), updated_at = NOW()
         WHERE id = ${jobId}
       `;
       await sql`

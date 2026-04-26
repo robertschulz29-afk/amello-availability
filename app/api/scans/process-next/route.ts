@@ -43,13 +43,24 @@ async function processNext(req: NextRequest) {
 
     console.log(`[process-next] Job #${jobId} scan=${scanId} source=${source} progress=${doneCells}/${totalCells}`);
 
+    const batchSize = 50;
+    const startIndex = doneCells;
+
+    // Claim the batch upfront so a concurrent cron tick sees the incremented
+    // done_cells and won't re-process the same range.
+    await sql`
+      UPDATE scan_source_jobs
+      SET done_cells = LEAST(done_cells + ${batchSize}, ${totalCells}), updated_at = NOW()
+      WHERE id = ${jobId} AND done_cells = ${startIndex}
+    `;
+
     const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
     const url = `${getBaseUrl()}/api/scans/process/${source}`;
 
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Bello-Mandator': belloMandator },
-      body: JSON.stringify({ jobId, startIndex: doneCells, size: 50 }),
+      body: JSON.stringify({ jobId, startIndex, size: batchSize }),
     });
 
     if (!response.ok) {

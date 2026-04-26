@@ -48,17 +48,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (metaOnly) {
       const snapQ = await query(
         `SELECT COUNT(*)::int AS total,
-                COUNT(*) FILTER (WHERE bookable) ::int AS bookable,
-                COUNT(*) FILTER (WHERE active)   ::int AS active
+                COUNT(*) FILTER (WHERE bookable AND active)::int AS bookable_active
          FROM scan_hotels WHERE scan_id = $1`,
         [scanId],
       );
-      const snap = snapQ.rows[0] ?? { total: null, bookable: null, active: null };
+      const snap = snapQ.rows[0] ?? { total: null, bookable_active: null };
       return NextResponse.json({
         ...meta,
-        hotelTotal:    snap.total,
-        hotelBookable: snap.bookable,
-        hotelActive:   snap.active,
+        hotelTotal:         snap.total,
+        hotelBookableActive: snap.bookable_active,
       });
     }
 

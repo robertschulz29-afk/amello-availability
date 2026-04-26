@@ -1,6 +1,6 @@
 // app/api/hotels/export/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { query } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,16 +18,26 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const format = (searchParams.get('format') || 'long').toLowerCase();
+    const idsParam = searchParams.get('ids');
+    const ids = idsParam ? idsParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => isFinite(n)) : [];
 
-    const q = await sql`
-      SELECT
-        id, name, code, brand, region, country,
-        booking_url, tuiamello_url, expedia_url,
-        bookable, active, base_image
-      FROM hotels
-      ORDER BY name ASC
-    `;
-    const hotels = q.rows;
+    let hotels: any[];
+    if (ids.length > 0) {
+      const ph = ids.map((_, i) => `$${i + 1}`).join(', ');
+      const res = await query(
+        `SELECT id, name, code, brand, region, country, booking_url, tuiamello_url, expedia_url, bookable, active
+         FROM hotels WHERE id IN (${ph}) ORDER BY name ASC`,
+        ids,
+      );
+      hotels = res.rows;
+    } else {
+      const res = await query(
+        `SELECT id, name, code, brand, region, country, booking_url, tuiamello_url, expedia_url, bookable, active
+         FROM hotels ORDER BY name ASC`,
+        [],
+      );
+      hotels = res.rows;
+    }
 
     const header = [
       'id', 'name', 'code', 'brand', 'region', 'country',

@@ -208,11 +208,13 @@ export async function GET(req: NextRequest) {
 
     // Build and execute data query with JOIN to get hotel name
     const dataQuery = `
-      SELECT sr.scan_id, sr.hotel_id, h.name as hotel_name, sr.check_in_date, sr.status, sr.response_json, sr.source 
+      SELECT sr.scan_id, sr.hotel_id, h.name as hotel_name,
+             h.booking_url, h.tuiamello_url,
+             sr.check_in_date::text AS check_in_date, sr.status, sr.response_json, sr.source
       FROM scan_results sr
       LEFT JOIN hotels h ON sr.hotel_id = h.id
       ${whereClause}
-      ORDER BY sr.scan_id DESC 
+      ORDER BY sr.scan_id DESC
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `;
     const { rows: dataRows } = await query(dataQuery, [...params, limit, offset]);

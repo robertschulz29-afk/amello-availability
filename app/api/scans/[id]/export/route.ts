@@ -13,14 +13,11 @@ function normalizeYMD(input: any): string {
     return `${y}-${m}-${d}`;
   }
   const s = String(input);
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
   const dt = new Date(s);
   if (!isNaN(dt.getTime())) {
-    const y = dt.getUTCFullYear();
-    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(dt.getUTCDate()).padStart(2, '0');
-    return `${y}-${mm}-${dd}`;
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
   }
   return s;
 }
@@ -34,6 +31,42 @@ function csvEscape(v: any): string {
   return s;
 }
 
+type PriceInfo = {
+  roomName: string | null;
+  rateName: string | null;
+  basePrice: number | null;
+  actualPrice: number | null;
+  currency: string | null;
+};
+
+function extractPrice(responseJson: any): PriceInfo {
+  if (!responseJson) return { roomName: null, rateName: null, basePrice: null, actualPrice: null, currency: null };
+
+  const rooms: any[] = responseJson.rooms ?? [];
+  let best: { roomName: string; rateName: string; basePrice: number; actualPrice: number; currency: string } | null = null;
+
+  for (const room of rooms) {
+    for (const rate of room.rates ?? []) {
+      // support both new (actualPrice/basePrice) and old (price/memberPrice) field names
+      const actualPrice: number | null = rate.actualPrice ?? rate.price ?? null;
+      if (actualPrice == null) continue;
+      const basePrice: number | null = rate.basePrice ?? rate.memberPrice ?? null;
+      if (!best || actualPrice < best.actualPrice) {
+        best = {
+          roomName: room.name ?? '',
+          rateName: rate.name ?? '',
+          basePrice,
+          actualPrice,
+          currency: rate.currency ?? responseJson.currency ?? 'EUR',
+        };
+      }
+    }
+  }
+
+  if (!best) return { roomName: null, rateName: null, basePrice: null, actualPrice: null, currency: null };
+  return { roomName: best.roomName, rateName: best.rateName, basePrice: best.basePrice, actualPrice: best.actualPrice, currency: best.currency };
+}
+
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const scanId = Number(params.id);
   if (!Number.isFinite(scanId) || scanId <= 0) {
@@ -41,21 +74,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   const url = new URL(req.url);
-  const format = (url.searchParams.get('format') || 'long').toLowerCase(); // 'long' | 'wide'
+  const format = (url.searchParams.get('format') || 'long').toLowerCase();
   const filename = `scan_${scanId}_${format}.csv`;
 
   try {
-    // fetch scan (for sanity + date list if needed)
-    const scanQ = await sql`
-      SELECT id, base_checkin, days, stay_nights, scanned_at
-      FROM scans WHERE id = ${scanId}
-    `;
-    if (scanQ.rows.length === 0) {
-      return new NextResponse('scan not found', { status: 404 });
-    }
-    const scan = scanQ.rows[0];
+    const scanQ = await sql`SELECT id FROM scans WHERE id = ${scanId}`;
+    if (scanQ.rows.length === 0) return new NextResponse('scan not found', { status: 404 });
 
-    // fetch hotels + results
     const q = await sql`
       SELECT
         h.id AS hotel_id,
@@ -65,13 +90,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         h.region AS hotel_region,
         h.country AS hotel_country,
         r.check_in_date,
-        r.status
+        r.status,
+        r.source,
+        r.response_json
       FROM scan_results r
       JOIN hotels h ON h.id = r.hotel_id
       WHERE r.scan_id = ${scanId}
-      ORDER BY h.name ASC, r.check_in_date ASC
+      ORDER BY h.name ASC, r.check_in_date ASC, r.source ASC
     `;
-    const rows = q.rows as Array<{
+
+    type Row = {
       hotel_id: number;
       hotel_name: string;
       hotel_code: string;
@@ -80,26 +108,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       hotel_country: string | null;
       check_in_date: any;
       status: string;
-    }>;
+      source: string;
+      response_json: any;
+    };
+    const rows = q.rows as Row[];
 
-    // If there are no rows, still produce a valid CSV with header only
     if (format === 'long') {
-      // Long format: one row per (hotel, date)
-      // Columns: hotel_id, hotel_name, hotel_code, brand, region, country, check_in_date, status
       const header = [
-        'hotel_id',
-        'hotel_name',
-        'hotel_code',
-        'brand',
-        'region',
-        'country',
-        'check_in_date',
-        'status',
+        'hotel_id', 'hotel_name', 'hotel_code', 'brand', 'region', 'country',
+        'check_in_date', 'status', 'source',
+        'room_name', 'rate_name', 'base_price', 'actual_price', 'currency',
       ];
       const out: string[] = [header.join(',')];
 
       for (const r of rows) {
-        const rec = [
+        const { roomName, rateName, basePrice, actualPrice, currency } =
+          r.status === 'green' ? extractPrice(r.response_json) : { roomName: null, rateName: null, basePrice: null, actualPrice: null, currency: null };
+        out.push([
           csvEscape(r.hotel_id),
           csvEscape(r.hotel_name),
           csvEscape(r.hotel_code),
@@ -108,8 +133,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           csvEscape(r.hotel_country ?? ''),
           csvEscape(normalizeYMD(r.check_in_date)),
           csvEscape(r.status),
-        ];
-        out.push(rec.join(','));
+          csvEscape(r.source ?? ''),
+          csvEscape(roomName),
+          csvEscape(rateName),
+          csvEscape(basePrice),
+          csvEscape(actualPrice),
+          csvEscape(currency),
+        ].join(','));
       }
 
       const body = out.join('\r\n');
@@ -121,51 +151,55 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           'Cache-Control': 'no-store',
         },
       });
+
     } else if (format === 'wide') {
-      // Wide format: one row per hotel, one column per date
-      // Build date set
       const datesSet = new Set<string>();
       for (const r of rows) datesSet.add(normalizeYMD(r.check_in_date));
       const dates = Array.from(datesSet).sort();
 
-      // Build map: hotel_code -> { meta, statuses[date] = 'green'|'red' }
-      type Meta = { id: number; name: string; code: string; brand: string; region: string; country: string };
-      const hotelsMap = new Map<string, { meta: Meta; statuses: Record<string, string> }>();
+      type HotelEntry = {
+        meta: { id: number; name: string; code: string; brand: string; region: string; country: string };
+        statuses: Record<string, string>;
+        prices: Record<string, number | null>;
+        currencies: Record<string, string | null>;
+      };
+      const hotelsMap = new Map<string, HotelEntry>();
+
       for (const r of rows) {
         const code = r.hotel_code;
-        const entry = hotelsMap.get(code) || {
-          meta: {
-            id: r.hotel_id,
-            name: r.hotel_name,
-            code: r.hotel_code,
-            brand: r.hotel_brand ?? '',
-            region: r.hotel_region ?? '',
-            country: r.hotel_country ?? '',
-          },
-          statuses: {},
-        };
-        entry.statuses[normalizeYMD(r.check_in_date)] = r.status;
-        hotelsMap.set(code, entry);
+        if (!hotelsMap.has(code)) {
+          hotelsMap.set(code, {
+            meta: { id: r.hotel_id, name: r.hotel_name, code, brand: r.hotel_brand ?? '', region: r.hotel_region ?? '', country: r.hotel_country ?? '' },
+            statuses: {},
+            prices: {},
+            currencies: {},
+          });
+        }
+        const entry = hotelsMap.get(code)!;
+        const date = normalizeYMD(r.check_in_date);
+        entry.statuses[date] = r.status;
+        if (r.status === 'green') {
+          const { actualPrice, currency } = extractPrice(r.response_json);
+          if (actualPrice != null && (entry.prices[date] == null || actualPrice < entry.prices[date]!)) {
+            entry.prices[date] = actualPrice;
+            entry.currencies[date] = currency;
+          }
+        }
       }
 
-      // Header
-      const header = ['hotel_id','hotel_name','hotel_code','brand','region','country', ...dates];
+      const dateCols = dates.flatMap(d => [`status_${d}`, `price_${d}`]);
+      const header = ['hotel_id', 'hotel_name', 'hotel_code', 'brand', 'region', 'country', ...dateCols];
       const out: string[] = [header.join(',')];
 
-      // Rows
-      const hotelRows = Array.from(hotelsMap.values())
-        .sort((a,b) => a.meta.name.localeCompare(b.meta.name));
-
-      for (const h of hotelRows) {
+      for (const h of Array.from(hotelsMap.values()).sort((a, b) => a.meta.name.localeCompare(b.meta.name))) {
         const base = [
-          csvEscape(h.meta.id),
-          csvEscape(h.meta.name),
-          csvEscape(h.meta.code),
-          csvEscape(h.meta.brand),
-          csvEscape(h.meta.region),
-          csvEscape(h.meta.country),
+          csvEscape(h.meta.id), csvEscape(h.meta.name), csvEscape(h.meta.code),
+          csvEscape(h.meta.brand), csvEscape(h.meta.region), csvEscape(h.meta.country),
         ];
-        const cells = dates.map(d => csvEscape(h.statuses[d] ?? ''));
+        const cells = dates.flatMap(d => [
+          csvEscape(h.statuses[d] ?? ''),
+          csvEscape(h.prices[d] ?? ''),
+        ]);
         out.push([...base, ...cells].join(','));
       }
 
@@ -178,10 +212,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           'Cache-Control': 'no-store',
         },
       });
+
     } else {
       return new NextResponse('unsupported format; use ?format=long or ?format=wide', { status: 400 });
     }
-  } catch (e:any) {
+  } catch (e: any) {
     console.error('[GET /api/scans/:id/export] error', e);
     return new NextResponse('export failed', { status: 500 });
   }
