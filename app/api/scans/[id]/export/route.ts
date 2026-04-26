@@ -47,10 +47,9 @@ function extractPrice(responseJson: any): PriceInfo {
 
   for (const room of rooms) {
     for (const rate of room.rates ?? []) {
-      // support both new (actualPrice/basePrice) and old (price/memberPrice) field names
-      const actualPrice: number | null = rate.actualPrice ?? rate.price ?? null;
+      const actualPrice: number | null = rate.actualPrice ?? null;
       if (actualPrice == null) continue;
-      const basePrice: number | null = rate.basePrice ?? rate.memberPrice ?? null;
+      const basePrice: number | null = rate.basePrice ?? null;
       if (!best || actualPrice < best.actualPrice) {
         best = {
           roomName: room.name ?? '',

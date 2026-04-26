@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
                   jsonb_build_object(
                     'room_name', room->>'name',
                     'rate_name', rate->>'name',
-                    'price', COALESCE((rate->>'actualPrice')::numeric, (rate->>'memberPrice')::numeric, (rate->>'price')::numeric),
+                    'price', (rate->>'actualPrice')::numeric,
                     'currency', rate->>'currency'
                   )
                 )
@@ -152,7 +152,7 @@ export async function GET(req: NextRequest) {
                   jsonb_build_object(
                     'room_name', room->>'name',
                     'rate_name', rate->>'name',
-                    'price', COALESCE((rate->>'actualPrice')::numeric, (rate->>'memberPrice')::numeric, (rate->>'price')::numeric),
+                    'price', (rate->>'actualPrice')::numeric,
                     'currency', rate->>'currency'
                   )
                 )

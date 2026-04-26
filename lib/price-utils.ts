@@ -182,27 +182,8 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
       if (!room || !Array.isArray(room.rates)) continue;
 
       for (const rate of room.rates) {
-        // New format: { actualPrice, basePrice? }
-        // Old format with discount: { price (original/strikethrough), memberPrice (discounted) }
-        // Old format without discount: { price (actual) }
-        let actualPrice: number;
-        let basePrice: number | null;
-
-        if (typeof rate?.actualPrice === 'number') {
-          actualPrice = rate.actualPrice;
-          basePrice = typeof rate.basePrice === 'number' ? rate.basePrice : null;
-        } else if (typeof rate?.price === 'number' && typeof rate?.memberPrice === 'number') {
-          // Old format with discount: price = strikethrough (original), memberPrice = actual
-          actualPrice = rate.memberPrice;
-          basePrice = rate.price;
-        } else if (typeof rate?.price === 'number') {
-          actualPrice = rate.price;
-          basePrice = null;
-        } else {
-          continue;
-        }
-
-        if (!isFinite(actualPrice)) continue;
+        const actualPrice = rate?.actualPrice;
+        if (typeof actualPrice !== 'number' || !isFinite(actualPrice)) continue;
 
         if (actualPrice < lowestPrice) {
           lowestPrice = actualPrice;
@@ -210,7 +191,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
           result.rateName = rate.name || null;
           result.price = actualPrice;
           result.currency = rate.currency || 'EUR';
-          result.memberPrice = basePrice;
+          result.memberPrice = typeof rate.basePrice === 'number' ? rate.basePrice : null;
         }
       }
     }
