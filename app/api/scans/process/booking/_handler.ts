@@ -101,44 +101,39 @@ function parsePriceText(priceText: string): { amount: number; currency: string }
   return { amount, currency };
 }
 
-// basePrice  = .js-strikethrough-price (crossed-out original); prefers data-strikethrough-value attr
-// actualPrice = .bui-price-display__value visible span; screen-reader span excluded to avoid price concatenation
-function extractPricesFromCell($: ReturnType<typeof parseHTML>, cell: any): {
-  standard: { amount: number; currency: string } | null;
-  member: { amount: number; currency: string } | null;
+function extractRateFromRow($: ReturnType<typeof parseHTML>, row: any): {
+  actualPrice: { amount: number; currency: string } | null;
+  basePrice: { amount: number; currency: string } | null;
 } {
-  const $cell = $(cell);
+  const $row = $(row);
 
-  // Strikethrough (original) price — use data attribute when available, fall back to text
-  let standardParsed: { amount: number; currency: string } | null = null;
-  const strikethroughEl = $cell.find('[data-strikethrough-value]').first();
+  // actualPrice: what you pay — .bui-price-display__value
+  // Prefer the visible span to avoid screen-reader text contamination
+  let actualPrice: { amount: number; currency: string } | null = null;
+  const visibleEl = $row.find('.bui-price-display__value .prco-valign-middle-helper').first();
+  if (visibleEl.length) {
+    actualPrice = parsePriceText(visibleEl.text().trim());
+  } else {
+    const priceEl = $row.find('.bui-price-display__value').first();
+    if (priceEl.length) actualPrice = parsePriceText(priceEl.text().trim());
+  }
+
+  // basePrice: the crossed-out original price — .js-strikethrough-price
+  // Prefer data-strikethrough-value attribute for accuracy
+  let basePrice: { amount: number; currency: string } | null = null;
+  const strikethroughEl = $row.find('.js-strikethrough-price[data-strikethrough-value]').first();
   if (strikethroughEl.length) {
     const val = parseFloat(strikethroughEl.attr('data-strikethrough-value') || '');
     if (!isNaN(val) && val > 0) {
-      const currency = parsePriceText(strikethroughEl.text().trim())?.currency ?? DEFAULT_CURRENCY;
-      standardParsed = { amount: Math.round(val), currency };
+      basePrice = { amount: Math.round(val), currency: actualPrice?.currency ?? DEFAULT_CURRENCY };
     }
   }
-  if (!standardParsed) {
-    const standardEl = $cell.find('.js-strikethrough-price').first();
-    standardParsed = standardEl.length ? parsePriceText(standardEl.text().trim()) : null;
+  if (!basePrice) {
+    const el = $row.find('.js-strikethrough-price').first();
+    if (el.length) basePrice = parsePriceText(el.text().trim());
   }
 
-  // Actual/discounted price — use the visible price span directly to avoid screen-reader text
-  let memberParsed: { amount: number; currency: string } | null = null;
-  const visiblePriceEl = $cell.find('.bui-price-display__value .prco-valign-middle-helper').first();
-  if (visiblePriceEl.length) {
-    memberParsed = parsePriceText(visiblePriceEl.text().trim());
-  } else {
-    const memberEl = $cell.find('.bui-price-display__value').first();
-    if (memberEl.length) memberParsed = parsePriceText(memberEl.text().trim());
-  }
-
-  if (standardParsed && memberParsed) {
-    return { standard: standardParsed, member: memberParsed };
-  }
-
-  return { standard: memberParsed, member: null };
+  return { actualPrice, basePrice };
 }
 
 function parseBookingHTML(html: string): BookingRoom[] {
@@ -163,31 +158,27 @@ function parseBookingHTML(html: string): BookingRoom[] {
     // Collect the scope: the room row itself plus all following rows until the next room
     const nextRows = roomRow.nextAll();
     const nextRoomIdx = nextRows.toArray().findIndex(r => $(r).find('.hprt-roomtype-link').length > 0);
-    const scopeRows = [
-      roomRow,
-      ...(nextRoomIdx >= 0 ? nextRows.slice(0, nextRoomIdx) : nextRows).toArray().map(r => $(r)),
+    const scopeEls = [
+      ...roomRow.toArray(),
+      ...(nextRoomIdx >= 0 ? nextRows.slice(0, nextRoomIdx) : nextRows).toArray(),
     ];
 
-    // Each row/cell that contains a price element is one rate
-    for (const $row of scopeRows) {
-      $row.find('.bui-price-display__value').each((_, priceEl) => {
-        const $priceEl = $(priceEl);
-        // Use the full <tr> so both the price cell and the conditions cell are in scope
-        const $tr = $priceEl.closest('tr, .hprt-table-row');
-        const { standard, member } = extractPricesFromCell($, $tr.length ? $tr : $row);
-        if (!standard) return;
+    // Each rate row contains one .bui-price-display__value; process one rate per row
+    for (const rowEl of scopeEls) {
+      if (!$(rowEl).find('.bui-price-display__value').length) continue;
 
-        // Map cancellation policy text to a rate name; conditions cell is a sibling of the price cell
-        const cancellationText = $tr.find('.e2e-cancellation [data-testid="cancellation-policy"], [data-testid="cancellation-policy"]').first().text().trim();
-        const rateName = (cancellationText.includes('Kostenlose Stornierung') || cancellationText.includes('Free cancellation')) ? 'Flexi Rate'
-          : (cancellationText.includes('Nicht kostenlos stornierbar') || cancellationText.includes('Non-refundable')) ? 'Fixed Rate'
-          : null;
+      const { actualPrice, basePrice } = extractRateFromRow($, rowEl);
+      if (!actualPrice) continue;
 
-        const entry: BookingRoom['rates'][number] = member
-          ? { name: rateName, actualPrice: member.amount, basePrice: standard.amount, currency: standard.currency }
-          : { name: rateName, actualPrice: standard.amount, currency: standard.currency };
-        rates.push(entry);
-      });
+      const cancellationText = $(rowEl).find('[data-testid="cancellation-policy"]').first().text().trim();
+      const rateName = (cancellationText.includes('Kostenlose Stornierung') || cancellationText.includes('Free cancellation')) ? 'Flexi Rate'
+        : (cancellationText.includes('Nicht kostenlos stornierbar') || cancellationText.includes('Non-refundable')) ? 'Fixed Rate'
+        : null;
+
+      const entry: BookingRoom['rates'][number] = basePrice
+        ? { name: rateName, actualPrice: actualPrice.amount, basePrice: basePrice.amount, currency: actualPrice.currency }
+        : { name: rateName, actualPrice: actualPrice.amount, currency: actualPrice.currency };
+      rates.push(entry);
     }
 
     // Deduplicate by actualPrice to avoid collecting the same price from nested elements
