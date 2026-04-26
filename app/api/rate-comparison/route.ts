@@ -86,14 +86,17 @@ export async function GET(req: NextRequest) {
                 jsonb_build_object(
                   'room_name', COALESCE(room->>'name', room->>'roomName', room->>'room_name', room->>'title', room->>'type'),
                   'rate_name', rate->>'name',
-                  'price', (rate->>'price')::numeric,
-                  'member_price', CASE WHEN rate->>'memberPrice' IS NOT NULL THEN (rate->>'memberPrice')::numeric ELSE NULL END,
+                  'price', COALESCE((rate->>'actualPrice')::numeric, (rate->>'memberPrice')::numeric, (rate->>'price')::numeric),
+                  'member_price', CASE
+                    WHEN rate->>'basePrice' IS NOT NULL THEN (rate->>'basePrice')::numeric
+                    WHEN rate->>'price' IS NOT NULL AND rate->>'memberPrice' IS NOT NULL THEN (rate->>'price')::numeric
+                    ELSE NULL END,
                   'currency', rate->>'currency'
                 )
               )
               FROM jsonb_array_elements(sr.response_json->'rooms') AS room,
                    jsonb_array_elements(room->'rates') AS rate
-              WHERE (rate->>'price')::numeric IS NOT NULL)
+              WHERE COALESCE((rate->>'actualPrice')::numeric, (rate->>'memberPrice')::numeric, (rate->>'price')::numeric) IS NOT NULL)
             ELSE NULL
           END AS room_rates
         FROM scan_results sr
@@ -117,6 +120,7 @@ export async function GET(req: NextRequest) {
             WHERE (rr2->>'price')::numeric = MIN((rr->>'price')::numeric)
             LIMIT 1
           ) AS min_rate_details
+          -- note: 'price' in room_rates is already normalised to actualPrice above
         FROM price_data pd,
              jsonb_array_elements(COALESCE(pd.room_rates, '[]'::jsonb)) AS rr
         WHERE pd.room_rates IS NOT NULL
