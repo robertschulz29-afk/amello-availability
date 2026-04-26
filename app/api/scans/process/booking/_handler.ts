@@ -124,12 +124,14 @@ function extractPricesFromCell($: ReturnType<typeof parseHTML>, cell: any): {
     standardParsed = standardEl.length ? parsePriceText(standardEl.text().trim()) : null;
   }
 
-  // Actual/discounted price — strip .bui-u-sr-only to avoid including "Originalpreis X Aktueller Preis Y"
+  // Actual/discounted price — use the visible price span directly to avoid screen-reader text
   let memberParsed: { amount: number; currency: string } | null = null;
-  const memberEl = $cell.find('.bui-price-display__value').first();
-  if (memberEl.length) {
-    const visibleText = memberEl.clone().find('.bui-u-sr-only').remove().end().text().trim();
-    memberParsed = parsePriceText(visibleText);
+  const visiblePriceEl = $cell.find('.bui-price-display__value .prco-valign-middle-helper').first();
+  if (visiblePriceEl.length) {
+    memberParsed = parsePriceText(visiblePriceEl.text().trim());
+  } else {
+    const memberEl = $cell.find('.bui-price-display__value').first();
+    if (memberEl.length) memberParsed = parsePriceText(memberEl.text().trim());
   }
 
   if (standardParsed && memberParsed) {
