@@ -673,7 +673,7 @@ function PriceComparisonPage() {
         {/* ── tables grouped by hotel (optionally wrapped in dimension groups) ── */}
         {groupedByDimension
           ? pageUnits.map(groupLabel => {
-            const hotelIds = groupedByDimension.get(groupLabel)!;
+            const hotelIds = groupedByDimension.get(groupLabel as string)!;
             return (
               <div key={groupLabel} className="mb-4">
                 <button
