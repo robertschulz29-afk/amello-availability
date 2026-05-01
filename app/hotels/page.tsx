@@ -122,8 +122,21 @@ export default function Page() {
     try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
   };
 
-  const visibleHotels = React.useMemo(() => {
+  const filteredHotels = React.useMemo(() => {
     let list = [...hotels];
+    if (filterActive !== 'all') {
+      const want = filterActive === 'true';
+      list = list.filter(h => h.active === want);
+    }
+    if (filterBookable !== 'all') {
+      const want = filterBookable === 'true';
+      list = list.filter(h => h.bookable === want);
+    }
+    return list;
+  }, [hotels, filterActive, filterBookable]);
+
+  const visibleHotels = React.useMemo(() => {
+    let list = [...filteredHotels];
     if (selectedHotelIds.length > 0) {
       const idSet = new Set(selectedHotelIds);
       list = list.filter(h => idSet.has(h.id));
@@ -144,7 +157,7 @@ export default function Page() {
       return 0;
     });
     return list;
-  }, [hotels, selectedHotelIds, filterActive, filterBookable, sortField, sortDir]);
+  }, [filteredHotels, selectedHotelIds, filterActive, filterBookable, sortField, sortDir]);
 
   const activeCount       = hotels.filter(h => h.active === true).length;
   const inactiveCount     = hotels.filter(h => h.active === false).length;
@@ -295,7 +308,7 @@ export default function Page() {
             <div>
               <label className="form-label fw-semibold mb-1 d-block small">Hotel</label>
               <HotelCombobox
-                hotels={hotels}
+                hotels={filteredHotels}
                 selectedIds={selectedHotelIds}
                 onChange={setSelectedHotelIds}
                 placeholder="All Hotels"
