@@ -7,7 +7,8 @@ import { ScanInfoCard, ScanDetails } from '@/app/components/ScanInfoCard';
 
 type AvailFilter = 'all' | 'below50' | 'above50';
 
-type Hotel = { id: number; name: string; code: string; brand?: string; region?: string; country?: string; base_image?: string | null };
+type FilterBool = 'all' | 'true' | 'false';
+type Hotel = { id: number; name: string; code: string; brand?: string; region?: string; country?: string; active?: boolean | null; bookable?: boolean | null; base_image?: string | null };
 type ScanRow = {
   id: number; scanned_at: string;
   stay_nights: number; total_cells: number; done_cells: number;
@@ -424,8 +425,8 @@ function PortfolioHealth() {
 
   const [groupBy, setGroupBy] = React.useState<GroupBy>('hotel');
   const [sortOrder, setSortOrder] = React.useState<SortOrder>('none');
-  const [filterActive, setFilterActive] = React.useState(true);
-  const [filterBookable, setFilterBookable] = React.useState(true);
+  const [filterActive, setFilterActive] = React.useState<FilterBool>('true');
+  const [filterBookable, setFilterBookable] = React.useState<FilterBool>('true');
 
   const hotelsByCode = React.useMemo(() => {
     const map = new Map<string, Hotel>();
@@ -436,7 +437,7 @@ function PortfolioHealth() {
   const hotelsByCodeRef = React.useRef(hotelsByCode);
   React.useEffect(() => { hotelsByCodeRef.current = hotelsByCode; }, [hotelsByCode]);
 
-  const loadHotels = React.useCallback(async (scanId?: number, active = true, bookable = true) => {
+  const loadHotels = React.useCallback(async (scanId?: number) => {
     try {
       if (scanId != null) {
         const data = await fetchJSON(`/api/scans/${scanId}/hotels`, { cache: 'no-store' });
@@ -445,11 +446,7 @@ function PortfolioHealth() {
           return;
         }
       }
-      const params = new URLSearchParams();
-      if (active) params.set('active', '1');
-      if (bookable) params.set('bookable', '1');
-      const qs = params.size ? '?' + params.toString() : '';
-      const data = await fetchJSON(`/api/hotels${qs}`, { cache: 'no-store' });
+      const data = await fetchJSON('/api/hotels', { cache: 'no-store' });
       setHotels(Array.isArray(data) ? data : []);
     } catch (e: any) {}
   }, []);
@@ -480,9 +477,9 @@ function PortfolioHealth() {
     } catch { setScanDetails(null); }
   }, []);
 
-  const loadScanById = React.useCallback(async (scanId: number, active = true, bookable = true) => {
+  const loadScanById = React.useCallback(async (scanId: number) => {
     setLoading(true); setError(null); setMatrix(null);
-    loadHotels(scanId, active, bookable);
+    loadHotels(scanId);
     loadScanDetails(scanId);
     try {
       const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
@@ -507,18 +504,31 @@ function PortfolioHealth() {
 
   React.useEffect(() => { loadScans(); }, [loadScans]);
   React.useEffect(() => {
-    if (selectedScanId != null) loadScanById(selectedScanId, filterActive, filterBookable);
-  }, [selectedScanId, filterActive, filterBookable, loadScanById]);
+    if (selectedScanId != null) loadScanById(selectedScanId);
+  }, [selectedScanId, loadScanById]);
 
   const dates = matrix?.dates ?? [];
+
+  const filteredHotels = React.useMemo(() => {
+    let list = hotels;
+    if (filterActive !== 'all') {
+      const want = filterActive === 'true';
+      list = list.filter(h => h.active === want);
+    }
+    if (filterBookable !== 'all') {
+      const want = filterBookable === 'true';
+      list = list.filter(h => h.bookable === want);
+    }
+    return list;
+  }, [hotels, filterActive, filterBookable]);
 
   const groups = React.useMemo(() => {
     const gmap = new Map<string, string[]>();
     const byCode = hotelsByCode;
-    // All hotel codes from the scan snapshot (or current hotels if no snapshot)
     const scannedCodes = new Set(Object.keys(matrix?.results ?? {}));
-    const allHotelCodes = hotels.length > 0 ? hotels.map(h => h.code) : [];
-    const universe = [...new Set([...allHotelCodes, ...scannedCodes])];
+    const filteredCodes = new Set(filteredHotels.map(h => h.code));
+    const allHotelCodes = filteredHotels.length > 0 ? filteredHotels.map(h => h.code) : [];
+    const universe = [...new Set([...allHotelCodes, ...[...scannedCodes].filter(c => filteredCodes.has(c))])];
 
     function keyFor(h: Hotel): string {
       if (groupBy === 'hotel') return (h.name && h.name.trim()) || '(no hotel)';
@@ -558,7 +568,7 @@ function PortfolioHealth() {
     }
 
     return out;
-  }, [groupBy, sortOrder, hotels, hotelsByCode, matrix, dates]);
+  }, [groupBy, sortOrder, filteredHotels, hotelsByCode, matrix, dates]);
 
   const visibleGroups = React.useMemo(() => {
     if (availFilter === 'below50') return groups.filter(g => g.avg < 50);
@@ -582,23 +592,24 @@ function PortfolioHealth() {
 
         {/* Controls */}
         <div className="d-flex flex-wrap gap-3 align-items-center mb-4">
-          <div className="d-flex align-items-center gap-2">
-            <label className="form-label mb-0 fw-bold text-nowrap">Hotels:</label>
-            <div className="btn-group">
-              <button
-                type="button"
-                className={`btn btn-sm ${filterActive ? 'btn-success' : 'btn-outline-secondary'}`}
-                onClick={() => setFilterActive(v => !v)}
-              >
-                Active
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${filterBookable ? 'btn-success' : 'btn-outline-secondary'}`}
-                onClick={() => setFilterBookable(v => !v)}
-              >
-                Bookable
-              </button>
+          <div>
+            <label className="form-label fw-semibold mb-1 d-block small">Active</label>
+            <div className="btn-group btn-group-sm" role="group">
+              {(['all', 'true', 'false'] as FilterBool[]).map(v => (
+                <button key={v} type="button" className={`btn ${filterActive === v ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={() => setFilterActive(v)}>
+                  {v === 'all' ? 'All' : v === 'true' ? 'Yes' : 'No'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="form-label fw-semibold mb-1 d-block small">Bookable</label>
+            <div className="btn-group btn-group-sm" role="group">
+              {(['all', 'true', 'false'] as FilterBool[]).map(v => (
+                <button key={v} type="button" className={`btn ${filterBookable === v ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={() => setFilterBookable(v)}>
+                  {v === 'all' ? 'All' : v === 'true' ? 'Yes' : 'No'}
+                </button>
+              ))}
             </div>
           </div>
           <div className="d-flex align-items-center gap-2">

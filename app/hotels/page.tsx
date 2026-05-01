@@ -55,7 +55,7 @@ export default function Page() {
   const [selectedCollectorIds, setSelectedCollectorIds] = React.useState<Set<number>>(new Set());
 
   const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
-  const [filterActive,   setFilterActive]   = React.useState<FilterBool>('all');
+  const [filterActive,   setFilterActive]   = React.useState<FilterBool>('true');
   const [filterBookable, setFilterBookable] = React.useState<FilterBool>('all');
   const [sortField, setSortField] = React.useState<SortField>('name');
   const [sortDir,   setSortDir]   = React.useState<SortDir>('asc');
