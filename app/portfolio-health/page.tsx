@@ -424,6 +424,8 @@ function PortfolioHealth() {
 
   const [groupBy, setGroupBy] = React.useState<GroupBy>('hotel');
   const [sortOrder, setSortOrder] = React.useState<SortOrder>('none');
+  const [filterActive, setFilterActive] = React.useState(true);
+  const [filterBookable, setFilterBookable] = React.useState(true);
 
   const hotelsByCode = React.useMemo(() => {
     const map = new Map<string, Hotel>();
@@ -434,17 +436,20 @@ function PortfolioHealth() {
   const hotelsByCodeRef = React.useRef(hotelsByCode);
   React.useEffect(() => { hotelsByCodeRef.current = hotelsByCode; }, [hotelsByCode]);
 
-  const loadHotels = React.useCallback(async (scanId?: number) => {
+  const loadHotels = React.useCallback(async (scanId?: number, active = true, bookable = true) => {
     try {
       if (scanId != null) {
-        // Use scan's hotel snapshot when available
         const data = await fetchJSON(`/api/scans/${scanId}/hotels`, { cache: 'no-store' });
         if (Array.isArray(data?.hotels) && data.hotels.length > 0) {
           setHotels(data.hotels);
           return;
         }
       }
-      const data = await fetchJSON('/api/hotels?active=1&bookable=1', { cache: 'no-store' });
+      const params = new URLSearchParams();
+      if (active) params.set('active', '1');
+      if (bookable) params.set('bookable', '1');
+      const qs = params.size ? '?' + params.toString() : '';
+      const data = await fetchJSON(`/api/hotels${qs}`, { cache: 'no-store' });
       setHotels(Array.isArray(data) ? data : []);
     } catch (e: any) {}
   }, []);
@@ -475,9 +480,9 @@ function PortfolioHealth() {
     } catch { setScanDetails(null); }
   }, []);
 
-  const loadScanById = React.useCallback(async (scanId: number) => {
+  const loadScanById = React.useCallback(async (scanId: number, active = true, bookable = true) => {
     setLoading(true); setError(null); setMatrix(null);
-    loadHotels(scanId);
+    loadHotels(scanId, active, bookable);
     loadScanDetails(scanId);
     try {
       const data = await fetchJSON(`/api/scans/${scanId}`, { cache: 'no-store' });
@@ -501,7 +506,9 @@ function PortfolioHealth() {
   }, []);
 
   React.useEffect(() => { loadScans(); }, [loadScans]);
-  React.useEffect(() => { if (selectedScanId != null) loadScanById(selectedScanId); }, [selectedScanId, loadScanById]);
+  React.useEffect(() => {
+    if (selectedScanId != null) loadScanById(selectedScanId, filterActive, filterBookable);
+  }, [selectedScanId, filterActive, filterBookable, loadScanById]);
 
   const dates = matrix?.dates ?? [];
 
@@ -575,6 +582,25 @@ function PortfolioHealth() {
 
         {/* Controls */}
         <div className="d-flex flex-wrap gap-3 align-items-center mb-4">
+          <div className="d-flex align-items-center gap-2">
+            <label className="form-label mb-0 fw-bold text-nowrap">Hotels:</label>
+            <div className="btn-group">
+              <button
+                type="button"
+                className={`btn btn-sm ${filterActive ? 'btn-success' : 'btn-outline-secondary'}`}
+                onClick={() => setFilterActive(v => !v)}
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${filterBookable ? 'btn-success' : 'btn-outline-secondary'}`}
+                onClick={() => setFilterBookable(v => !v)}
+              >
+                Bookable
+              </button>
+            </div>
+          </div>
           <div className="d-flex align-items-center gap-2">
             <label className="form-label mb-0 fw-bold text-nowrap">Group by:</label>
             <select className="form-select" value={groupBy} onChange={e => setGroupBy(e.target.value as any)}>
