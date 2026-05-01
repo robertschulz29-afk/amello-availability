@@ -152,19 +152,6 @@ export async function POST(req: NextRequest) {
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-    // Update source job progress
-    if (processed > 0) {
-      await sql`
-        UPDATE scan_source_jobs
-        SET done_cells = LEAST(done_cells + ${processed}, ${total}), updated_at = NOW()
-        WHERE id = ${jobId}
-      `;
-      // Update legacy shared counter on scan
-      await sql`
-        UPDATE scans SET done_cells = LEAST(done_cells + ${processed}, total_cells) WHERE id = ${scanId}
-      `;
-    }
-
     const nextIndex = endIndex;
     const done = nextIndex >= total;
 

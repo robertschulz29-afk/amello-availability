@@ -336,17 +336,6 @@ export async function handleBookingJob(
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-    if (processed > 0) {
-      await sql`
-        UPDATE scan_source_jobs
-        SET done_cells = GREATEST(done_cells, LEAST(${startIndex} + ${processed}, ${total})), updated_at = NOW()
-        WHERE id = ${jobId}
-      `;
-      await sql`
-        UPDATE scans SET done_cells = LEAST(done_cells + ${processed}, total_cells) WHERE id = ${scanId}
-      `;
-    }
-
     const nextIndex = endIndex;
     const done = nextIndex >= total;
 
