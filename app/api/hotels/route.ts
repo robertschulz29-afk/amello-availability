@@ -56,17 +56,21 @@ export async function GET(req: NextRequest) {
 
   // Build one OR-block per collector, AND the blocks together.
   // Use text LIKE matching on the raw "globalTypes" column to avoid jsonb cast issues.
-  // Each code matches if it appears as a substring, covering exact codes and slash-subtype variants.
-  // For slash-subtype codes (e.g. ST03-VEGC/TUI-G123) we also match on the base part before the slash.
   const params: string[] = [];
   const andClauses = collectorIds.map(cid => {
     const codes = byCollector[cid] ?? [];
     if (codes.length === 0) return 'FALSE';
     const orParts = codes.flatMap(code => {
-      const base = code.includes('/') ? code.split('/')[0] : code;
-      const patterns = Array.from(new Set([code, base]));
-      return patterns.map(pat => {
-        params.push(`%${pat}%`);
+      // Exact element matching: two patterns cover all array positions
+      // (element followed by comma, or element at end before ]).
+      // For no-slash codes also match stored values where the last segment
+      // equals the code (e.g. filter "GT03" matches stored "X/GT03").
+      const exactPatterns = [`%"${code}",%`, `%"${code}"]%`];
+      const lastSegPatterns = code.includes('/')
+        ? []
+        : [`%/${code}",%`, `%/${code}"]%`];
+      return [...exactPatterns, ...lastSegPatterns].map(pat => {
+        params.push(pat);
         return `"globalTypes" LIKE $${params.length}`;
       });
     });

@@ -131,6 +131,7 @@ function CollectorsSection() {
     );
 
   const filteredUnassigned = effectiveUnassigned.filter(u => {
+    if (!u.global_type) return false;
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     const label = typeof u.global_type_label === 'string' ? u.global_type_label.toLowerCase() : '';
@@ -378,10 +379,9 @@ function CollectorsSection() {
               <div className="fw-semibold small text-muted mb-1">Add unassigned global types</div>
               <input className="form-control form-control-sm mb-2" placeholder="Search by code or label…"
                 value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-              <div style={{ maxHeight: 220, overflowY: 'auto' }} className="border rounded">
-                {filteredUnassigned.length === 0 && (
-                  <div className="p-2 text-muted small fst-italic">No unassigned types{searchTerm ? ' matching search' : ''}</div>
-                )}
+              {filteredUnassigned.length === 0
+                ? <div className="text-muted small fst-italic py-1">{searchTerm ? 'No types matching your search.' : 'No unassigned types.'}</div>
+                : <div style={{ maxHeight: 220, overflowY: 'auto' }} className="border rounded">
                 {filteredUnassigned.map(u => (
                   <button key={u.global_type} type="button"
                     className="btn btn-link btn-sm w-100 text-start text-decoration-none px-3 py-1 border-bottom text-body"
@@ -390,7 +390,7 @@ function CollectorsSection() {
                     {u.global_type} — {u.global_type_label}
                   </button>
                 ))}
-              </div>
+              </div>}
             </>
           ) : (
             <div className="text-muted small fst-italic mt-2">Select a collector to manage its category and global types</div>
