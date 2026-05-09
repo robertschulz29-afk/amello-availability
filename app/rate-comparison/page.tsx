@@ -2,11 +2,13 @@
 'use client';
 
 import * as React from 'react';
+import { useSearchParams } from 'next/navigation';
 import { fetchJSON } from '@/lib/api-client';
 import { formatPrice } from '@/lib/price-utils';
 import { HotelCombobox } from '@/app/components/HotelCombobox';
 import { ScanInfoCard, ScanDetails } from '@/app/components/ScanInfoCard';
 import { PaginationBar } from '@/app/components/PaginationBar';
+import type { ScanSummary } from '@/app/api/scan-results/summary/route';
 
 // ─── shared types ─────────────────────────────────────────────────────────────
 
@@ -146,7 +148,7 @@ function matchesRateStatus(row: RateRow, filter: StatusFilter): boolean {
   if (filter === 'booking_cheaper_gt5')  return pct > 5;
   if (filter === 'booking_cheaper_lte5') return pct > 0 && pct <= 5;
   if (filter === 'booking_cheaper')      return pct > 0;
-  if (filter === 'amello_cheaper')       return pct <= 0;
+  if (filter === 'amello_cheaper')       return pct < 0;
   return true;
 }
 
@@ -336,17 +338,22 @@ function DiffCell({ a, b, currency }: { a: number | null; b: number | null; curr
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
-export default function Page() {
+function RateComparisonPage() {
+  const searchParams = useSearchParams();
+  const initialScanId = searchParams.get('scanId') ? Number(searchParams.get('scanId')) : null;
+  const initialFilter = (searchParams.get('filter') as StatusFilter) || 'all';
+
   const [viewMode, setViewMode] = React.useState<ViewMode>('best_rate');
 
   const [scans, setScans] = React.useState<ScanRow[]>([]);
-  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
+  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(initialScanId);
   const [hotels, setHotels] = React.useState<HotelRow[]>([]);
   const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
 
   const [scanDetails, setScanDetails] = React.useState<ScanDetails | null>(null);
+  const [scanSummary, setScanSummary] = React.useState<ScanSummary | null>(null);
 
-  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>(initialFilter);
   const [groupBy, setGroupBy] = React.useState<'none' | 'brand' | 'country' | 'region'>('none');
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(new Set());
 
@@ -413,6 +420,7 @@ export default function Page() {
 
   // Step 1: when scan or hotel filter changes, fetch the lightweight hotel list and reset page
   React.useEffect(() => {
+    setScanSummary(null);
     if (!selectedScanId) { setScanHotels([]); return; }
     setLoadingHotels(true);
     setDisplayPage(1);
@@ -426,6 +434,13 @@ export default function Page() {
       .catch(() => setScanHotels([]))
       .finally(() => setLoadingHotels(false));
     loadScanDetails(selectedScanId);
+
+    // Fetch scan-wide summary in parallel
+    const summaryParams = new URLSearchParams({ scanID: String(selectedScanId) });
+    if (selectedHotelIds.length > 0) summaryParams.append('hotelId', selectedHotelIds.join(','));
+    fetchJSON(`/api/scan-results/summary?${summaryParams}`, { cache: 'no-store' })
+      .then((data: ScanSummary) => setScanSummary(data))
+      .catch(() => setScanSummary(null));
   }, [selectedScanId, selectedHotelIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Step 2: when page, perPage, view mode, or hotel list changes, fetch data for the current page
@@ -783,13 +798,13 @@ export default function Page() {
               <div className="row g-2">
                 <div className="col-md-3"><strong>Total rows:</strong> {summary.total}</div>
                 <div className="col-md-3"><strong>Both available:</strong> {summary.both}</div>
-                <div className="col-md-3"><strong>Amello only:</strong> {summary.amelloOnly}</div>
-                <div className="col-md-3"><strong>Booking only:</strong> {summary.bookingOnly}</div>
+                <div className="col-md-3"><strong>Amello only:</strong> {scanSummary != null ? scanSummary.amello_only : summary.amelloOnly}</div>
+                <div className="col-md-3"><strong>Booking only:</strong> {scanSummary != null ? scanSummary.booking_only : summary.bookingOnly}</div>
               </div>
               <div className="row g-2 mt-1">
-                <div className="col-md-3 text-success"><strong>Amello cheaper:</strong> {summary.amelloCheaper}</div>
-                <div className="col-md-3 text-danger"><strong>Booking cheaper:</strong> {summary.bookingCheaper}</div>
-                <div className="col-md-3"><strong>Same price:</strong> {summary.same}</div>
+                <div className="col-md-3 text-success"><strong>Amello cheaper:</strong> {scanSummary != null ? scanSummary.amello_cheaper : summary.amelloCheaper}</div>
+                <div className="col-md-3 text-danger"><strong>Booking cheaper:</strong> {scanSummary != null ? scanSummary.booking_cheaper : summary.bookingCheaper}</div>
+                <div className="col-md-3"><strong>Same price:</strong> {scanSummary != null ? scanSummary.same_price : summary.same}</div>
                 <div className="col-md-3">
                   {summary.avgAmello  && <span><strong>Avg Amello:</strong>  {summary.avgAmello}</span>}
                   {summary.avgBooking && <span className="ms-2"><strong>Avg Booking:</strong> {summary.avgBooking}</span>}
@@ -862,5 +877,13 @@ export default function Page() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <React.Suspense>
+      <RateComparisonPage />
+    </React.Suspense>
   );
 }

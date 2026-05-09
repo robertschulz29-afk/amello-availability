@@ -474,8 +474,8 @@ export default function Page() {
           {!loading && totalUnmapped > 0 && (
             <span className="badge text-bg-warning fs-6">{totalUnmapped} unmapped total</span>
           )}
-          <a href="/price-comparison" className="btn btn-outline-secondary btn-sm ms-auto">
-            ← Back to Price Comparison
+          <a href="/rate-comparison" className="btn btn-outline-secondary btn-sm ms-auto">
+            ← Back to Rate Comparison
           </a>
         </div>
 
