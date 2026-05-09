@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const scanIDParam = searchParams.get('scanID');
-    const hotelIDParam = searchParams.get('hotelID');
+    const hotelIDParam = searchParams.get('hotelId');
 
     if (!scanIDParam) return NextResponse.json({ error: 'scanID required' }, { status: 400 });
     const scanID = parseInt(scanIDParam, 10);

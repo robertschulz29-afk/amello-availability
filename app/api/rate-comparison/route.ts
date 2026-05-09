@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
 
     const scanIDParam = searchParams.get('scanID');
-    const hotelIDParam = searchParams.get('hotelID');
+    const hotelIDParam = searchParams.get('hotelId');
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
     const offset = (page - 1) * limit;
