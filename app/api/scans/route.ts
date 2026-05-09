@@ -1,8 +1,8 @@
 // app/api/scans/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { sql, query } from '@/lib/db';
-import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
-import { ymdToUTC, toYMDUTC } from '@/lib/scrapers/process-helpers';
+import { DEFAULT_BELLO_MANDATOR, SCAN_BATCH_SIZE } from '@/lib/constants';
+import { ymdToUTC, toYMDUTC, getBaseUrl } from '@/lib/scrapers/process-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,11 +14,6 @@ function berlinTodayYMD(): string {
   }).format(new Date());
 }
 
-function getBaseUrl(): string {
-  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
-}
 
 // Fire-and-forget: kick off processing for a specific source job
 function triggerSourceJob(jobId: number, belloMandator: string, source: string): void {
@@ -26,7 +21,7 @@ function triggerSourceJob(jobId: number, belloMandator: string, source: string):
   fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Bello-Mandator': belloMandator },
-    body: JSON.stringify({ jobId, startIndex: 0, size: 50 }),
+    body: JSON.stringify({ jobId, startIndex: 0, size: SCAN_BATCH_SIZE }),
   })
     .then(async (res) => {
       if (!res.ok) {
@@ -145,7 +140,7 @@ export async function POST(req: NextRequest) {
     const bookingHotelCount = bookingHotelsQ.rows[0]?.c ?? 0;
 
     function totalForSource(source: string): number {
-      if (source === 'booking') return bookingHotelCount * days;
+      if (source === 'booking' || source === 'booking_member') return bookingHotelCount * days;
       return allHotelsCount * days; // amello and any future sources
     }
 

@@ -5,9 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { extractRoomRateData } from '@/lib/price-utils';
-import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
+import { DEFAULT_BELLO_MANDATOR, SCAN_BATCH_SIZE } from '@/lib/constants';
 import {
-  toYMDUTC, normalizeYMD, ymdToUTC, datesFromBase, type ScanCell,
+  toYMDUTC, normalizeYMD, ymdToUTC, datesFromBase, markJobDone, type ScanCell,
 } from '@/lib/scrapers/process-helpers';
 
 export const runtime = 'nodejs';
@@ -67,8 +67,7 @@ export async function POST(req: NextRequest) {
     `).rows as Array<{ id: number; code: string }>;
 
     if (!hotels.length) {
-      await sql`UPDATE scan_source_jobs SET status = 'done', updated_at = NOW() WHERE id = ${jobId}`;
-      await checkAndFinalizeScan(scanId);
+      await markJobDone(jobId, scanId);
       return NextResponse.json({ processed: 0, done: true, total: 0, message: 'No hotels' });
     }
 
@@ -169,34 +168,3 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function markJobDone(jobId: number, scanId: number) {
-  await sql`
-    UPDATE scan_source_jobs SET status = 'done', updated_at = NOW() WHERE id = ${jobId}
-  `;
-  await checkAndFinalizeScan(scanId);
-}
-
-async function checkAndFinalizeScan(scanId: number) {
-  // Mark scan done when ALL its source jobs are done (none still running/queued)
-  const pending = await sql`
-    SELECT COUNT(*)::int AS c FROM scan_source_jobs
-    WHERE scan_id = ${scanId} AND status IN ('running','queued')
-  `;
-  if ((pending.rows[0]?.c ?? 1) === 0) {
-    await sql`UPDATE scans SET status = 'done' WHERE id = ${scanId} AND status != 'cancelled'`;
-    console.log(`[amello] Scan #${scanId} finalized — all source jobs complete`);
-
-    // Harvest room names
-    await sql`
-      INSERT INTO hotel_room_names (hotel_id, source, room_name, last_seen_at)
-      SELECT DISTINCT sr.hotel_id, sr.source, elem->>'name', NOW()
-      FROM scan_results sr,
-           jsonb_array_elements(sr.response_json->'rooms') AS elem
-      WHERE sr.scan_id = ${scanId}
-        AND sr.status  = 'green'
-        AND elem->>'name' IS NOT NULL
-      ON CONFLICT (hotel_id, source, room_name)
-        DO UPDATE SET last_seen_at = NOW()
-    `;
-  }
-}

@@ -32,7 +32,8 @@
       "Bash(curl -s \"https://docs.tui-info.com/static/media/GT13_GT_Room-Locations.04b02f47.csv\")",
       "Bash(curl -s \"https://docs.tui-info.com/static/media/GT13_AT_Room-Locations.3308e171.csv\")",
       "Bash(curl -s \"https://docs.tui-info.com/static/media/GT18_GT_Payment-Types.9050c7b1.csv\")",
-      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT18_ST_Payment-Types.e957bc64.csv\")"
+      "Bash(curl -s \"https://docs.tui-info.com/static/media/GT18_ST_Payment-Types.e957bc64.csv\")",
+      "Bash(grep -n \"^import\\\\|sql\\\\`\" app/api/scans/process/amello/route.ts)"
     ]
   }
 }

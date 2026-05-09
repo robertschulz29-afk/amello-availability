@@ -141,14 +141,6 @@ export default function Page() {
       const idSet = new Set(selectedHotelIds);
       list = list.filter(h => idSet.has(h.id));
     }
-    if (filterActive !== 'all') {
-      const want = filterActive === 'true';
-      list = list.filter(h => h.active === want);
-    }
-    if (filterBookable !== 'all') {
-      const want = filterBookable === 'true';
-      list = list.filter(h => h.bookable === want);
-    }
     list.sort((a, b) => {
       const av = (a[sortField] ?? '').toLowerCase();
       const bv = (b[sortField] ?? '').toLowerCase();

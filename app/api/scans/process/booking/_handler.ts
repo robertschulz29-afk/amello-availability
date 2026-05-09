@@ -5,10 +5,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import {
-  toYMDUTC, normalizeYMD, ymdToUTC, datesFromBase,
+  toYMDUTC, normalizeYMD, ymdToUTC, datesFromBase, markJobDone,
 } from '@/lib/scrapers/process-helpers';
 import { parseHTML } from '@/lib/scrapers/utils/html-parser';
 import { getBookingCookies } from '@/app/api/settings/booking-cookies/get';
+import { SCAN_BATCH_SIZE } from '@/lib/constants';
 
 const SCRAPINGANT_API_KEY = process.env.SCRAPINGANT_API_KEY || '';
 const SCRAPINGANT_URL = 'https://api.scrapingant.com/v2/general';
@@ -90,7 +91,7 @@ function parsePriceText(priceText: string): { amount: number; currency: string }
       : n.replace(/\./g, '').replace(',', '');
   } else if (n.includes(',')) {
     const parts = n.split(',');
-    n = parts.length === 2 && parts[1].length <= 2 ? n.replace(',', '') : n.replace(/,/g, '');
+    n = parts.length === 2 && parts[1].length <= 2 ? n.replace(/,/g, '') : n.replace(/,/g, '');
   } else if (n.includes('.')) {
     const parts = n.split('.');
     n = parts.length === 2 && parts[1].length <= 2 ? n.replace('.', '') : n.replace(/\./g, '');
@@ -181,22 +182,19 @@ function parseBookingHTML(html: string): BookingRoom[] {
       rates.push(entry);
     }
 
-    // Deduplicate by actualPrice to avoid collecting the same price from nested elements
-    const seen = new Set<number>();
+    // Deduplicate by actualPrice+rateName to avoid re-collecting the same row
+    // from nested elements, while keeping genuinely distinct rates at the same price.
+    const seen = new Set<string>();
     const deduped = rates.filter(r => {
-      if (seen.has(r.actualPrice)) return false;
-      seen.add(r.actualPrice);
+      const key = `${r.actualPrice}|${r.name ?? ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
 
     if (deduped.length) rooms.push({ name: roomName, rates: deduped });
   });
 
-  return rooms;
-}
-
-// For booking_member: keep all rates; include basePrice only when a Genius strikethrough was found.
-function asMemberRooms(rooms: BookingRoom[]): BookingRoom[] {
   return rooms;
 }
 
@@ -308,8 +306,7 @@ export async function handleBookingJob(
 
         try {
           const html = await fetchWithScrapingAnt(url, useCredentials);
-          const rawRooms = parseBookingHTML(html);
-          const rooms = useCredentials ? asMemberRooms(rawRooms) : rawRooms;
+          const rooms = parseBookingHTML(html);
           status = rooms.length > 0 ? 'green' : 'red';
           responseJson = { rooms, source };
           console.log(`[${source}] Hotel ${cell.hotelId} | ${cell.checkIn}: ${status} (${rooms.length} rooms)`);
@@ -351,30 +348,3 @@ export async function handleBookingJob(
   }
 }
 
-async function markJobDone(jobId: number, scanId: number) {
-  await sql`UPDATE scan_source_jobs SET status = 'done', updated_at = NOW() WHERE id = ${jobId}`;
-  await checkAndFinalizeScan(scanId);
-}
-
-async function checkAndFinalizeScan(scanId: number) {
-  const pending = await sql`
-    SELECT COUNT(*)::int AS c FROM scan_source_jobs
-    WHERE scan_id = ${scanId} AND status IN ('running','queued')
-  `;
-  if ((pending.rows[0]?.c ?? 1) === 0) {
-    await sql`UPDATE scans SET status = 'done' WHERE id = ${scanId} AND status != 'cancelled'`;
-    console.log(`[booking] Scan #${scanId} finalized — all source jobs complete`);
-
-    await sql`
-      INSERT INTO hotel_room_names (hotel_id, source, room_name, last_seen_at)
-      SELECT DISTINCT sr.hotel_id, sr.source, elem->>'name', NOW()
-      FROM scan_results sr,
-           jsonb_array_elements(sr.response_json->'rooms') AS elem
-      WHERE sr.scan_id = ${scanId}
-        AND sr.status  = 'green'
-        AND elem->>'name' IS NOT NULL
-      ON CONFLICT (hotel_id, source, room_name)
-        DO UPDATE SET last_seen_at = NOW()
-    `;
-  }
-}

@@ -146,11 +146,12 @@ function CollectorsSection() {
     setSavedMsg(false);
     try {
       const assignments = [...pending.entries()].map(([global_type, collector_id]) => ({ global_type, collector_id }));
-      await fetch('/api/global_types/assignments', {
+      const res = await fetch('/api/global_types/assignments', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assignments }),
       });
+      if (!res.ok) throw new Error(`Failed to save assignments (${res.status})`);
       setPending(new Map());
       setSavedMsg(true);
       setTimeout(() => setSavedMsg(false), 3000);
@@ -184,7 +185,8 @@ function CollectorsSection() {
 
   const deleteCollector = async (id: number) => {
     if (!confirm('Delete this collector? Its global types will be unassigned.')) return;
-    await fetch(`/api/global_types/collectors/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/global_types/collectors/${id}`, { method: 'DELETE' });
+    if (!res.ok) { setError(`Failed to delete collector (${res.status})`); return; }
     if (selectedId === id) setSelectedId(null);
     reload();
   };
@@ -193,11 +195,12 @@ function CollectorsSection() {
     if (!selected) return;
     setSavingCat(true);
     try {
-      await fetch(`/api/global_types/collectors/${selected.id}`, {
+      const res = await fetch(`/api/global_types/collectors/${selected.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type_category_id: editCatId || null }),
       });
+      if (!res.ok) throw new Error(`Failed to save category (${res.status})`);
       reload();
     } catch (e: any) {
       setError(e.message);
@@ -210,11 +213,12 @@ function CollectorsSection() {
     if (!newCatName.trim()) return;
     setCreatingCat(true);
     try {
-      await fetch('/api/global_types/categories', {
+      const res = await fetch('/api/global_types/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newCatName.trim() }),
       });
+      if (!res.ok) throw new Error(`Failed to create category (${res.status})`);
       setNewCatName('');
       reload();
     } catch (e: any) {
@@ -226,7 +230,8 @@ function CollectorsSection() {
 
   const deleteCategory = async (id: number, name: string) => {
     if (!confirm(`Delete category "${name}"? Collectors in this category will become uncategorized.`)) return;
-    await fetch(`/api/global_types/categories/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/global_types/categories/${id}`, { method: 'DELETE' });
+    if (!res.ok) { setError(`Failed to delete category (${res.status})`); return; }
     reload();
   };
 

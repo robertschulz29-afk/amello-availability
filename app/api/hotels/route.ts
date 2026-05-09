@@ -61,17 +61,20 @@ export async function GET(req: NextRequest) {
     const codes = byCollector[cid] ?? [];
     if (codes.length === 0) return 'FALSE';
     const orParts = codes.flatMap(code => {
+      // Escape LIKE special characters so codes containing % or _ aren't
+      // treated as wildcards by PostgreSQL.
+      const safe = code.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
       // Exact element matching: two patterns cover all array positions
       // (element followed by comma, or element at end before ]).
-      // For no-slash codes also match stored values where the last segment
-      // equals the code (e.g. filter "GT03" matches stored "X/GT03").
-      const exactPatterns = [`%"${code}",%`, `%"${code}"]%`];
-      const lastSegPatterns = code.includes('/')
-        ? []
-        : [`%/${code}",%`, `%/${code}"]%`];
-      return [...exactPatterns, ...lastSegPatterns].map(pat => {
+      // For no-slash codes also match stored values that use this code as a
+      // base prefix (e.g. filter "GT03-SNOW" matches stored "GT03-SNOW/ST03-SCHO").
+      const exactPatterns = [`%"${safe}",%`, `%"${safe}"]%`];
+      const noSlashPatterns = !code.includes('/')
+        ? [`%"${safe}/%`, `%/${safe}",%`, `%/${safe}"]%`]
+        : [];
+      return [...exactPatterns, ...noSlashPatterns].map(pat => {
         params.push(pat);
-        return `"globalTypes" LIKE $${params.length}`;
+        return `"globalTypes" LIKE $${params.length} ESCAPE '\\'`;
       });
     });
     return `(${orParts.join(' OR ')})`;

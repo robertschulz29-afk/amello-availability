@@ -4,16 +4,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
-import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
+import { DEFAULT_BELLO_MANDATOR, SCAN_BATCH_SIZE } from '@/lib/constants';
+import { getBaseUrl } from '@/lib/scrapers/process-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function getBaseUrl(): string {
-  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
-}
 
 export async function GET(req: NextRequest) { return processNext(req); }
 export async function POST(req: NextRequest) { return processNext(req); }
@@ -43,7 +38,7 @@ async function processNext(req: NextRequest) {
 
     console.log(`[process-next] Job #${jobId} scan=${scanId} source=${source} progress=${doneCells}/${totalCells}`);
 
-    const batchSize = 50;
+    const batchSize = SCAN_BATCH_SIZE;
     const startIndex = doneCells;
 
     // Claim the batch upfront so a concurrent cron tick sees the incremented
