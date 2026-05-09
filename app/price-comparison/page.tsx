@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { fetchJSON } from '@/lib/api-client';
 import { formatPrice } from '@/lib/price-utils';
 import { HotelCombobox } from '@/app/components/HotelCombobox';
+import type { ScanSummary } from '@/app/api/scan-results/summary/route';
 
 type ScanRow = {
   id: number;
@@ -127,7 +128,7 @@ function matchesStatus(row: DisplayRow, filter: StatusFilter): boolean {
   if (filter === 'booking_cheaper_gt5')  return pct > 5;
   if (filter === 'booking_cheaper_lte5') return pct > 0 && pct <= 5;
   if (filter === 'booking_cheaper')      return pct > 0;
-  if (filter === 'amello_cheaper')       return pct <= 0;
+  if (filter === 'amello_cheaper')       return pct < 0;
   return true;
 }
 
@@ -316,6 +317,7 @@ function PriceComparisonPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [loadingHotels, setLoadingHotels] = React.useState(false);
+  const [scanSummary, setScanSummary] = React.useState<ScanSummary | null>(null);
 
   const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir }>({ key: 'check_in_date', dir: 'asc' });
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>(
@@ -363,7 +365,7 @@ function PriceComparisonPage() {
 
   // Step 1: fetch hotel list for the scan (lightweight), reset page when scan/filter changes
   React.useEffect(() => {
-    if (!selectedScanId) { setScanHotels([]); return; }
+    if (!selectedScanId) { setScanHotels([]); setScanSummary(null); return; }
     setLoadingHotels(true);
     setDisplayPage(1);
     const params = new URLSearchParams({ scanID: selectedScanId.toString() });
@@ -373,6 +375,13 @@ function PriceComparisonPage() {
       .catch(e => { setError(e.message); setScanHotels([]); })
       .finally(() => setLoadingHotels(false));
     loadScanDetails(selectedScanId);
+
+    // Fetch scan-wide summary counts (independent of pagination)
+    const summaryParams = new URLSearchParams({ scanID: selectedScanId.toString() });
+    if (selectedHotelIds.length > 0) summaryParams.append('hotelId', selectedHotelIds.join(','));
+    fetchJSON(`/api/scan-results/summary?${summaryParams}`, { cache: 'no-store' })
+      .then(data => setScanSummary(data as ScanSummary))
+      .catch(() => setScanSummary(null));
   }, [selectedScanId, selectedHotelIds, loadScanDetails]);
 
   // Step 2: fetch comparison rows for current page's hotel slice whenever page/size/hotels change
@@ -633,8 +642,8 @@ function PriceComparisonPage() {
                 <div className="col-md-3"><strong>Booking only:</strong> {summary.bookingOnly}</div>
               </div>
               <div className="row g-2 mt-1">
-                <div className="col-md-3 text-success"><strong>Amello cheaper:</strong> {summary.amelloCheaper}</div>
-                <div className="col-md-3 text-danger"><strong>Booking cheaper:</strong> {summary.bookingCheaper}</div>
+                <div className="col-md-3 text-success"><strong>Amello cheaper:</strong> {scanSummary != null ? scanSummary.amello_cheaper : summary.amelloCheaper}</div>
+                <div className="col-md-3 text-danger"><strong>Booking cheaper:</strong> {scanSummary != null ? scanSummary.booking_cheaper : summary.bookingCheaper}</div>
                 <div className="col-md-3"><strong>Same price:</strong> {summary.same}</div>
                 <div className="col-md-3">
                   {summary.avgAmello  && <span><strong>Avg Amello:</strong> {summary.avgAmello}</span>}
