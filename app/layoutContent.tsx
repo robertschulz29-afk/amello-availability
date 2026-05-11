@@ -13,6 +13,7 @@ const NAV = [
       { href: '/portfolio-health', icon: 'fa-heart-pulse',            label: 'Portfolio Health' },
       { href: '/rate-comparison',  icon: 'fa-arrow-right-arrow-left', label: 'Rate Report' },
       { href: '/scan-results',     icon: 'fa-table-list',             label: 'Scan Results' },
+      { href: '/room-imagery',     icon: 'fa-images',                 label: 'Room Imagery' },
     ],
   },
   {
@@ -20,6 +21,7 @@ const NAV = [
     links: [
       { href: '/status-overview', icon: 'fa-magnifying-glass', label: 'Scan Setup' },
       { href: '/room-mappings',   icon: 'fa-bed',      label: 'Room Mappings' },
+      { href: '/imagery-mappings', icon: 'fa-image',   label: 'Imagery Mappings' },
       { href: '/hotels',          icon: 'fa-building', label: 'Hotels' },
       { href: '/settings',        icon: 'fa-gear',     label: 'Settings' },
     ],

@@ -57,6 +57,8 @@ export async function POST(): Promise<NextResponse> {
   }
 
   // ── Step 2: fetch detail for each hotel in parallel ──────────────────────
+  type WohnImage = { roomName: string; imageUrl: string };
+
   type Row = {
     name: string;
     code: string;
@@ -66,6 +68,7 @@ export async function POST(): Promise<NextResponse> {
     country: string | null;
     bookable: boolean;
     active: boolean;
+    wohnImages: WohnImage[];
   };
 
   const rows: Row[] = [];
@@ -77,6 +80,16 @@ export async function POST(): Promise<NextResponse> {
         const body = await amelloFetch(`${AMELLO_BASE}/hotel/${code}?locale=${LOCALE}`);
         const d = body?.data ?? body;
 
+        const wohnImages = (d.details?.images ?? [])
+          .filter((img: any) => typeof img.title === 'string' && img.title.startsWith('Wohnbeispiel ') && img.url)
+          .reduce((acc: WohnImage[], img: any) => {
+            const roomName = img.title.slice('Wohnbeispiel '.length);
+            if (!acc.find(x => x.roomName === roomName)) {
+              acc.push({ roomName, imageUrl: img.url });
+            }
+            return acc;
+          }, []);
+
         rows.push({
           name:       d.name              ?? code,
           code,
@@ -86,6 +99,7 @@ export async function POST(): Promise<NextResponse> {
           country:    d.location?.country ?? null,
           bookable:   d.bookable          ?? true,
           active:     !(d.inactive        ?? false), // API has `inactive`, DB has `active`
+          wohnImages,
         });
         successfulCodes.push(code);
       } catch (e: any) {
@@ -117,6 +131,23 @@ export async function POST(): Promise<NextResponse> {
          active     = EXCLUDED.active`,
       [v.name, v.code, v.brand, v.base_image, v.region, v.country, v.bookable, v.active],
     );
+  }
+
+  // ── Step 3b: upsert room imagery (Wohnbeispiel images) ──────────────────
+  for (const v of rows) {
+    if (!v.wohnImages.length) continue;
+    const hotelRow = await query(`SELECT id FROM hotels WHERE code = $1`, [v.code]);
+    const hotelId = hotelRow.rows[0]?.id;
+    if (!hotelId) continue;
+    for (const img of v.wohnImages) {
+      await query(
+        `INSERT INTO room_imagery (hotel_id, room_name, image_url, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (hotel_id, room_name)
+         DO UPDATE SET image_url = EXCLUDED.image_url, updated_at = NOW()`,
+        [hotelId, img.roomName, img.imageUrl],
+      );
+    }
   }
 
   // ── Step 4: fetch TUI global types per hotel via GraphQL ────────────────
