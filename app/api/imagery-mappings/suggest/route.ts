@@ -71,29 +71,48 @@ export async function POST(req: NextRequest) {
     }
 
     // Call Claude API
-    const prompt = `You are a hotel room name matching assistant. Your job is to match room names from two different systems for the same hotel.
+    const prompt = `You are a hotel room name matching assistant. Your job is to match hotel room names across two systems for the same hotel.
 
-Scan room names (from booking system):
+IMPORTANT: The scan names are in ENGLISH. The TUI imagery names are in GERMAN. You must match across languages by room type and attributes, not by literal string similarity.
+
+Common translations to guide you:
+- Suite = Suite
+- Junior Suite = Junior Suite
+- Superior = Superior / Deluxe
+- Executive = Executive / Premium
+- Ocean View / Sea View = Meerblick / Seeblick
+- Garden View = Gartenblick
+- Pool View = Poolblick
+- Private Pool = Privater Pool / Eigenem Pool
+- Whirlpool / Jacuzzi = Whirlpool / Jacuzzi
+- Family = Familie / Familien
+- Bedroom = Schlafzimmer
+- King = King / Kingsize
+- Two Bedroom = Zwei Schlafzimmer / 2-Schlafzimmer
+- Promotion = Promotion / Aktions
+
+Scan room names (English, from price scan):
 ${unmappedScanRooms.map((r, i) => `${i + 1}. ${r}`).join('\n')}
 
-TUI imagery room names (from TUI content):
+TUI imagery room names (German, from hotel content):
 ${imageryRooms.map((r, i) => `${i + 1}. ${r}`).join('\n')}
 
-Match each scan room to the best TUI imagery room. Names may differ slightly in wording but describe the same room type.
+For each scan room, find the best matching TUI imagery room based on room type, category, view, and features — ignoring language differences.
 
 Rules:
-- Only match rooms that genuinely refer to the same room type
-- A TUI imagery room can be matched to multiple scan rooms if appropriate
-- If no good match exists for a scan room, set confidence to 0
+- Match by room concept, not by string similarity — these are translations of the same rooms
+- A TUI imagery room can match multiple scan rooms if appropriate
+- Set confidence to 0 if genuinely no match exists
 - confidence is a float between 0 and 1
+- Prefer higher confidence when the key attributes (room type + view + special features) all align
 
 Respond ONLY with a JSON array, no markdown, no explanation:
 [
   {
-    "scan_room": "exact scan room name",
-    "imagery_room": "exact TUI imagery room name",
+    "scan_room": "exact scan room name from the list above",
+    "imagery_room": "exact TUI imagery room name from the list above",
     "confidence": 0.95,
-    "reasoning": "brief explanation"
+    "reasoning": "brief explanation of why these match across languages"
   }
 ]`;
 
