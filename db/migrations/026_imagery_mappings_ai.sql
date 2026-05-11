@@ -1,0 +1,3 @@
+ALTER TABLE imagery_mappings
+  ADD COLUMN IF NOT EXISTS source     TEXT    NOT NULL DEFAULT 'manual',
+  ADD COLUMN IF NOT EXISTS confidence NUMERIC;

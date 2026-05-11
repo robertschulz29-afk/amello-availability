@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     // All imagery mappings
     const mappingsQ = await query(
-      `SELECT id, hotel_id, imagery_room_name, scan_room_name, updated_at
+      `SELECT id, hotel_id, imagery_room_name, scan_room_name, source, confidence, updated_at
        FROM imagery_mappings
        WHERE hotel_id = ANY($1::int[])
        ORDER BY hotel_id, imagery_room_name, scan_room_name`,
@@ -94,11 +94,11 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/imagery-mappings
-// Body: { hotelId, imageryRoomName, scanRoomName }
+// Body: { hotelId, imageryRoomName, scanRoomName, source?, confidence? }
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { hotelId, imageryRoomName, scanRoomName } = body;
+    const { hotelId, imageryRoomName, scanRoomName, source, confidence } = body;
 
     if (!hotelId || !imageryRoomName || !scanRoomName) {
       return NextResponse.json(
@@ -107,11 +107,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const resolvedSource: string = source === 'ai' ? 'ai' : 'manual';
+    const resolvedConfidence: number | null = typeof confidence === 'number' ? confidence : null;
+
     const result = await sql`
-      INSERT INTO imagery_mappings (hotel_id, imagery_room_name, scan_room_name)
-      VALUES (${Number(hotelId)}, ${imageryRoomName}, ${scanRoomName})
+      INSERT INTO imagery_mappings (hotel_id, imagery_room_name, scan_room_name, source, confidence)
+      VALUES (${Number(hotelId)}, ${imageryRoomName}, ${scanRoomName}, ${resolvedSource}, ${resolvedConfidence})
       ON CONFLICT (hotel_id, scan_room_name) DO UPDATE
         SET imagery_room_name = EXCLUDED.imagery_room_name,
+            source            = EXCLUDED.source,
+            confidence        = EXCLUDED.confidence,
             updated_at        = NOW()
       RETURNING *
     `;
