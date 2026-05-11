@@ -28,11 +28,15 @@ export async function POST(req: NextRequest) {
     `;
     const alreadyMapped = new Set(existingMappings.rows.map((r: any) => r.scan_room_name));
 
-    // Scan rooms from hotel_room_names (amello source)
+    // Scan rooms from actual price scan responses (same source as room-mappings/suggest)
     const scanRoomsQ = await sql`
-      SELECT room_name
-      FROM hotel_room_names
-      WHERE hotel_id = ${hotelId} AND source = 'amello'
+      SELECT DISTINCT elem->>'name' AS room_name
+      FROM scan_results sr,
+           jsonb_array_elements(sr.response_json->'rooms') AS elem
+      WHERE sr.hotel_id = ${hotelId}
+        AND sr.source   = 'amello'
+        AND sr.status   = 'green'
+        AND elem->>'name' IS NOT NULL
       ORDER BY room_name
     `;
 
