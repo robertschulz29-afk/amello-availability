@@ -15,10 +15,10 @@ export async function GET(req: NextRequest) {
     const bookable = searchParams.get('bookable');
 
     const conditions: string[] = [];
-    if (active === 'true')    conditions.push(`h.active = true`);
-    if (active === 'false')   conditions.push(`h.active = false`);
-    if (bookable === 'true')  conditions.push(`h.bookable = true`);
-    if (bookable === 'false') conditions.push(`h.bookable = false`);
+    if (active === 'true')    conditions.push(`active = true`);
+    if (active === 'false')   conditions.push(`active = false`);
+    if (bookable === 'true')  conditions.push(`bookable = true`);
+    if (bookable === 'false') conditions.push(`bookable = false`);
     const hotelWhere = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     // All hotels (optionally filtered)
