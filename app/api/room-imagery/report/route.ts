@@ -15,15 +15,13 @@ export async function GET(req: NextRequest) {
     const bookable    = searchParams.get('bookable');
     const missingOnly = searchParams.get('missingOnly');
 
-    const conditions: string[] = [`hrn.source = 'amello'`];
-
-    if (active === 'true')      conditions.push(`h.active = true`);
-    if (active === 'false')     conditions.push(`h.active = false`);
-    if (bookable === 'true')    conditions.push(`h.bookable = true`);
-    if (bookable === 'false')   conditions.push(`h.bookable = false`);
-    if (missingOnly === 'true') conditions.push(`ri.image_url IS NULL`);
-
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const hotelConditions: string[] = [];
+    if (active === 'true')    hotelConditions.push(`h.active = true`);
+    if (active === 'false')   hotelConditions.push(`h.active = false`);
+    if (bookable === 'true')  hotelConditions.push(`h.bookable = true`);
+    if (bookable === 'false') hotelConditions.push(`h.bookable = false`);
+    const hotelWhere = hotelConditions.length ? `AND ${hotelConditions.join(' AND ')}` : '';
+    const missingFilter = missingOnly === 'true' ? `AND ri.image_url IS NULL` : '';
 
     const result = await query(
       `SELECT
@@ -31,17 +29,24 @@ export async function GET(req: NextRequest) {
          h.name AS hotel_name,
          h.active,
          h.bookable,
-         hrn.room_name   AS scan_room_name,
+         sr_rooms.room_name AS scan_room_name,
          im.imagery_room_name,
          ri.image_url
-       FROM hotel_room_names hrn
-       JOIN hotels h ON h.id = hrn.hotel_id
+       FROM (
+         SELECT DISTINCT sr.hotel_id, elem->>'name' AS room_name
+         FROM scan_results sr,
+              jsonb_array_elements(sr.response_json->'rooms') AS elem
+         WHERE sr.source = 'amello'
+           AND sr.status = 'green'
+           AND elem->>'name' IS NOT NULL
+       ) sr_rooms
+       JOIN hotels h ON h.id = sr_rooms.hotel_id
        LEFT JOIN imagery_mappings im
-         ON im.hotel_id = hrn.hotel_id AND im.scan_room_name = hrn.room_name
+         ON im.hotel_id = sr_rooms.hotel_id AND im.scan_room_name = sr_rooms.room_name
        LEFT JOIN room_imagery ri
          ON ri.hotel_id = im.hotel_id AND ri.room_name = im.imagery_room_name
-       ${where}
-       ORDER BY h.name, hrn.room_name`,
+       WHERE 1=1 ${hotelWhere} ${missingFilter}
+       ORDER BY h.name, sr_rooms.room_name`,
       [],
     );
 

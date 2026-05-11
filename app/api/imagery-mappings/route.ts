@@ -48,12 +48,16 @@ export async function GET(req: NextRequest) {
       [hotelIds],
     );
 
-    // Scan rooms (amello source)
+    // Scan rooms direct from price scan responses (same source as suggest route)
     const scanRoomsQ = await query(
-      `SELECT hotel_id, room_name
-       FROM hotel_room_names
-       WHERE hotel_id = ANY($1::int[]) AND source = 'amello'
-       ORDER BY hotel_id, room_name`,
+      `SELECT DISTINCT sr.hotel_id, elem->>'name' AS room_name
+       FROM scan_results sr,
+            jsonb_array_elements(sr.response_json->'rooms') AS elem
+       WHERE sr.hotel_id = ANY($1::int[])
+         AND sr.source   = 'amello'
+         AND sr.status   = 'green'
+         AND elem->>'name' IS NOT NULL
+       ORDER BY sr.hotel_id, room_name`,
       [hotelIds],
     );
 
