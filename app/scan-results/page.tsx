@@ -89,6 +89,27 @@ function buildSourceUrl(result: ScanResult, stayNights: number): string | null {
   return null;
 }
 
+function RateNameCell({ name, description }: { name: string | null; description: string | null }) {
+  const [open, setOpen] = React.useState(false);
+  const descId = React.useId();
+  if (!description) return <span>{name ?? '—'}</span>;
+  return (
+    <span>
+      <button
+        className="btn btn-link btn-sm p-0 text-start text-decoration-none lh-sm"
+        style={{ fontSize: 'inherit' }}
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-controls={descId}
+      >
+        {name ?? '—'}
+        <span className="ms-1 text-muted" style={{ fontSize: '0.7em' }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && <div id={descId} className="text-muted mt-1" style={{ fontSize: '0.8em', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>{description}</div>}
+    </span>
+  );
+}
+
 function getSourceDisplay(source?: string) {
   if (source === 'booking')        return { label: 'Booking (Standard)', badgeClass: 'bg-info' };
   if (source === 'booking_member') return { label: 'Booking (Member)',   badgeClass: 'bg-primary' };
@@ -312,10 +333,10 @@ export default function Page() {
                 </thead>
                 <tbody>
                   {results.map(result => {
-                    const { roomName, rateName, price: actualPrice, currency, memberPrice: basePrice } =
+                    const { roomName, rateName, rateDescription, price: actualPrice, currency, memberPrice: basePrice } =
                       result.status === 'green'
                         ? extractLowestPrice(result.response_json)
-                        : { roomName: null, rateName: null, price: null, currency: null, memberPrice: null };
+                        : { roomName: null, rateName: null, rateDescription: null, price: null, currency: null, memberPrice: null };
                     const stayNights = scans.find(s => s.id === result.scan_id)?.stay_nights ?? 7;
                     const { label, badgeClass } = getSourceDisplay(result.source);
                     return (
@@ -330,7 +351,7 @@ export default function Page() {
                         </td>
                         <td><span className={`badge ${badgeClass}`}>{label}</span></td>
                         <td className="small">{roomName ?? '—'}</td>
-                        <td className="small">{rateName ?? '—'}</td>
+                        <td className="small"><RateNameCell name={rateName} description={result.source === 'amello' ? rateDescription : null} /></td>
                         <td className="text-end text-nowrap">{formatPrice(actualPrice, currency)}</td>
                         <td className="text-end text-nowrap">
                           {basePrice != null

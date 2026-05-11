@@ -34,6 +34,7 @@ type RateRow = {
   amello_currency: string | null;
   amello_room_name: string | null;
   amello_rate_name: string | null;
+  amello_rate_description: string | null;
   booking_min_price: number | null;
   booking_member_min_price: number | null;
   booking_currency: string | null;
@@ -85,6 +86,29 @@ type BestRateSortKey = 'check_in_date' | 'amello_min_price' | 'booking_min_price
 type AllRatesSortKey = 'check_in_date' | 'price_amello' | 'price_booking' | 'diff';
 type SortDir = 'asc' | 'desc';
 type StatusFilter = 'all' | 'amello_only' | 'booking_only' | 'booking_cheaper_gt5' | 'booking_cheaper_lte5' | 'booking_cheaper' | 'amello_cheaper';
+
+// ─── components ───────────────────────────────────────────────────────────────
+
+function RateNameCell({ name, description }: { name: string | null; description: string | null }) {
+  const [open, setOpen] = React.useState(false);
+  const descId = React.useId();
+  if (!description) return <span>{name ?? '—'}</span>;
+  return (
+    <span>
+      <button
+        className="btn btn-link btn-sm p-0 text-start text-decoration-none lh-sm"
+        style={{ fontSize: 'inherit' }}
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-controls={descId}
+      >
+        {name ?? '—'}
+        <span className="ms-1 text-muted" style={{ fontSize: '0.7em' }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && <div id={descId} className="text-muted mt-1" style={{ fontSize: '0.8em', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>{description}</div>}
+    </span>
+  );
+}
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -200,7 +224,7 @@ function matchesAllRatesStatus(row: DisplayRow, filter: StatusFilter): boolean {
   if (filter === 'booking_cheaper_gt5')  return pct > 5;
   if (filter === 'booking_cheaper_lte5') return pct > 0 && pct <= 5;
   if (filter === 'booking_cheaper')      return pct > 0;
-  if (filter === 'amello_cheaper')       return pct <= 0;
+  if (filter === 'amello_cheaper')       return pct < 0;
   return true;
 }
 
@@ -627,7 +651,11 @@ function RateComparisonPage() {
               <tr key={i} className={rateBgClass(r)}>
                 <td className="text-nowrap">{fmtDate(r.check_in_date)}</td>
                 <td className="small">{r.amello_room_name  || <span className="text-muted">—</span>}</td>
-                <td className="small">{r.amello_rate_name  || <span className="text-muted">—</span>}</td>
+                <td className="small">
+                  {r.amello_rate_name
+                    ? <RateNameCell name={r.amello_rate_name} description={r.amello_rate_description} />
+                    : <span className="text-muted">—</span>}
+                </td>
                 <td className="small">{r.booking_room_name || <span className="text-muted">—</span>}</td>
                 <td className="small">{r.booking_rate_name || <span className="text-muted">—</span>}</td>
                 <td className="text-end text-nowrap">{a != null ? formatPrice(a, currency) : <span className="text-muted">—</span>}</td>
