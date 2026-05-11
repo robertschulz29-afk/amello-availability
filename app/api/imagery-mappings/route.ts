@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // GET /api/imagery-mappings
-// Optional: ?active=true, ?bookable=true
+// Optional: ?active=true|false, ?bookable=true|false
 // Returns { hotels: HotelData[] }
 export async function GET(req: NextRequest) {
   try {
@@ -15,8 +15,10 @@ export async function GET(req: NextRequest) {
     const bookable = searchParams.get('bookable');
 
     const conditions: string[] = [];
-    if (active === 'true')   conditions.push(`h.active = true`);
-    if (bookable === 'true') conditions.push(`h.bookable = true`);
+    if (active === 'true')    conditions.push(`h.active = true`);
+    if (active === 'false')   conditions.push(`h.active = false`);
+    if (bookable === 'true')  conditions.push(`h.bookable = true`);
+    if (bookable === 'false') conditions.push(`h.bookable = false`);
     const hotelWhere = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     // All hotels (optionally filtered)

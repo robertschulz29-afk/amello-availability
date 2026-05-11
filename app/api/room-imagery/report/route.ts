@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // GET /api/room-imagery/report
-// Optional: ?active=true, ?bookable=true, ?missingOnly=true
+// Optional: ?active=true|false, ?bookable=true|false, ?missingOnly=true
 // Returns [{ hotel_id, hotel_name, active, bookable, scan_room_name, imagery_room_name, image_url }]
 export async function GET(req: NextRequest) {
   try {
@@ -18,7 +18,9 @@ export async function GET(req: NextRequest) {
     const conditions: string[] = [`hrn.source = 'amello'`];
 
     if (active === 'true')      conditions.push(`h.active = true`);
+    if (active === 'false')     conditions.push(`h.active = false`);
     if (bookable === 'true')    conditions.push(`h.bookable = true`);
+    if (bookable === 'false')   conditions.push(`h.bookable = false`);
     if (missingOnly === 'true') conditions.push(`ri.image_url IS NULL`);
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

@@ -242,14 +242,15 @@ export default function Page() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError]     = React.useState<string | null>(null);
   const [search, setSearch]   = React.useState('');
-  const [filterActive,   setFilterActive]   = React.useState(false);
-  const [filterBookable, setFilterBookable] = React.useState(false);
+  type FilterBool = 'all' | 'true' | 'false';
+  const [filterActive,   setFilterActive]   = React.useState<FilterBool>('true');
+  const [filterBookable, setFilterBookable] = React.useState<FilterBool>('true');
 
   const load = React.useCallback(async () => {
     try {
       const params = new URLSearchParams();
-      if (filterActive)   params.set('active',   'true');
-      if (filterBookable) params.set('bookable',  'true');
+      if (filterActive   !== 'all') params.set('active',   filterActive);
+      if (filterBookable !== 'all') params.set('bookable', filterBookable);
       const qs = params.toString() ? `?${params.toString()}` : '';
       const data = await fetchJSON(`/api/imagery-mappings${qs}`, { cache: 'no-store' });
       setHotels(data.hotels ?? []);
@@ -297,25 +298,25 @@ export default function Page() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
-          <div className="form-check form-switch mb-0 ms-2">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              id="filterActive"
-              checked={filterActive}
-              onChange={e => setFilterActive(e.target.checked)}
-            />
-            <label className="form-check-label" htmlFor="filterActive">Active only</label>
+          <div>
+            <label className="form-label fw-semibold mb-1 d-block small">Active</label>
+            <div className="btn-group btn-group-sm" role="group">
+              {(['all', 'true', 'false'] as FilterBool[]).map(v => (
+                <button key={v} type="button" className={`btn ${filterActive === v ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={() => setFilterActive(v)}>
+                  {v === 'all' ? 'All' : v === 'true' ? 'Yes' : 'No'}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="form-check form-switch mb-0">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              id="filterBookable"
-              checked={filterBookable}
-              onChange={e => setFilterBookable(e.target.checked)}
-            />
-            <label className="form-check-label" htmlFor="filterBookable">Bookable only</label>
+          <div>
+            <label className="form-label fw-semibold mb-1 d-block small">Bookable</label>
+            <div className="btn-group btn-group-sm" role="group">
+              {(['all', 'true', 'false'] as FilterBool[]).map(v => (
+                <button key={v} type="button" className={`btn ${filterBookable === v ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={() => setFilterBookable(v)}>
+                  {v === 'all' ? 'All' : v === 'true' ? 'Yes' : 'No'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
