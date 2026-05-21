@@ -5,9 +5,9 @@ import { query } from '@/lib/db';
 // Cached after first resolution — chromium-min download is slow
 let chromiumPath: string | undefined;
 
-// Must match the installed @sparticuz/chromium-min version
+// Must match the installed @sparticuz/chromium-min version. Vercel runs x64.
 const CHROMIUM_REMOTE_URL =
-  'https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.tar';
+  'https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar';
 
 async function getChromiumPath(): Promise<string> {
   if (chromiumPath) return chromiumPath;
