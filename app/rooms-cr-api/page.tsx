@@ -157,27 +157,49 @@ export default function RoomsCrApiPage() {
     }
   }
 
-  function exportCsv() {
-    const headers = ['Hotel', 'Code', 'Active', 'Bookable', 'Scan Rooms', 'Scan Room Names', 'CR-API Rooms', 'CR-API Room Names'];
-    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const rows = visibleEntries.map(e => [
-      escape(e.hotel.name),
-      escape(e.hotel.code),
-      e.hotel.active === true ? 'Yes' : e.hotel.active === false ? 'No' : '',
-      e.hotel.bookable === true ? 'Yes' : e.hotel.bookable === false ? 'No' : '',
-      String(e.scanRoomCount ?? ''),
-      escape((e.scanRoomNames ?? []).join('; ')),
-      String(e.crRoomCount ?? ''),
-      escape((e.crRoomNames ?? []).join('; ')),
-    ]);
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  function downloadCsv(csv: string, filename: string) {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `rooms-cr-api-scan${selectedScanId ?? ''}.csv`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportCsv() {
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const headers = ['Hotel Code', 'Hotel Name', 'Count Scan Rooms', 'Count API Rooms'];
+    const rows = visibleEntries.map(e => [
+      esc(e.hotel.code),
+      esc(e.hotel.name),
+      String(e.scanRoomCount ?? ''),
+      String(e.crRoomCount ?? ''),
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    downloadCsv(csv, `rooms-summary-scan${selectedScanId ?? ''}.csv`);
+  }
+
+  function exportDetailCsv() {
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const headers = ['Room Name', 'CR-API', 'Scan', 'Hotel Name', 'Hotel ID'];
+    const rows: string[][] = [];
+    for (const e of visibleEntries) {
+      const crSet = new Set(e.crRoomNames ?? []);
+      const scanSet = new Set(e.scanRoomNames ?? []);
+      const allRooms = Array.from(new Set([...crSet, ...scanSet])).sort();
+      for (const room of allRooms) {
+        rows.push([
+          esc(room),
+          crSet.has(room) ? 'Y' : 'N',
+          scanSet.has(room) ? 'Y' : 'N',
+          esc(e.hotel.name),
+          String(e.hotel.id),
+        ]);
+      }
+    }
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    downloadCsv(csv, `rooms-detail-scan${selectedScanId ?? ''}.csv`);
   }
 
   function triBtn(label: string, value: FilterBool, current: FilterBool, set: (v: FilterBool) => void) {
@@ -296,14 +318,26 @@ export default function RoomsCrApiPage() {
             {/* Export */}
             <div className="col-sm-auto ms-auto">
               <label className="form-label fw-semibold d-block">&nbsp;</label>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-secondary"
-                onClick={exportCsv}
-                disabled={visibleEntries.length === 0}
-              >
-                <i className="fas fa-download me-1" />Export CSV
-              </button>
+              <div className="d-flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={exportCsv}
+                  disabled={visibleEntries.length === 0}
+                  title="Summary: one row per hotel"
+                >
+                  <i className="fas fa-download me-1" />Export CSV
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={exportDetailCsv}
+                  disabled={visibleEntries.length === 0}
+                  title="Details: one row per room"
+                >
+                  <i className="fas fa-list me-1" />Export Details
+                </button>
+              </div>
             </div>
           </div>
         </div>
