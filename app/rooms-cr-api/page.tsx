@@ -231,28 +231,16 @@ export default function RoomsCrApiPage() {
             {selectedScanId && scans.find(s => s.id === selectedScanId)?.store_screenshot && (
               <div className="col-sm-auto">
                 <label className="form-label fw-semibold d-block">Screenshots</label>
-                <div className="d-flex gap-2">
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-secondary"
-                    onClick={captureScreenshots}
-                    disabled={screenshotBusy || deleteBusy}
-                  >
-                    {screenshotBusy
-                      ? <><span className="spinner-border spinner-border-sm me-1" />Capturing…</>
-                      : <><i className="fas fa-camera me-1" />Capture now</>}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-danger"
-                    onClick={deleteScreenshots}
-                    disabled={screenshotBusy || deleteBusy}
-                  >
-                    {deleteBusy
-                      ? <><span className="spinner-border spinner-border-sm me-1" />Deleting…</>
-                      : <><i className="fas fa-trash me-1" />Delete all</>}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={captureScreenshots}
+                  disabled={screenshotBusy}
+                >
+                  {screenshotBusy
+                    ? <><span className="spinner-border spinner-border-sm me-1" />Capturing…</>
+                    : <><i className="fas fa-camera me-1" />Capture now</>}
+                </button>
                 {screenshotMsg && <div className="small mt-1 text-muted">{screenshotMsg}</div>}
               </div>
             )}
