@@ -16,6 +16,8 @@ type HotelEntry = {
   hotel: { id: number; name: string; code: string; brand: string | null };
   screenshot: { url: string } | null;
   roomImagery: Array<{ room_name: string; image_url: string }>;
+  scanRoomCount: number | null;
+  crRoomCount: number | null;
 };
 
 function fmt(iso: string) {
@@ -136,9 +138,19 @@ export default function RoomsCrApiPage() {
 
         {!loading && visibleEntries.map(entry => (
           <div key={entry.hotel.id} className="card mb-4">
-            <div className="card-header fw-semibold">
-              {entry.hotel.name}
-              <span className="ms-2 text-muted fw-normal small">{entry.hotel.code}</span>
+            <div className="card-header fw-semibold d-flex align-items-center gap-3">
+              <span>
+                {entry.hotel.name}
+                <span className="ms-2 text-muted fw-normal small">{entry.hotel.code}</span>
+              </span>
+              <span className="ms-auto d-flex gap-2">
+                <span className="badge bg-secondary fw-normal" title="Distinct room types from amello scan results">
+                  Scan: {entry.scanRoomCount ?? '—'} rooms
+                </span>
+                <span className="badge bg-primary fw-normal" title="Distinct room types from CR-API imagery">
+                  CR-API: {entry.crRoomCount ?? '—'} rooms
+                </span>
+              </span>
             </div>
             <div className="card-body">
               <div className="row g-4">
