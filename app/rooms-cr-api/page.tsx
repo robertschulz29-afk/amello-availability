@@ -40,6 +40,7 @@ export default function RoomsCrApiPage() {
   const [expandedImages, setExpandedImages] = React.useState<Set<number>>(new Set());
   const [screenshotBusy, setScreenshotBusy] = React.useState(false);
   const [screenshotMsg, setScreenshotMsg] = React.useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -93,6 +94,24 @@ export default function RoomsCrApiPage() {
 
     return list;
   }, [entries, selectedHotelIds, countFilter, filterActive, filterBookable]);
+
+  async function deleteScreenshots() {
+    if (!selectedScanId || !confirm('Delete all screenshots for this scan?')) return;
+    setDeleteBusy(true);
+    setScreenshotMsg(null);
+    try {
+      const res = await fetch(`/api/scans/${selectedScanId}/screenshot-batch`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed');
+      setScreenshotMsg(`Deleted ${json.deleted} screenshots.`);
+      const data = await fetchJSON(`/api/rooms-cr-api?scanId=${selectedScanId}`, { cache: 'no-store' });
+      setEntries(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setScreenshotMsg(`Error: ${e.message}`);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
 
   async function captureScreenshots() {
     if (!selectedScanId) return;
@@ -212,16 +231,28 @@ export default function RoomsCrApiPage() {
             {selectedScanId && scans.find(s => s.id === selectedScanId)?.store_screenshot && (
               <div className="col-sm-auto">
                 <label className="form-label fw-semibold d-block">Screenshots</label>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={captureScreenshots}
-                  disabled={screenshotBusy}
-                >
-                  {screenshotBusy
-                    ? <><span className="spinner-border spinner-border-sm me-1" />Capturing…</>
-                    : <><i className="fas fa-camera me-1" />Capture now</>}
-                </button>
+                <div className="d-flex gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={captureScreenshots}
+                    disabled={screenshotBusy || deleteBusy}
+                  >
+                    {screenshotBusy
+                      ? <><span className="spinner-border spinner-border-sm me-1" />Capturing…</>
+                      : <><i className="fas fa-camera me-1" />Capture now</>}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-danger"
+                    onClick={deleteScreenshots}
+                    disabled={screenshotBusy || deleteBusy}
+                  >
+                    {deleteBusy
+                      ? <><span className="spinner-border spinner-border-sm me-1" />Deleting…</>
+                      : <><i className="fas fa-trash me-1" />Delete all</>}
+                  </button>
+                </div>
                 {screenshotMsg && <div className="small mt-1 text-muted">{screenshotMsg}</div>}
               </div>
             )}

@@ -28,22 +28,42 @@ export async function POST(
   }
   const { fixed_checkout: checkOutDate } = scanQ.rows[0];
 
-  // All hotels with at least one green amello result — ordered for stable pagination
+  // All hotels in the scan snapshot. For each, pick a green amello date if one exists,
+  // otherwise any amello date, otherwise fall back to the scan's base_checkin.
   const hotelsQ = await query<{ hotel_id: number; code: string; check_in_date: string }>(
-    `SELECT sr.hotel_id, sh.code,
-            MIN(sr.check_in_date)::text AS check_in_date
-     FROM scan_results sr
-     JOIN scan_hotels sh ON sh.scan_id = sr.scan_id AND sh.hotel_id = sr.hotel_id
-     WHERE sr.scan_id = $1
-       AND sr.source  = 'amello'
-       AND sr.status  = 'green'
-     GROUP BY sr.hotel_id, sh.code
+    `SELECT sh.hotel_id, sh.code,
+            COALESCE(
+              MIN(sr_green.check_in_date)::text,
+              MIN(sr_any.check_in_date)::text,
+              s.base_checkin::text
+            ) AS check_in_date
+     FROM scan_hotels sh
+     JOIN scans s ON s.id = sh.scan_id
+     LEFT JOIN scan_results sr_green
+            ON sr_green.scan_id = sh.scan_id
+           AND sr_green.hotel_id = sh.hotel_id
+           AND sr_green.source   = 'amello'
+           AND sr_green.status   = 'green'
+     LEFT JOIN scan_results sr_any
+            ON sr_any.scan_id = sh.scan_id
+           AND sr_any.hotel_id = sh.hotel_id
+           AND sr_any.source   = 'amello'
+     WHERE sh.scan_id = $1
+     GROUP BY sh.hotel_id, sh.code, s.base_checkin
      ORDER BY sh.code`,
     [scanId],
   );
 
-  const total = hotelsQ.rows.length;
-  const slice = hotelsQ.rows.slice(offset, offset + limit);
+  // Filter out hotels that already have a screenshot for this scan
+  const existingQ = await query<{ hotel_id: number }>(
+    `SELECT hotel_id FROM scan_screenshots WHERE scan_id = $1`,
+    [scanId],
+  );
+  const existingIds = new Set(existingQ.rows.map(r => r.hotel_id));
+  const pending = hotelsQ.rows.filter(h => !existingIds.has(h.hotel_id));
+
+  const total = pending.length;
+  const slice = pending.slice(offset, offset + limit);
   let processed = 0;
   let errors = 0;
 
@@ -68,4 +88,38 @@ export async function POST(
 
   console.log(`[screenshot-batch] scan=${scanId} offset=${offset} processed=${processed} errors=${errors} hasMore=${hasMore}`);
   return NextResponse.json({ processed, errors, total, nextOffset, hasMore });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const scanId = Number(params.id);
+  if (!Number.isFinite(scanId) || scanId <= 0) {
+    return NextResponse.json({ error: 'invalid scan id' }, { status: 400 });
+  }
+
+  // Load existing screenshot paths before deleting DB rows
+  const existingQ = await query<{ hotel_code: string }>(
+    `SELECT hotel_code FROM scan_screenshots WHERE scan_id = $1`,
+    [scanId],
+  );
+  const storagePaths = existingQ.rows.map(r => `scan-${scanId}/${r.hotel_code}.jpg`);
+
+  // Delete DB rows
+  await query(`DELETE FROM scan_screenshots WHERE scan_id = $1`, [scanId]);
+
+  // Delete Storage files (best-effort — don't fail if some are missing)
+  if (storagePaths.length > 0) {
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } },
+    );
+    await supabase.storage.from('scan-screenshots').remove(storagePaths);
+  }
+
+  console.log(`[screenshot-batch] DELETE scan=${scanId} removed=${storagePaths.length}`);
+  return NextResponse.json({ deleted: storagePaths.length });
 }
