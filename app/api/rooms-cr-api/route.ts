@@ -1,6 +1,3 @@
-// app/api/rooms-cr-api/route.ts
-// Returns screenshot + room imagery data for the Rooms/CR-API page.
-
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 
@@ -10,36 +7,46 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const scanId = Number(searchParams.get('scanId'));
-  const hotelId = Number(searchParams.get('hotelId'));
 
   if (!Number.isFinite(scanId) || scanId <= 0) {
     return NextResponse.json({ error: 'invalid scanId' }, { status: 400 });
   }
-  if (!Number.isFinite(hotelId) || hotelId <= 0) {
-    return NextResponse.json({ error: 'invalid hotelId' }, { status: 400 });
-  }
 
   try {
-    const [screenshotQ, imageryQ] = await Promise.all([
-      query<{ screenshot_url: string }>(
-        `SELECT screenshot_url FROM scan_screenshots WHERE scan_id = $1 AND hotel_id = $2 LIMIT 1`,
-        [scanId, hotelId],
+    const [hotelsQ, screenshotsQ, imageryQ] = await Promise.all([
+      query<{ id: number; name: string; code: string; brand: string | null }>(
+        `SELECT id, name, code, brand FROM hotels ORDER BY name`,
+        [],
       ),
-      query<{ room_name: string; image_url: string }>(
-        `SELECT room_name, image_url FROM room_imagery WHERE hotel_id = $1 ORDER BY room_name`,
-        [hotelId],
+      query<{ hotel_id: number; screenshot_url: string }>(
+        `SELECT hotel_id, screenshot_url FROM scan_screenshots WHERE scan_id = $1`,
+        [scanId],
+      ),
+      query<{ hotel_id: number; room_name: string; image_url: string }>(
+        `SELECT hotel_id, room_name, image_url FROM room_imagery ORDER BY hotel_id, room_name`,
+        [],
       ),
     ]);
 
-    const screenshot =
-      screenshotQ.rows.length > 0
-        ? { url: screenshotQ.rows[0].screenshot_url }
-        : null;
+    const screenshotMap = new Map<number, string>();
+    for (const row of screenshotsQ.rows) {
+      screenshotMap.set(row.hotel_id, row.screenshot_url);
+    }
 
-    return NextResponse.json({
-      screenshot,
-      roomImagery: imageryQ.rows,
-    });
+    const imageryMap = new Map<number, Array<{ room_name: string; image_url: string }>>();
+    for (const row of imageryQ.rows) {
+      const arr = imageryMap.get(row.hotel_id) ?? [];
+      arr.push({ room_name: row.room_name, image_url: row.image_url });
+      imageryMap.set(row.hotel_id, arr);
+    }
+
+    const result = hotelsQ.rows.map(h => ({
+      hotel: { id: h.id, name: h.name, code: h.code, brand: h.brand },
+      screenshot: screenshotMap.has(h.id) ? { url: screenshotMap.get(h.id)! } : null,
+      roomImagery: imageryMap.get(h.id) ?? [],
+    }));
+
+    return NextResponse.json(result);
   } catch (e: any) {
     console.error('[GET /api/rooms-cr-api] error', e);
     return NextResponse.json({ error: e.message || 'failed to load data' }, { status: 500 });

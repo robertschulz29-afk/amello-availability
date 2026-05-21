@@ -1,10 +1,8 @@
-// app/rooms-cr-api/page.tsx
 'use client';
 
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
-
-// ── Types ─────────────────────────────────────────────────────────────────────
+import { HotelCombobox } from '@/app/components/HotelCombobox';
 
 type ScanRow = {
   id: number;
@@ -14,51 +12,24 @@ type ScanRow = {
   status: string;
 };
 
-type Hotel = {
-  id: number;
-  name: string;
-  code: string;
-};
-
-type RoomImageryItem = {
-  room_name: string;
-  image_url: string;
-};
-
-type RoomsCrApiData = {
+type HotelEntry = {
+  hotel: { id: number; name: string; code: string; brand: string | null };
   screenshot: { url: string } | null;
-  roomImagery: RoomImageryItem[];
+  roomImagery: Array<{ room_name: string; image_url: string }>;
 };
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(iso: string) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
-// Group imagery by room_name — schema enforces unique (hotel_id, room_name),
-// so each room has exactly one image_url.
-function groupByRoom(items: RoomImageryItem[]): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const item of items) {
-    map.set(item.room_name, item.image_url);
-  }
-  return map;
-}
-
-// ── Page ─────────────────────────────────────────────────────────────────────
-
 export default function RoomsCrApiPage() {
   const [scans, setScans] = React.useState<ScanRow[]>([]);
-  const [hotels, setHotels] = React.useState<Hotel[]>([]);
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
-  const [hotelFilter, setHotelFilter] = React.useState('');
-  const [selectedHotelId, setSelectedHotelId] = React.useState<number | null>(null);
-  const [data, setData] = React.useState<RoomsCrApiData | null>(null);
+  const [entries, setEntries] = React.useState<HotelEntry[]>([]);
+  const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // ── Load scans and hotels on mount ────────────────────────────────────────
   React.useEffect(() => {
     fetchJSON('/api/scans', { cache: 'no-store' })
       .then((list: ScanRow[]) => {
@@ -67,40 +38,30 @@ export default function RoomsCrApiPage() {
         if (sorted.length > 0) setSelectedScanId(sorted[0].id);
       })
       .catch(() => setError('Failed to load scans'));
-
-    fetchJSON('/api/hotels', { cache: 'no-store' })
-      .then((list: Hotel[]) => {
-        setHotels(Array.isArray(list) ? list : []);
-      })
-      .catch(() => setError('Failed to load hotels'));
   }, []);
 
-  // ── Fetch data when both scan + hotel are selected ────────────────────────
   React.useEffect(() => {
-    if (!selectedScanId || !selectedHotelId) {
-      setData(null);
-      return;
-    }
+    if (!selectedScanId) { setEntries([]); return; }
     setLoading(true);
     setError(null);
-    fetchJSON(`/api/rooms-cr-api?scanId=${selectedScanId}&hotelId=${selectedHotelId}`, {
-      cache: 'no-store',
-    })
-      .then((d: RoomsCrApiData) => { setData(d); })
-      .catch((e: Error) => { setError(e.message || 'Failed to load data'); })
+    fetchJSON(`/api/rooms-cr-api?scanId=${selectedScanId}`, { cache: 'no-store' })
+      .then((data: HotelEntry[]) => setEntries(Array.isArray(data) ? data : []))
+      .catch((e: Error) => setError(e.message || 'Failed to load data'))
       .finally(() => setLoading(false));
-  }, [selectedScanId, selectedHotelId]);
+  }, [selectedScanId]);
 
-  // ── Filtered hotel list ───────────────────────────────────────────────────
-  const filteredHotels = React.useMemo(() => {
-    const q = hotelFilter.trim().toLowerCase();
-    if (!q) return hotels;
-    return hotels.filter(
-      h => h.name.toLowerCase().includes(q) || h.code.toLowerCase().includes(q),
-    );
-  }, [hotels, hotelFilter]);
+  // Hotels list derived from entries (already sorted by name from API)
+  const allHotels = React.useMemo(
+    () => entries.map(e => ({ id: e.hotel.id, name: e.hotel.name, code: e.hotel.code, brand: e.hotel.brand ?? undefined })),
+    [entries],
+  );
 
-  const roomGroups = data ? groupByRoom(data.roomImagery) : null;
+  // When selectedHotelIds is empty → show all (same behaviour as hotels page)
+  const visibleEntries = React.useMemo(() => {
+    if (selectedHotelIds.length === 0) return entries;
+    const idSet = new Set(selectedHotelIds);
+    return entries.filter(e => idSet.has(e.hotel.id));
+  }, [entries, selectedHotelIds]);
 
   return (
     <main>
@@ -116,9 +77,8 @@ export default function RoomsCrApiPage() {
 
         {/* ── Selectors ── */}
         <div className="card mb-4">
-          <div className="card-body row g-3">
-            {/* Scan selector */}
-            <div className="col-sm-5">
+          <div className="card-body row g-3 align-items-end">
+            <div className="col-sm-6">
               <label className="form-label fw-semibold">Scan</label>
               <select
                 className="form-select"
@@ -136,34 +96,27 @@ export default function RoomsCrApiPage() {
               </select>
             </div>
 
-            {/* Hotel filter + selector */}
-            <div className="col-sm-7">
-              <label className="form-label fw-semibold">Hotel</label>
-              <input
-                type="text"
-                className="form-control mb-1"
-                placeholder="Filter hotels…"
-                value={hotelFilter}
-                onChange={e => { setHotelFilter(e.target.value); setSelectedHotelId(null); }}
+            <div className="col-sm-6">
+              <label className="form-label fw-semibold">
+                Hotel filter
+                {selectedHotelIds.length > 0 && (
+                  <span className="ms-2 text-muted fw-normal small">
+                    ({selectedHotelIds.length} of {allHotels.length})
+                  </span>
+                )}
+              </label>
+              <HotelCombobox
+                hotels={allHotels}
+                selectedIds={selectedHotelIds}
+                onChange={setSelectedHotelIds}
+                placeholder="All Hotels"
+                size="sm"
               />
-              <select
-                className="form-select"
-                size={5}
-                value={selectedHotelId ?? ''}
-                onChange={e => setSelectedHotelId(Number(e.target.value) || null)}
-              >
-                <option value="">— select a hotel —</option>
-                {filteredHotels.map(h => (
-                  <option key={h.id} value={h.id}>
-                    {h.name} ({h.code})
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
         </div>
 
-        {/* ── Content area ── */}
+        {/* ── Loading ── */}
         {loading && (
           <div className="text-center py-5">
             <div className="spinner-border text-secondary" role="status">
@@ -172,60 +125,63 @@ export default function RoomsCrApiPage() {
           </div>
         )}
 
-        {!loading && selectedScanId && selectedHotelId && data && (
-          <div className="row g-4">
-            {/* Left column — screenshot */}
-            <div className="col-12 col-md-6">
-              <div className="card h-100">
-                <div className="card-header fw-semibold">
-                  <i className="fas fa-camera me-2" />
-                  Scan Screenshot
-                </div>
-                <div className="card-body">
-                  {data.screenshot ? (
+        {/* ── Hotel cards ── */}
+        {!loading && !selectedScanId && (
+          <p className="text-muted">Select a scan to view data.</p>
+        )}
+
+        {!loading && selectedScanId && visibleEntries.length === 0 && (
+          <p className="text-muted">No hotels found.</p>
+        )}
+
+        {!loading && visibleEntries.map(entry => (
+          <div key={entry.hotel.id} className="card mb-4">
+            <div className="card-header fw-semibold">
+              {entry.hotel.name}
+              <span className="ms-2 text-muted fw-normal small">{entry.hotel.code}</span>
+            </div>
+            <div className="card-body">
+              <div className="row g-4">
+                {/* Left column — screenshot */}
+                <div className="col-12 col-md-6">
+                  <div className="fw-semibold small mb-2">
+                    <i className="fas fa-camera me-1" />Scan Screenshot
+                  </div>
+                  {entry.screenshot ? (
                     <img
-                      src={data.screenshot.url}
-                      alt="Hotel page screenshot"
+                      src={entry.screenshot.url}
+                      alt={`${entry.hotel.name} screenshot`}
                       style={{ width: '100%', borderRadius: 4 }}
                     />
                   ) : (
-                    <p className="text-muted mb-0">No screenshot captured for this scan.</p>
+                    <p className="text-muted mb-0 small">No screenshot captured for this scan.</p>
                   )}
                 </div>
-              </div>
-            </div>
 
-            {/* Right column — room imagery */}
-            <div className="col-12 col-md-6">
-              <div className="card h-100">
-                <div className="card-header fw-semibold">
-                  <i className="fas fa-images me-2" />
-                  Room Imagery
-                </div>
-                <div className="card-body">
-                  {roomGroups && roomGroups.size > 0 ? (
-                    Array.from(roomGroups.entries()).map(([roomName, url]) => (
-                      <div key={roomName} className="mb-4">
-                        <h6 className="fw-semibold mb-2">{roomName}</h6>
+                {/* Right column — room imagery */}
+                <div className="col-12 col-md-6">
+                  <div className="fw-semibold small mb-2">
+                    <i className="fas fa-images me-1" />Room Imagery
+                  </div>
+                  {entry.roomImagery.length > 0 ? (
+                    entry.roomImagery.map(item => (
+                      <div key={item.room_name} className="mb-3">
+                        <div className="small fw-semibold mb-1">{item.room_name}</div>
                         <img
-                          src={url}
-                          alt={roomName}
+                          src={item.image_url}
+                          alt={item.room_name}
                           style={{ width: '100%', maxWidth: 260, borderRadius: 4 }}
                         />
                       </div>
                     ))
                   ) : (
-                    <p className="text-muted mb-0">No imagery data for this hotel.</p>
+                    <p className="text-muted mb-0 small">No imagery data for this hotel.</p>
                   )}
                 </div>
               </div>
             </div>
           </div>
-        )}
-
-        {!loading && (!selectedScanId || !selectedHotelId) && (
-          <p className="text-muted">Select a scan and a hotel to view data.</p>
-        )}
+        ))}
       </div>
     </main>
   );
