@@ -108,6 +108,8 @@ export async function POST(req: NextRequest) {
       baseCheckIn = toYMDUTC(dt);
     }
 
+    const storeScreenshot: boolean = body?.storeScreenshot === true;
+
     const days: number =
       Number.isFinite(body?.days) && body.days >= 1 && body.days <= 365 ? Number(body.days) : 86;
 
@@ -152,11 +154,11 @@ export async function POST(req: NextRequest) {
     const ins = await sql`
       INSERT INTO scans (
         fixed_checkout, start_offset, end_offset, stay_nights, timezone,
-        total_cells, done_cells, status, base_checkin, days, sources
+        total_cells, done_cells, status, base_checkin, days, sources, store_screenshot
       )
       VALUES (
         ${fixedCheckout}, 0, ${days - 1}, ${stayNights}, 'Europe/Berlin',
-        ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}, ${sourcesJson}::jsonb
+        ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}, ${sourcesJson}::jsonb, ${storeScreenshot}
       )
       RETURNING id
     `;
@@ -190,6 +192,15 @@ export async function POST(req: NextRequest) {
     // ── Trigger first batch per source ────────────────────────────────────────
     for (const { jobId, source } of jobs) {
       triggerSourceJob(jobId, belloMandator, source);
+    }
+
+    // ── Fire-and-forget screenshot batch (if requested) ───────────────────────
+    if (storeScreenshot) {
+      const batchUrl = `${getBaseUrl()}/api/scans/${scanId}/screenshot-batch`;
+      fetch(batchUrl, { method: 'POST' })
+        .catch((e: Error) =>
+          console.error('[scans] screenshot-batch trigger error:', e.message),
+        );
     }
 
     return NextResponse.json({

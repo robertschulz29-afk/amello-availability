@@ -14,14 +14,15 @@ const NAV = [
       { href: '/rate-comparison',  icon: 'fa-arrow-right-arrow-left', label: 'Rate Report' },
       { href: '/scan-results',     icon: 'fa-table-list',             label: 'Scan Results' },
       { href: '/room-imagery',     icon: 'fa-images',                 label: 'Room Imagery' },
+      { href: '/rooms-cr-api',    icon: 'fa-camera',                 label: 'Rooms/CR-API' },
     ],
   },
   {
     section: 'Setup',
     links: [
       { href: '/status-overview', icon: 'fa-magnifying-glass', label: 'Scan Setup' },
-      { href: '/room-mappings',   icon: 'fa-bed',      label: 'Room Mappings' },
-      { href: '/imagery-mappings', icon: 'fa-image',   label: 'Imagery Mappings' },
+      // { href: '/room-mappings',   icon: 'fa-bed',      label: 'Room Mappings' },   // hidden — do not delete
+      // { href: '/imagery-mappings', icon: 'fa-image',   label: 'Imagery Mappings' }, // hidden — do not delete
       { href: '/hotels',          icon: 'fa-building', label: 'Hotels' },
       { href: '/settings',        icon: 'fa-gear',     label: 'Settings' },
     ],

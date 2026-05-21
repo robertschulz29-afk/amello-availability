@@ -68,6 +68,7 @@ export default function Page() {
   const [days, setDays] = React.useState(86);
   const [stayNights, setStayNights] = React.useState(7);
   const [adultCount, setAdultCount] = React.useState(2);
+  const [storeScreenshot, setStoreScreenshot] = React.useState(false);
 
   const loadScans = React.useCallback(async () => {
     try {
@@ -135,7 +136,7 @@ export default function Page() {
       const res = await fetchJSON('/api/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseCheckIn, days, stayNights, adultCount, sources: enabledSources }),
+        body: JSON.stringify({ baseCheckIn, days, stayNights, adultCount, sources: enabledSources, storeScreenshot }),
       });
       const scanId = Number(res?.scanId);
       if (!Number.isFinite(scanId) || scanId <= 0) throw new Error('Invalid scanId from server');
@@ -234,6 +235,21 @@ export default function Page() {
                 </div>
               </div>
             )}
+            <div className="col-12">
+              <div className="form-check form-switch mb-2">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  id="storeScreenshot"
+                  checked={storeScreenshot}
+                  onChange={e => setStoreScreenshot(e.target.checked)}
+                />
+                <label className="form-check-label" htmlFor="storeScreenshot">
+                  Store screenshot <span className="text-muted small">(adds time)</span>
+                </label>
+              </div>
+            </div>
             <div className="col-12">
               <button
                 className="btn btn-success"
