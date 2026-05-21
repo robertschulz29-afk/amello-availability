@@ -29,6 +29,7 @@ export default function RoomsCrApiPage() {
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
   const [entries, setEntries] = React.useState<HotelEntry[]>([]);
   const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
+  const [countFilter, setCountFilter] = React.useState<'all' | 'crapi_gt' | 'scan_gt' | 'equal'>('all');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -60,10 +61,20 @@ export default function RoomsCrApiPage() {
 
   // When selectedHotelIds is empty → show all (same behaviour as hotels page)
   const visibleEntries = React.useMemo(() => {
-    if (selectedHotelIds.length === 0) return entries;
-    const idSet = new Set(selectedHotelIds);
-    return entries.filter(e => idSet.has(e.hotel.id));
-  }, [entries, selectedHotelIds]);
+    let list = entries;
+    if (selectedHotelIds.length > 0) {
+      const idSet = new Set(selectedHotelIds);
+      list = list.filter(e => idSet.has(e.hotel.id));
+    }
+    if (countFilter === 'crapi_gt') {
+      list = list.filter(e => e.crRoomCount !== null && e.scanRoomCount !== null && e.crRoomCount > e.scanRoomCount);
+    } else if (countFilter === 'scan_gt') {
+      list = list.filter(e => e.crRoomCount !== null && e.scanRoomCount !== null && e.scanRoomCount > e.crRoomCount);
+    } else if (countFilter === 'equal') {
+      list = list.filter(e => e.crRoomCount !== null && e.scanRoomCount !== null && e.crRoomCount === e.scanRoomCount);
+    }
+    return list;
+  }, [entries, selectedHotelIds, countFilter]);
 
   return (
     <main>
@@ -98,7 +109,7 @@ export default function RoomsCrApiPage() {
               </select>
             </div>
 
-            <div className="col-sm-6">
+            <div className="col-sm-4">
               <label className="form-label fw-semibold">
                 Hotel filter
                 {selectedHotelIds.length > 0 && (
@@ -114,6 +125,35 @@ export default function RoomsCrApiPage() {
                 placeholder="All Hotels"
                 size="sm"
               />
+            </div>
+
+            <div className="col-sm-auto">
+              <label className="form-label fw-semibold d-block">Room count</label>
+              <div className="btn-group btn-group-sm">
+                <button
+                  type="button"
+                  className={`btn btn-outline-secondary${countFilter === 'all' ? ' active' : ''}`}
+                  onClick={() => setCountFilter('all')}
+                >All</button>
+                <button
+                  type="button"
+                  className={`btn btn-outline-primary${countFilter === 'crapi_gt' ? ' active' : ''}`}
+                  onClick={() => setCountFilter('crapi_gt')}
+                  title="Hotels where CR-API has more room types than scan"
+                >CR-API &gt; Scan</button>
+                <button
+                  type="button"
+                  className={`btn btn-outline-success${countFilter === 'equal' ? ' active' : ''}`}
+                  onClick={() => setCountFilter('equal')}
+                  title="Hotels where room counts match"
+                >Equal</button>
+                <button
+                  type="button"
+                  className={`btn btn-outline-warning${countFilter === 'scan_gt' ? ' active' : ''}`}
+                  onClick={() => setCountFilter('scan_gt')}
+                  title="Hotels where scan has more room types than CR-API"
+                >Scan &gt; CR-API</button>
+              </div>
             </div>
           </div>
         </div>
