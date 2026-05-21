@@ -76,5 +76,14 @@ export async function checkAndFinalizeScan(scanId: number) {
       ON CONFLICT (hotel_id, source, room_name)
         DO UPDATE SET last_seen_at = NOW()
     `;
+
+    // Trigger screenshot batch if requested — only after all sources are done
+    const scanQ = await sql`SELECT store_screenshot FROM scans WHERE id = ${scanId}`;
+    if (scanQ.rows[0]?.store_screenshot === true) {
+      const batchUrl = `${getBaseUrl()}/api/scans/${scanId}/screenshot-batch`;
+      fetch(batchUrl, { method: 'POST' })
+        .catch((e: Error) => console.error(`[scan] screenshot-batch trigger error scan=${scanId}:`, e.message));
+      console.log(`[scan] Screenshot batch triggered for scan #${scanId}`);
+    }
   }
 }

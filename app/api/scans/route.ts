@@ -194,15 +194,6 @@ export async function POST(req: NextRequest) {
       triggerSourceJob(jobId, belloMandator, source);
     }
 
-    // ── Fire-and-forget screenshot batch (if requested) ───────────────────────
-    if (storeScreenshot) {
-      const batchUrl = `${getBaseUrl()}/api/scans/${scanId}/screenshot-batch`;
-      fetch(batchUrl, { method: 'POST' })
-        .catch((e: Error) =>
-          console.error('[scans] screenshot-batch trigger error:', e.message),
-        );
-    }
-
     return NextResponse.json({
       scanId, totalCells, baseCheckIn, days, stayNights, fixedCheckout,
       sources: enabledSources,
