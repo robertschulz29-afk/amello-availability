@@ -3,17 +3,21 @@ import { sql, query } from '@/lib/db';
 import { captureAndStoreScreenshot } from '@/lib/screenshot';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300;
+export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const scanId = Number(params.id);
   if (!Number.isFinite(scanId) || scanId <= 0) {
     return NextResponse.json({ error: 'invalid scan id' }, { status: 400 });
   }
+
+  const body = await req.json().catch(() => ({}));
+  const offset = Number.isFinite(body?.offset) && body.offset >= 0 ? Number(body.offset) : 0;
+  const limit = Math.max(1, Math.min(10, Number.isFinite(body?.limit) ? Number(body.limit) : 3));
 
   const scanQ = await sql`
     SELECT fixed_checkout::text AS fixed_checkout
@@ -24,7 +28,7 @@ export async function POST(
   }
   const { fixed_checkout: checkOutDate } = scanQ.rows[0];
 
-  // One row per hotel: pick a green amello result's check_in_date; skip hotels with none.
+  // All hotels with at least one green amello result — ordered for stable pagination
   const hotelsQ = await query<{ hotel_id: number; code: string; check_in_date: string }>(
     `SELECT sr.hotel_id, sh.code,
             MIN(sr.check_in_date)::text AS check_in_date
@@ -38,11 +42,12 @@ export async function POST(
     [scanId],
   );
 
-  const hotels = hotelsQ.rows;
+  const total = hotelsQ.rows.length;
+  const slice = hotelsQ.rows.slice(offset, offset + limit);
   let processed = 0;
   let errors = 0;
 
-  for (const hotel of hotels) {
+  for (const hotel of slice) {
     try {
       await captureAndStoreScreenshot({
         hotelCode: hotel.code,
@@ -58,6 +63,9 @@ export async function POST(
     }
   }
 
-  console.log(`[screenshot-batch] scan=${scanId} done — processed=${processed} skipped=${hotelsQ.rows.length - processed - errors} errors=${errors}`);
-  return NextResponse.json({ processed, errors, total: hotels.length });
+  const nextOffset = offset + slice.length;
+  const hasMore = nextOffset < total;
+
+  console.log(`[screenshot-batch] scan=${scanId} offset=${offset} processed=${processed} errors=${errors} hasMore=${hasMore}`);
+  return NextResponse.json({ processed, errors, total, nextOffset, hasMore });
 }

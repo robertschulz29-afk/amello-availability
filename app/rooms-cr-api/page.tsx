@@ -98,12 +98,37 @@ export default function RoomsCrApiPage() {
     if (!selectedScanId) return;
     setScreenshotBusy(true);
     setScreenshotMsg(null);
+
+    let offset = 0;
+    let totalProcessed = 0;
+    let totalErrors = 0;
+    let grandTotal = 0;
+
     try {
-      const res = await fetch(`/api/scans/${selectedScanId}/screenshot-batch`, { method: 'POST' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed');
-      setScreenshotMsg(`Done — ${json.processed} captured, ${json.errors} errors.`);
-      // Reload entries so new screenshots appear
+      while (true) {
+        const res = await fetch(`/api/scans/${selectedScanId}/screenshot-batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ offset, limit: 3 }),
+        });
+
+        if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
+          const text = await res.text().catch(() => '');
+          throw new Error(`Server error (${res.status})${text ? ': ' + text.slice(0, 100) : ''}`);
+        }
+
+        const json = await res.json();
+        totalProcessed += json.processed ?? 0;
+        totalErrors += json.errors ?? 0;
+        grandTotal = json.total ?? grandTotal;
+
+        setScreenshotMsg(`Capturing… ${totalProcessed + totalErrors} / ${grandTotal} done`);
+
+        if (!json.hasMore) break;
+        offset = json.nextOffset;
+      }
+
+      setScreenshotMsg(`Done — ${totalProcessed} captured, ${totalErrors} errors (${grandTotal} total).`);
       const data = await fetchJSON(`/api/rooms-cr-api?scanId=${selectedScanId}`, { cache: 'no-store' });
       setEntries(Array.isArray(data) ? data : []);
     } catch (e: any) {
