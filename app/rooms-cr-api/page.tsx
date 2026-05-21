@@ -13,12 +13,16 @@ type ScanRow = {
 };
 
 type HotelEntry = {
-  hotel: { id: number; name: string; code: string; brand: string | null };
+  hotel: { id: number; name: string; code: string; brand: string | null; active: boolean | null; bookable: boolean | null };
   screenshot: { url: string } | null;
   roomImagery: Array<{ room_name: string; image_url: string }>;
+  scanRoomNames: string[] | null;
+  crRoomNames: string[] | null;
   scanRoomCount: number | null;
   crRoomCount: number | null;
 };
+
+type FilterBool = 'all' | 'true' | 'false';
 
 function fmt(iso: string) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
@@ -30,6 +34,9 @@ export default function RoomsCrApiPage() {
   const [entries, setEntries] = React.useState<HotelEntry[]>([]);
   const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
   const [countFilter, setCountFilter] = React.useState<'all' | 'crapi_gt' | 'scan_gt' | 'equal'>('all');
+  const [filterActive, setFilterActive] = React.useState<FilterBool>('true');
+  const [filterBookable, setFilterBookable] = React.useState<FilterBool>('true');
+  const [expandedImages, setExpandedImages] = React.useState<Set<number>>(new Set());
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -53,15 +60,22 @@ export default function RoomsCrApiPage() {
       .finally(() => setLoading(false));
   }, [selectedScanId]);
 
-  // Hotels list derived from entries (already sorted by name from API)
   const allHotels = React.useMemo(
     () => entries.map(e => ({ id: e.hotel.id, name: e.hotel.name, code: e.hotel.code, brand: e.hotel.brand ?? undefined })),
     [entries],
   );
 
-  // When selectedHotelIds is empty → show all (same behaviour as hotels page)
   const visibleEntries = React.useMemo(() => {
     let list = entries;
+
+    if (filterActive !== 'all') {
+      const want = filterActive === 'true';
+      list = list.filter(e => e.hotel.active === want);
+    }
+    if (filterBookable !== 'all') {
+      const want = filterBookable === 'true';
+      list = list.filter(e => e.hotel.bookable === want);
+    }
     if (selectedHotelIds.length > 0) {
       const idSet = new Set(selectedHotelIds);
       list = list.filter(e => idSet.has(e.hotel.id));
@@ -73,8 +87,45 @@ export default function RoomsCrApiPage() {
     } else if (countFilter === 'equal') {
       list = list.filter(e => e.crRoomCount !== null && e.scanRoomCount !== null && e.crRoomCount === e.scanRoomCount);
     }
+
     return list;
-  }, [entries, selectedHotelIds, countFilter]);
+  }, [entries, selectedHotelIds, countFilter, filterActive, filterBookable]);
+
+  function exportCsv() {
+    const headers = ['Hotel', 'Code', 'Active', 'Bookable', 'Scan Rooms', 'Scan Room Names', 'CR-API Rooms', 'CR-API Room Names'];
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const rows = visibleEntries.map(e => [
+      escape(e.hotel.name),
+      escape(e.hotel.code),
+      e.hotel.active === true ? 'Yes' : e.hotel.active === false ? 'No' : '',
+      e.hotel.bookable === true ? 'Yes' : e.hotel.bookable === false ? 'No' : '',
+      String(e.scanRoomCount ?? ''),
+      escape((e.scanRoomNames ?? []).join('; ')),
+      String(e.crRoomCount ?? ''),
+      escape((e.crRoomNames ?? []).join('; ')),
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rooms-cr-api-scan${selectedScanId ?? ''}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function triBtn(label: string, value: FilterBool, current: FilterBool, set: (v: FilterBool) => void) {
+    const active = current === value;
+    const cls = value === 'true' ? 'success' : value === 'false' ? 'danger' : 'secondary';
+    return (
+      <button
+        key={value}
+        type="button"
+        className={`btn btn-sm btn-outline-${cls}${active ? ' active' : ''}`}
+        onClick={() => set(value)}
+      >{label}</button>
+    );
+  }
 
   return (
     <main>
@@ -88,13 +139,14 @@ export default function RoomsCrApiPage() {
           </div>
         )}
 
-        {/* ── Selectors ── */}
+        {/* ── Filters ── */}
         <div className="card mb-4">
           <div className="card-body row g-3 align-items-end">
-            <div className="col-sm-6">
+            {/* Scan */}
+            <div className="col-sm-4">
               <label className="form-label fw-semibold">Scan</label>
               <select
-                className="form-select"
+                className="form-select form-select-sm"
                 value={selectedScanId ?? ''}
                 onChange={e => setSelectedScanId(Number(e.target.value) || null)}
               >
@@ -109,13 +161,12 @@ export default function RoomsCrApiPage() {
               </select>
             </div>
 
-            <div className="col-sm-4">
+            {/* Hotel combobox */}
+            <div className="col-sm-3">
               <label className="form-label fw-semibold">
-                Hotel filter
+                Hotel
                 {selectedHotelIds.length > 0 && (
-                  <span className="ms-2 text-muted fw-normal small">
-                    ({selectedHotelIds.length} of {allHotels.length})
-                  </span>
+                  <span className="ms-2 text-muted fw-normal small">({selectedHotelIds.length} of {allHotels.length})</span>
                 )}
               </label>
               <HotelCombobox
@@ -127,33 +178,48 @@ export default function RoomsCrApiPage() {
               />
             </div>
 
+            {/* Active filter */}
+            <div className="col-sm-auto">
+              <label className="form-label fw-semibold d-block">Active</label>
+              <div className="btn-group btn-group-sm">
+                {triBtn('All', 'all', filterActive, setFilterActive)}
+                {triBtn('Yes', 'true', filterActive, setFilterActive)}
+                {triBtn('No', 'false', filterActive, setFilterActive)}
+              </div>
+            </div>
+
+            {/* Bookable filter */}
+            <div className="col-sm-auto">
+              <label className="form-label fw-semibold d-block">Bookable</label>
+              <div className="btn-group btn-group-sm">
+                {triBtn('All', 'all', filterBookable, setFilterBookable)}
+                {triBtn('Yes', 'true', filterBookable, setFilterBookable)}
+                {triBtn('No', 'false', filterBookable, setFilterBookable)}
+              </div>
+            </div>
+
+            {/* Room count filter */}
             <div className="col-sm-auto">
               <label className="form-label fw-semibold d-block">Room count</label>
               <div className="btn-group btn-group-sm">
-                <button
-                  type="button"
-                  className={`btn btn-outline-secondary${countFilter === 'all' ? ' active' : ''}`}
-                  onClick={() => setCountFilter('all')}
-                >All</button>
-                <button
-                  type="button"
-                  className={`btn btn-outline-primary${countFilter === 'crapi_gt' ? ' active' : ''}`}
-                  onClick={() => setCountFilter('crapi_gt')}
-                  title="Hotels where CR-API has more room types than scan"
-                >CR-API &gt; Scan</button>
-                <button
-                  type="button"
-                  className={`btn btn-outline-success${countFilter === 'equal' ? ' active' : ''}`}
-                  onClick={() => setCountFilter('equal')}
-                  title="Hotels where room counts match"
-                >Equal</button>
-                <button
-                  type="button"
-                  className={`btn btn-outline-warning${countFilter === 'scan_gt' ? ' active' : ''}`}
-                  onClick={() => setCountFilter('scan_gt')}
-                  title="Hotels where scan has more room types than CR-API"
-                >Scan &gt; CR-API</button>
+                <button type="button" className={`btn btn-outline-secondary${countFilter === 'all' ? ' active' : ''}`} onClick={() => setCountFilter('all')}>All</button>
+                <button type="button" className={`btn btn-outline-primary${countFilter === 'crapi_gt' ? ' active' : ''}`} onClick={() => setCountFilter('crapi_gt')} title="CR-API has more room types than scan">CR-API &gt; Scan</button>
+                <button type="button" className={`btn btn-outline-success${countFilter === 'equal' ? ' active' : ''}`} onClick={() => setCountFilter('equal')} title="Room counts match">Equal</button>
+                <button type="button" className={`btn btn-outline-warning${countFilter === 'scan_gt' ? ' active' : ''}`} onClick={() => setCountFilter('scan_gt')} title="Scan has more room types than CR-API">Scan &gt; CR-API</button>
               </div>
+            </div>
+
+            {/* Export */}
+            <div className="col-sm-auto ms-auto">
+              <label className="form-label fw-semibold d-block">&nbsp;</label>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                onClick={exportCsv}
+                disabled={visibleEntries.length === 0}
+              >
+                <i className="fas fa-download me-1" />Export CSV
+              </button>
             </div>
           </div>
         </div>
@@ -167,17 +233,18 @@ export default function RoomsCrApiPage() {
           </div>
         )}
 
-        {/* ── Hotel cards ── */}
         {!loading && !selectedScanId && (
           <p className="text-muted">Select a scan to view data.</p>
         )}
 
         {!loading && selectedScanId && visibleEntries.length === 0 && (
-          <p className="text-muted">No hotels found.</p>
+          <p className="text-muted">No hotels match the current filters.</p>
         )}
 
+        {/* ── Hotel cards ── */}
         {!loading && visibleEntries.map(entry => (
           <div key={entry.hotel.id} className="card mb-4">
+            {/* Header */}
             <div className="card-header fw-semibold d-flex align-items-center gap-3">
               <span>
                 {entry.hotel.name}
@@ -192,45 +259,77 @@ export default function RoomsCrApiPage() {
                 </span>
               </span>
             </div>
+
             <div className="card-body">
-              <div className="row g-4">
-                {/* Left column — screenshot */}
+              {/* Room name lists */}
+              <div className="row g-3 mb-3">
                 <div className="col-12 col-md-6">
-                  <div className="fw-semibold small mb-2">
-                    <i className="fas fa-camera me-1" />Scan Screenshot
-                  </div>
-                  {entry.screenshot ? (
-                    <img
-                      src={entry.screenshot.url}
-                      alt={`${entry.hotel.name} screenshot`}
-                      style={{ width: '100%', borderRadius: 4 }}
-                    />
+                  <div className="fw-semibold small mb-1">Scan room names</div>
+                  {entry.scanRoomNames && entry.scanRoomNames.length > 0 ? (
+                    <ul className="list-unstyled mb-0 small">
+                      {entry.scanRoomNames.map(n => <li key={n} className="text-muted">{n}</li>)}
+                    </ul>
                   ) : (
-                    <p className="text-muted mb-0 small">No screenshot captured for this scan.</p>
+                    <span className="text-muted small">None</span>
                   )}
                 </div>
-
-                {/* Right column — room imagery */}
                 <div className="col-12 col-md-6">
-                  <div className="fw-semibold small mb-2">
-                    <i className="fas fa-images me-1" />Room Imagery
-                  </div>
-                  {entry.roomImagery.length > 0 ? (
-                    entry.roomImagery.map(item => (
-                      <div key={item.room_name} className="mb-3">
-                        <div className="small fw-semibold mb-1">{item.room_name}</div>
-                        <img
-                          src={item.image_url}
-                          alt={item.room_name}
-                          style={{ width: '100%', maxWidth: 260, borderRadius: 4 }}
-                        />
-                      </div>
-                    ))
+                  <div className="fw-semibold small mb-1">CR-API room names</div>
+                  {entry.crRoomNames && entry.crRoomNames.length > 0 ? (
+                    <ul className="list-unstyled mb-0 small">
+                      {entry.crRoomNames.map(n => <li key={n} className="text-muted">{n}</li>)}
+                    </ul>
                   ) : (
-                    <p className="text-muted mb-0 small">No imagery data for this hotel.</p>
+                    <span className="text-muted small">None</span>
                   )}
                 </div>
               </div>
+
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => setExpandedImages(prev => {
+                    const next = new Set(prev);
+                    if (next.has(entry.hotel.id)) next.delete(entry.hotel.id);
+                    else next.add(entry.hotel.id);
+                    return next;
+                  })}
+                >
+                  <i className={`fas fa-chevron-${expandedImages.has(entry.hotel.id) ? 'up' : 'down'} me-1`} />
+                  {expandedImages.has(entry.hotel.id) ? 'Hide' : 'Show'} images
+                </button>
+              </div>
+
+              {expandedImages.has(entry.hotel.id) && (
+                <>
+                  <hr className="my-3" />
+                  <div className="row g-4">
+                    <div className="col-12 col-md-6">
+                      <div className="fw-semibold small mb-2"><i className="fas fa-camera me-1" />Scan Screenshot</div>
+                      {entry.screenshot ? (
+                        <img src={entry.screenshot.url} alt={`${entry.hotel.name} screenshot`} style={{ width: '100%', borderRadius: 4 }} />
+                      ) : (
+                        <p className="text-muted mb-0 small">No screenshot captured for this scan.</p>
+                      )}
+                    </div>
+
+                    <div className="col-12 col-md-6">
+                      <div className="fw-semibold small mb-2"><i className="fas fa-images me-1" />Room Imagery</div>
+                      {entry.roomImagery.length > 0 ? (
+                        entry.roomImagery.map(item => (
+                          <div key={item.room_name} className="mb-3">
+                            <div className="small fw-semibold mb-1">{item.room_name}</div>
+                            <img src={item.image_url} alt={item.room_name} style={{ width: '100%', maxWidth: 260, borderRadius: 4 }} />
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-muted mb-0 small">No imagery data for this hotel.</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         ))}
