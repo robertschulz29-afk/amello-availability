@@ -43,7 +43,7 @@ export async function GET() {
         s.id, s.scanned_at, s.base_checkin::text AS base_checkin,
         s.fixed_checkout::text AS fixed_checkout,
         s.days, s.stay_nights, s.timezone,
-        s.total_cells, s.done_cells, s.status, s.sources,
+        s.total_cells, s.done_cells, s.status, s.sources, s.store_screenshot,
         COALESCE(
           json_agg(
             json_build_object(

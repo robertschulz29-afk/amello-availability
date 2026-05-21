@@ -10,6 +10,7 @@ type ScanRow = {
   base_checkin: string | null;
   fixed_checkout: string | null;
   status: string;
+  store_screenshot?: boolean;
 };
 
 type HotelEntry = {
@@ -37,6 +38,8 @@ export default function RoomsCrApiPage() {
   const [filterActive, setFilterActive] = React.useState<FilterBool>('true');
   const [filterBookable, setFilterBookable] = React.useState<FilterBool>('true');
   const [expandedImages, setExpandedImages] = React.useState<Set<number>>(new Set());
+  const [screenshotBusy, setScreenshotBusy] = React.useState(false);
+  const [screenshotMsg, setScreenshotMsg] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -90,6 +93,25 @@ export default function RoomsCrApiPage() {
 
     return list;
   }, [entries, selectedHotelIds, countFilter, filterActive, filterBookable]);
+
+  async function captureScreenshots() {
+    if (!selectedScanId) return;
+    setScreenshotBusy(true);
+    setScreenshotMsg(null);
+    try {
+      const res = await fetch(`/api/scans/${selectedScanId}/screenshot-batch`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed');
+      setScreenshotMsg(`Done — ${json.processed} captured, ${json.errors} errors.`);
+      // Reload entries so new screenshots appear
+      const data = await fetchJSON(`/api/rooms-cr-api?scanId=${selectedScanId}`, { cache: 'no-store' });
+      setEntries(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setScreenshotMsg(`Error: ${e.message}`);
+    } finally {
+      setScreenshotBusy(false);
+    }
+  }
 
   function exportCsv() {
     const headers = ['Hotel', 'Code', 'Active', 'Bookable', 'Scan Rooms', 'Scan Room Names', 'CR-API Rooms', 'CR-API Room Names'];
@@ -160,6 +182,24 @@ export default function RoomsCrApiPage() {
                 ))}
               </select>
             </div>
+
+            {/* Screenshot capture button */}
+            {selectedScanId && scans.find(s => s.id === selectedScanId)?.store_screenshot && (
+              <div className="col-sm-auto">
+                <label className="form-label fw-semibold d-block">Screenshots</label>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={captureScreenshots}
+                  disabled={screenshotBusy}
+                >
+                  {screenshotBusy
+                    ? <><span className="spinner-border spinner-border-sm me-1" />Capturing…</>
+                    : <><i className="fas fa-camera me-1" />Capture now</>}
+                </button>
+                {screenshotMsg && <div className="small mt-1 text-muted">{screenshotMsg}</div>}
+              </div>
+            )}
 
             {/* Hotel combobox */}
             <div className="col-sm-3">
