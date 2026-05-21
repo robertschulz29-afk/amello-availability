@@ -38,6 +38,17 @@ A feature is complete when:
 
 ---
 
+## Deployment rules
+
+**Never push to main or deploy to live automatically.** Every deployment costs money and broken deploys are expensive to fix.
+
+1. Always work on a feature branch. Before starting any task, ask the user if a new branch should be created (unless already on one).
+2. When work is done, commit to the feature branch and tell the user it is ready — then stop.
+3. Only merge to main and push when the user explicitly says "deploy", "#deploy", "push to live", or "merge to main".
+4. Never use `--no-verify` to bypass git hooks without explicit user instruction.
+
+---
+
 ## Automatic code review on commit
 
 **Every time a git commit is made, automatically invoke the code-reviewer agent on all changed files before confirming the commit is done.**
