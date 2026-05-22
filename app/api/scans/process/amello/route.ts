@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
             returnDate: cell.checkOut,
             currency: 'EUR',
             roomConfigurations: [{ travellers: { id: 1, adultCount: 2, childrenAges: [] } }],
-            locale: 'de_DE',
+            locale: 'en_DE',
           };
 
           const res = await fetch(`${BASE_URL}/hotel/offer`, {
