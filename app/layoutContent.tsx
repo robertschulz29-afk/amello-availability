@@ -21,8 +21,7 @@ const NAV = [
     section: 'Setup',
     links: [
       { href: '/status-overview', icon: 'fa-magnifying-glass', label: 'Scan Setup' },
-      // { href: '/room-mappings',   icon: 'fa-bed',      label: 'Room Mappings' },   // hidden — do not delete
-      // { href: '/imagery-mappings', icon: 'fa-image',   label: 'Imagery Mappings' }, // hidden — do not delete
+      { href: '/room-mappings',   icon: 'fa-bed',     label: 'Room Mappings' },
       { href: '/hotels',          icon: 'fa-building', label: 'Hotels' },
       { href: '/settings',        icon: 'fa-gear',     label: 'Settings' },
     ],
