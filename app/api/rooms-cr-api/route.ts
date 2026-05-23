@@ -6,83 +6,91 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const scanId = Number(searchParams.get('scanId'));
-
-  if (!Number.isFinite(scanId) || scanId <= 0) {
-    return NextResponse.json({ error: 'invalid scanId' }, { status: 400 });
-  }
+  const playwrightScanIdParam = searchParams.get('playwrightScanId');
 
   try {
-    const [hotelsQ, screenshotsQ, imageryQ, scanRoomNamesQ, crRoomNamesQ] = await Promise.all([
-      query<{ id: number; name: string; code: string; brand: string | null; active: boolean | null; bookable: boolean | null }>(
-        `SELECT id, name, code, brand, active, bookable FROM hotels ORDER BY name`,
+    // Load active+bookable hotels ordered by name
+    const hotelsQ = await query<{ id: number; name: string; code: string; brand: string | null }>(
+      `SELECT id, name, code, brand FROM hotels WHERE active = true AND bookable = true ORDER BY name`,
+      [],
+    );
+
+    // Load all CR-API rooms
+    const crRoomsQ = await query<{
+      hotel_id: number;
+      name: string;
+      room_code: string | null;
+      global_types: string[] | null;
+      image_url: string | null;
+    }>(
+      `SELECT hotel_id, name, room_code, global_types, image_url FROM cr_api_rooms ORDER BY hotel_id, name`,
+      [],
+    );
+
+    // Determine which playwright scan to use
+    let playwrightScanId: number | null = null;
+    if (playwrightScanIdParam) {
+      const n = Number(playwrightScanIdParam);
+      if (Number.isFinite(n) && n > 0) {
+        playwrightScanId = n;
+      }
+    } else {
+      // Most recent done scan
+      const latestQ = await query<{ id: number }>(
+        `SELECT id FROM playwright_scans WHERE status = 'done' ORDER BY id DESC LIMIT 1`,
         [],
-      ),
-      query<{ hotel_id: number; screenshot_url: string }>(
-        `SELECT hotel_id, screenshot_url FROM scan_screenshots WHERE scan_id = $1`,
-        [scanId],
-      ),
-      query<{ hotel_id: number; room_name: string; image_url: string }>(
-        `SELECT hotel_id, name AS room_name, image_url FROM cr_api_rooms ORDER BY hotel_id, name`,
-        [],
-      ),
-      // Distinct room names from amello scan results for this scan
-      query<{ hotel_id: number; room_names: string[] }>(
-        `SELECT sr.hotel_id,
-                array_agg(DISTINCT room->>'name' ORDER BY room->>'name') AS room_names
-         FROM scan_results sr,
-              jsonb_array_elements(sr.response_json->'rooms') AS room
-         WHERE sr.scan_id = $1
-           AND sr.source = 'amello'
-           AND sr.response_json ? 'rooms'
-           AND room->>'name' IS NOT NULL
-         GROUP BY sr.hotel_id`,
-        [scanId],
-      ),
-      // Distinct room names per hotel in cr_api_rooms
-      query<{ hotel_id: number; room_names: string[] }>(
-        `SELECT hotel_id, array_agg(DISTINCT name ORDER BY name) AS room_names
-         FROM cr_api_rooms
-         GROUP BY hotel_id`,
-        [],
-      ),
-    ]);
-
-    const screenshotMap = new Map<number, string>();
-    for (const row of screenshotsQ.rows) {
-      screenshotMap.set(row.hotel_id, row.screenshot_url);
+      );
+      if (latestQ.rows.length > 0) {
+        playwrightScanId = latestQ.rows[0].id;
+      }
     }
 
-    const imageryMap = new Map<number, Array<{ room_name: string; image_url: string }>>();
-    for (const row of imageryQ.rows) {
-      const arr = imageryMap.get(row.hotel_id) ?? [];
-      arr.push({ room_name: row.room_name, image_url: row.image_url });
-      imageryMap.set(row.hotel_id, arr);
+    // Load playwright scan results for the selected scan
+    type PlaywrightResult = {
+      hotel_id: number;
+      occupancy: string;
+      rooms: Array<{ name: string; imageMissing: boolean }> | null;
+      screenshot_url: string | null;
+      error: string | null;
+    };
+
+    let playwrightResults: PlaywrightResult[] = [];
+    if (playwrightScanId !== null) {
+      const prQ = await query<PlaywrightResult>(
+        `SELECT hotel_id, occupancy, rooms, screenshot_url, error
+         FROM playwright_scan_results WHERE scan_id = $1`,
+        [playwrightScanId],
+      );
+      playwrightResults = prQ.rows;
     }
 
-    const scanRoomNamesMap = new Map<number, string[]>();
-    for (const row of scanRoomNamesQ.rows) {
-      scanRoomNamesMap.set(row.hotel_id, row.room_names);
+    // Build maps
+    const crRoomsMap = new Map<number, typeof crRoomsQ.rows>();
+    for (const row of crRoomsQ.rows) {
+      const arr = crRoomsMap.get(row.hotel_id) ?? [];
+      arr.push(row);
+      crRoomsMap.set(row.hotel_id, arr);
     }
 
-    const crRoomNamesMap = new Map<number, string[]>();
-    for (const row of crRoomNamesQ.rows) {
-      crRoomNamesMap.set(row.hotel_id, row.room_names);
+    // playwright results: hotel_id → occupancy → result
+    const playwrightMap = new Map<number, Map<string, PlaywrightResult>>();
+    for (const row of playwrightResults) {
+      let occMap = playwrightMap.get(row.hotel_id);
+      if (!occMap) {
+        occMap = new Map();
+        playwrightMap.set(row.hotel_id, occMap);
+      }
+      occMap.set(row.occupancy, row);
     }
 
-    const result = hotelsQ.rows.map(h => {
-      const scanRoomNames = scanRoomNamesMap.get(h.id) ?? null;
-      const crRoomNames = crRoomNamesMap.get(h.id) ?? null;
-      return {
-        hotel: { id: h.id, name: h.name, code: h.code, brand: h.brand, active: h.active, bookable: h.bookable },
-        screenshot: screenshotMap.has(h.id) ? { url: screenshotMap.get(h.id)! } : null,
-        roomImagery: imageryMap.get(h.id) ?? [],
-        scanRoomNames,
-        crRoomNames,
-        scanRoomCount: scanRoomNames?.length ?? null,
-        crRoomCount: crRoomNames?.length ?? null,
-      };
-    });
+    const result = hotelsQ.rows.map(h => ({
+      hotel: { id: h.id, name: h.name, code: h.code, brand: h.brand },
+      crRooms: crRoomsMap.get(h.id) ?? [],
+      playwrightScanId,
+      playwrightResults: playwrightMap.has(h.id)
+        ? Object.fromEntries(playwrightMap.get(h.id)!)
+        : null,
+    }));
 
     return NextResponse.json(result);
   } catch (e: any) {

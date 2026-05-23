@@ -2,237 +2,314 @@
 
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
-import { HotelCombobox } from '@/app/components/HotelCombobox';
+import { OCCUPANCY_CONFIGS } from '@/lib/playwright-scan-helpers';
 
-type ScanRow = {
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type PlaywrightScan = {
   id: number;
-  scanned_at: string;
-  base_checkin: string | null;
-  fixed_checkout: string | null;
+  check_in: string;
+  take_screenshot: boolean;
   status: string;
-  store_screenshot?: boolean;
+  total: number;
+  processed: number;
+  errors: number;
+  created_at: string;
+  finished_at: string | null;
+};
+
+type CrRoom = {
+  hotel_id: number;
+  name: string;
+  room_code: string | null;
+  global_types: string[] | null;
+  image_url: string | null;
+};
+
+type PlaywrightOccResult = {
+  hotel_id: number;
+  occupancy: string;
+  rooms: Array<{ name: string; imageMissing: boolean }> | null;
+  screenshot_url: string | null;
+  error: string | null;
 };
 
 type HotelEntry = {
-  hotel: { id: number; name: string; code: string; brand: string | null; active: boolean | null; bookable: boolean | null };
-  screenshot: { url: string } | null;
-  roomImagery: Array<{ room_name: string; image_url: string }>;
-  scanRoomNames: string[] | null;
-  crRoomNames: string[] | null;
-  scanRoomCount: number | null;
-  crRoomCount: number | null;
+  hotel: { id: number; name: string; code: string; brand: string | null };
+  crRooms: CrRoom[];
+  playwrightScanId: number | null;
+  playwrightResults: Record<string, PlaywrightOccResult> | null;
 };
 
-type FilterBool = 'all' | 'true' | 'false';
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmt(iso: string) {
-  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+function tomorrow(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
-export default function RoomsCrApiPage() {
-  const [scans, setScans] = React.useState<ScanRow[]>([]);
-  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
-  const [entries, setEntries] = React.useState<HotelEntry[]>([]);
-  const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
-  const [countFilter, setCountFilter] = React.useState<'all' | 'crapi_gt' | 'scan_gt' | 'equal'>('all');
-  const [filterActive, setFilterActive] = React.useState<FilterBool>('true');
-  const [filterBookable, setFilterBookable] = React.useState<FilterBool>('true');
-  const [expandedImages, setExpandedImages] = React.useState<Set<number>>(new Set());
-  const [screenshotBusy, setScreenshotBusy] = React.useState(false);
-  const [screenshotMsg, setScreenshotMsg] = React.useState<string | null>(null);
-  const [deleteBusy, setDeleteBusy] = React.useState(false);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+function fmt(iso: string) {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
 
-  React.useEffect(() => {
-    fetchJSON('/api/scans', { cache: 'no-store' })
-      .then((list: ScanRow[]) => {
-        const sorted = Array.isArray(list) ? [...list].sort((a, b) => b.id - a.id) : [];
-        setScans(sorted);
-        if (sorted.length > 0) setSelectedScanId(sorted[0].id);
-      })
-      .catch(() => setError('Failed to load scans'));
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function RoomsCrApiPage() {
+  // Scan history
+  const [scans, setScans] = React.useState<PlaywrightScan[]>([]);
+  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
+
+  // Hotel data
+  const [entries, setEntries] = React.useState<HotelEntry[]>([]);
+  const [loadingEntries, setLoadingEntries] = React.useState(false);
+  const [entriesError, setEntriesError] = React.useState<string | null>(null);
+
+  // Active scan polling
+  const [activeScanId, setActiveScanId] = React.useState<number | null>(null);
+  const [activeScanStatus, setActiveScanStatus] = React.useState<PlaywrightScan | null>(null);
+
+  // Trigger form
+  const [checkIn, setCheckIn] = React.useState(tomorrow());
+  const [takeScreenshot, setTakeScreenshot] = React.useState(false);
+  const [starting, setStarting] = React.useState(false);
+  const [startError, setStartError] = React.useState<string | null>(null);
+
+  // Expanded accordion state: hotelId → set of occupancy labels
+  const [expandedOcc, setExpandedOcc] = React.useState<Map<number, Set<string>>>(new Map());
+
+  // ── Load scan history ──────────────────────────────────────────────────────
+
+  const loadScans = React.useCallback(async () => {
+    try {
+      const list = await fetchJSON('/api/playwright-scan/scans', { cache: 'no-store' });
+      if (Array.isArray(list)) setScans(list);
+    } catch {
+      // non-fatal
+    }
   }, []);
 
   React.useEffect(() => {
-    if (!selectedScanId) { setEntries([]); return; }
-    setLoading(true);
-    setError(null);
-    fetchJSON(`/api/rooms-cr-api?scanId=${selectedScanId}`, { cache: 'no-store' })
-      .then((data: HotelEntry[]) => setEntries(Array.isArray(data) ? data : []))
-      .catch((e: Error) => setError(e.message || 'Failed to load data'))
-      .finally(() => setLoading(false));
-  }, [selectedScanId]);
+    loadScans();
+  }, [loadScans]);
 
-  const allHotels = React.useMemo(
-    () => entries.map(e => ({ id: e.hotel.id, name: e.hotel.name, code: e.hotel.code, brand: e.hotel.brand ?? undefined })),
-    [entries],
+  // Auto-select most recent done scan on first load
+  React.useEffect(() => {
+    if (scans.length > 0 && selectedScanId === null) {
+      const done = scans.find(s => s.status === 'done');
+      if (done) setSelectedScanId(done.id);
+    }
+  }, [scans, selectedScanId]);
+
+  // ── Load hotel data ────────────────────────────────────────────────────────
+
+  const loadEntries = React.useCallback(
+    async (scanId: number | null) => {
+      setLoadingEntries(true);
+      setEntriesError(null);
+      try {
+        const url =
+          scanId !== null
+            ? `/api/rooms-cr-api?playwrightScanId=${scanId}`
+            : '/api/rooms-cr-api';
+        const data = await fetchJSON(url, { cache: 'no-store' });
+        setEntries(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        setEntriesError(e.message || 'Failed to load data');
+      } finally {
+        setLoadingEntries(false);
+      }
+    },
+    [],
   );
 
-  const visibleEntries = React.useMemo(() => {
-    let list = entries;
+  React.useEffect(() => {
+    loadEntries(selectedScanId);
+  }, [selectedScanId, loadEntries]);
 
-    if (filterActive !== 'all') {
-      const want = filterActive === 'true';
-      list = list.filter(e => e.hotel.active === want);
-    }
-    if (filterBookable !== 'all') {
-      const want = filterBookable === 'true';
-      list = list.filter(e => e.hotel.bookable === want);
-    }
-    if (selectedHotelIds.length > 0) {
-      const idSet = new Set(selectedHotelIds);
-      list = list.filter(e => idSet.has(e.hotel.id));
-    }
-    if (countFilter === 'crapi_gt') {
-      list = list.filter(e => e.crRoomCount !== null && e.scanRoomCount !== null && e.crRoomCount > e.scanRoomCount);
-    } else if (countFilter === 'scan_gt') {
-      list = list.filter(e => e.crRoomCount !== null && e.scanRoomCount !== null && e.scanRoomCount > e.crRoomCount);
-    } else if (countFilter === 'equal') {
-      list = list.filter(e => e.crRoomCount !== null && e.scanRoomCount !== null && e.crRoomCount === e.scanRoomCount);
-    }
+  // ── Polling for active scan ────────────────────────────────────────────────
 
-    return list;
-  }, [entries, selectedHotelIds, countFilter, filterActive, filterBookable]);
+  React.useEffect(() => {
+    if (activeScanId === null) return;
 
-  async function deleteScreenshots() {
-    if (!selectedScanId || !confirm('Delete all screenshots for this scan?')) return;
-    setDeleteBusy(true);
-    setScreenshotMsg(null);
-    try {
-      const res = await fetch(`/api/scans/${selectedScanId}/screenshot-batch`, { method: 'DELETE' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed');
-      setScreenshotMsg(`Deleted ${json.deleted} screenshots.`);
-      const data = await fetchJSON(`/api/rooms-cr-api?scanId=${selectedScanId}`, { cache: 'no-store' });
-      setEntries(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setScreenshotMsg(`Error: ${e.message}`);
-    } finally {
-      setDeleteBusy(false);
-    }
-  }
-
-  async function captureScreenshots() {
-    if (!selectedScanId) return;
-    setScreenshotBusy(true);
-    setScreenshotMsg(null);
-
-    let offset = 0;
-    let totalProcessed = 0;
-    let totalErrors = 0;
-    let grandTotal = 0;
-
-    try {
-      while (true) {
-        const res = await fetch(`/api/scans/${selectedScanId}/screenshot-batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ offset, limit: 3 }),
-        });
-
-        if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
-          const text = await res.text().catch(() => '');
-          throw new Error(`Server error (${res.status})${text ? ': ' + text.slice(0, 100) : ''}`);
+    const interval = setInterval(async () => {
+      try {
+        const data: PlaywrightScan = await fetchJSON(
+          `/api/playwright-scan?scanId=${activeScanId}`,
+          { cache: 'no-store' },
+        );
+        setActiveScanStatus(data);
+        if (data.status === 'done' || data.status === 'cancelled') {
+          clearInterval(interval);
+          setActiveScanId(null);
+          // Reload scan list and results
+          await loadScans();
+          setSelectedScanId(data.id);
         }
-
-        const json = await res.json();
-        totalProcessed += json.processed ?? 0;
-        totalErrors += json.errors ?? 0;
-        grandTotal = json.total ?? grandTotal;
-
-        setScreenshotMsg(`Capturing… ${totalProcessed + totalErrors} / ${grandTotal} done`);
-
-        if (!json.hasMore) break;
-        offset = json.nextOffset;
+      } catch {
+        // ignore transient errors
       }
+    }, 3000);
 
-      setScreenshotMsg(`Done — ${totalProcessed} captured, ${totalErrors} errors (${grandTotal} total).`);
-      const data = await fetchJSON(`/api/rooms-cr-api?scanId=${selectedScanId}`, { cache: 'no-store' });
-      setEntries(Array.isArray(data) ? data : []);
+    return () => clearInterval(interval);
+  }, [activeScanId, loadScans]);
+
+  // ── Start scan ────────────────────────────────────────────────────────────
+
+  async function startScan() {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const res = await fetch('/api/playwright-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkIn, takeScreenshot }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || `Error ${res.status}`);
+      }
+      const { scanId, total } = json as { scanId: number; total: number };
+      setActiveScanId(scanId);
+      setActiveScanStatus({
+        id: scanId,
+        check_in: checkIn,
+        take_screenshot: takeScreenshot,
+        status: 'running',
+        total,
+        processed: 0,
+        errors: 0,
+        created_at: new Date().toISOString(),
+        finished_at: null,
+      });
+      await loadScans();
     } catch (e: any) {
-      setScreenshotMsg(`Error: ${e.message}`);
+      setStartError(e.message || 'Failed to start scan');
     } finally {
-      setScreenshotBusy(false);
+      setStarting(false);
     }
   }
 
-  function downloadCsv(csv: string, filename: string) {
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  // ── Toggle occupancy accordion ─────────────────────────────────────────────
 
-  function exportCsv() {
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const headers = ['Hotel Code', 'Hotel Name', 'Count Scan Rooms', 'Count API Rooms'];
-    const rows = visibleEntries.map(e => [
-      esc(e.hotel.code),
-      esc(e.hotel.name),
-      String(e.scanRoomCount ?? ''),
-      String(e.crRoomCount ?? ''),
-    ]);
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    downloadCsv(csv, `rooms-summary-scan${selectedScanId ?? ''}.csv`);
-  }
-
-  function exportDetailCsv() {
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const headers = ['Room Name', 'CR-API', 'Scan', 'Hotel Name', 'Hotel ID'];
-    const rows: string[][] = [];
-    for (const e of visibleEntries) {
-      const crSet = new Set(e.crRoomNames ?? []);
-      const scanSet = new Set(e.scanRoomNames ?? []);
-      const allRooms = Array.from(new Set([...crSet, ...scanSet])).sort();
-      for (const room of allRooms) {
-        rows.push([
-          esc(room),
-          crSet.has(room) ? 'Y' : 'N',
-          scanSet.has(room) ? 'Y' : 'N',
-          esc(e.hotel.name),
-          String(e.hotel.id),
-        ]);
+  function toggleOcc(hotelId: number, label: string) {
+    setExpandedOcc(prev => {
+      const next = new Map(prev);
+      const set = new Set(next.get(hotelId) ?? []);
+      if (set.has(label)) {
+        set.delete(label);
+      } else {
+        set.add(label);
       }
-    }
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    downloadCsv(csv, `rooms-detail-scan${selectedScanId ?? ''}.csv`);
+      next.set(hotelId, set);
+      return next;
+    });
   }
 
-  function triBtn(label: string, value: FilterBool, current: FilterBool, set: (v: FilterBool) => void) {
-    const active = current === value;
-    const cls = value === 'true' ? 'success' : value === 'false' ? 'danger' : 'secondary';
-    return (
-      <button
-        key={value}
-        type="button"
-        className={`btn btn-sm btn-outline-${cls}${active ? ' active' : ''}`}
-        onClick={() => set(value)}
-      >{label}</button>
-    );
-  }
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const isScanning = activeScanId !== null;
+  const scanPct =
+    activeScanStatus && activeScanStatus.total > 0
+      ? Math.round(
+          ((activeScanStatus.processed + activeScanStatus.errors) / activeScanStatus.total) * 100,
+        )
+      : 0;
 
   return (
     <main>
       <div style={{ maxWidth: '90%', margin: '0 auto' }}>
         <h4 className="mb-3">Rooms / CR-API</h4>
 
-        {error && (
-          <div className="alert alert-danger alert-dismissible" role="alert">
-            {error}
-            <button type="button" className="btn-close" onClick={() => setError(null)} />
-          </div>
-        )}
+        {/* ── Scan trigger card ── */}
+        <div className="card mb-4">
+          <div className="card-header fw-semibold">Playwright Scan</div>
+          <div className="card-body">
+            {startError && (
+              <div className="alert alert-danger alert-dismissible py-2" role="alert">
+                {startError}
+                <button type="button" className="btn-close" onClick={() => setStartError(null)} />
+              </div>
+            )}
 
-        {/* ── Filters ── */}
+            {!isScanning && (
+              <div className="row g-3 align-items-end">
+                <div className="col-sm-auto">
+                  <label className="form-label fw-semibold">Check-In Date</label>
+                  <input
+                    type="date"
+                    className="form-control form-control-sm"
+                    value={checkIn}
+                    onChange={e => setCheckIn(e.target.value)}
+                  />
+                </div>
+                <div className="col-sm-auto d-flex align-items-end pb-1">
+                  <div className="form-check">
+                    <input
+                      type="checkbox"
+                      id="takeScreenshot"
+                      className="form-check-input"
+                      checked={takeScreenshot}
+                      onChange={e => setTakeScreenshot(e.target.checked)}
+                    />
+                    <label className="form-check-label" htmlFor="takeScreenshot">
+                      Take Screenshots
+                    </label>
+                  </div>
+                </div>
+                <div className="col-sm-auto">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={startScan}
+                    disabled={starting || !checkIn}
+                  >
+                    {starting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-1" />
+                        Starting…
+                      </>
+                    ) : (
+                      'Start Scan'
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {isScanning && activeScanStatus && (
+              <div>
+                <div className="d-flex justify-content-between align-items-center mb-1">
+                  <span className="small fw-semibold">
+                    Scanning… {activeScanStatus.processed + activeScanStatus.errors} /{' '}
+                    {activeScanStatus.total} processed
+                    {activeScanStatus.errors > 0 && (
+                      <span className="text-danger ms-2">({activeScanStatus.errors} errors)</span>
+                    )}
+                  </span>
+                  <span className="small text-muted">{scanPct}%</span>
+                </div>
+                <div className="progress" style={{ height: 8 }}>
+                  <div
+                    className="progress-bar progress-bar-striped progress-bar-animated"
+                    role="progressbar"
+                    style={{ width: `${scanPct}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Scan history select ── */}
         <div className="card mb-4">
           <div className="card-body row g-3 align-items-end">
-            {/* Scan */}
-            <div className="col-sm-4">
-              <label className="form-label fw-semibold">Scan</label>
+            <div className="col-sm-5">
+              <label className="form-label fw-semibold">Playwright Scan History</label>
               <select
                 className="form-select form-select-sm"
                 value={selectedScanId ?? ''}
@@ -241,109 +318,17 @@ export default function RoomsCrApiPage() {
                 <option value="">— select a scan —</option>
                 {scans.map(s => (
                   <option key={s.id} value={s.id}>
-                    #{s.id} — {fmt(s.scanned_at)}
-                    {s.base_checkin ? ` (check-in: ${s.base_checkin})` : ''}
-                    {' '}[{s.status}]
+                    #{s.id} — {s.check_in} — {s.status} ({s.processed}/{s.total})
+                    {s.finished_at ? ` — finished ${fmt(s.finished_at)}` : ''}
                   </option>
                 ))}
               </select>
-            </div>
-
-            {/* Screenshot capture button */}
-            {selectedScanId && scans.find(s => s.id === selectedScanId)?.store_screenshot && (
-              <div className="col-sm-auto">
-                <label className="form-label fw-semibold d-block">Screenshots</label>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={captureScreenshots}
-                  disabled={screenshotBusy}
-                >
-                  {screenshotBusy
-                    ? <><span className="spinner-border spinner-border-sm me-1" />Capturing…</>
-                    : <><i className="fas fa-camera me-1" />Capture now</>}
-                </button>
-                {screenshotMsg && <div className="small mt-1 text-muted">{screenshotMsg}</div>}
-              </div>
-            )}
-
-            {/* Hotel combobox */}
-            <div className="col-sm-3">
-              <label className="form-label fw-semibold">
-                Hotel
-                {selectedHotelIds.length > 0 && (
-                  <span className="ms-2 text-muted fw-normal small">({selectedHotelIds.length} of {allHotels.length})</span>
-                )}
-              </label>
-              <HotelCombobox
-                hotels={allHotels}
-                selectedIds={selectedHotelIds}
-                onChange={setSelectedHotelIds}
-                placeholder="All Hotels"
-                size="sm"
-              />
-            </div>
-
-            {/* Active filter */}
-            <div className="col-sm-auto">
-              <label className="form-label fw-semibold d-block">Active</label>
-              <div className="btn-group btn-group-sm">
-                {triBtn('All', 'all', filterActive, setFilterActive)}
-                {triBtn('Yes', 'true', filterActive, setFilterActive)}
-                {triBtn('No', 'false', filterActive, setFilterActive)}
-              </div>
-            </div>
-
-            {/* Bookable filter */}
-            <div className="col-sm-auto">
-              <label className="form-label fw-semibold d-block">Bookable</label>
-              <div className="btn-group btn-group-sm">
-                {triBtn('All', 'all', filterBookable, setFilterBookable)}
-                {triBtn('Yes', 'true', filterBookable, setFilterBookable)}
-                {triBtn('No', 'false', filterBookable, setFilterBookable)}
-              </div>
-            </div>
-
-            {/* Room count filter */}
-            <div className="col-sm-auto">
-              <label className="form-label fw-semibold d-block">Room count</label>
-              <div className="btn-group btn-group-sm">
-                <button type="button" className={`btn btn-outline-secondary${countFilter === 'all' ? ' active' : ''}`} onClick={() => setCountFilter('all')}>All</button>
-                <button type="button" className={`btn btn-outline-primary${countFilter === 'crapi_gt' ? ' active' : ''}`} onClick={() => setCountFilter('crapi_gt')} title="CR-API has more room types than scan">CR-API &gt; Scan</button>
-                <button type="button" className={`btn btn-outline-success${countFilter === 'equal' ? ' active' : ''}`} onClick={() => setCountFilter('equal')} title="Room counts match">Equal</button>
-                <button type="button" className={`btn btn-outline-warning${countFilter === 'scan_gt' ? ' active' : ''}`} onClick={() => setCountFilter('scan_gt')} title="Scan has more room types than CR-API">Scan &gt; CR-API</button>
-              </div>
-            </div>
-
-            {/* Export */}
-            <div className="col-sm-auto ms-auto">
-              <label className="form-label fw-semibold d-block">&nbsp;</label>
-              <div className="d-flex gap-2">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={exportCsv}
-                  disabled={visibleEntries.length === 0}
-                  title="Summary: one row per hotel"
-                >
-                  <i className="fas fa-download me-1" />Export CSV
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={exportDetailCsv}
-                  disabled={visibleEntries.length === 0}
-                  title="Details: one row per room"
-                >
-                  <i className="fas fa-list me-1" />Export Details
-                </button>
-              </div>
             </div>
           </div>
         </div>
 
         {/* ── Loading ── */}
-        {loading && (
+        {loadingEntries && (
           <div className="text-center py-5">
             <div className="spinner-border text-secondary" role="status">
               <span className="visually-hidden">Loading…</span>
@@ -351,106 +336,167 @@ export default function RoomsCrApiPage() {
           </div>
         )}
 
-        {!loading && !selectedScanId && (
-          <p className="text-muted">Select a scan to view data.</p>
-        )}
-
-        {!loading && selectedScanId && visibleEntries.length === 0 && (
-          <p className="text-muted">No hotels match the current filters.</p>
+        {entriesError && (
+          <div className="alert alert-danger" role="alert">
+            {entriesError}
+          </div>
         )}
 
         {/* ── Hotel cards ── */}
-        {!loading && visibleEntries.map(entry => (
-          <div key={entry.hotel.id} className="card mb-4">
-            {/* Header */}
-            <div className="card-header fw-semibold d-flex align-items-center gap-3">
-              <span>
-                {entry.hotel.name}
-                <span className="ms-2 text-muted fw-normal small">{entry.hotel.code}</span>
-              </span>
-              <span className="ms-auto d-flex gap-2">
-                <span className="badge bg-secondary fw-normal" title="Distinct room types from amello scan results">
-                  Scan: {entry.scanRoomCount ?? '—'} rooms
+        {!loadingEntries &&
+          entries.map(entry => (
+            <div key={entry.hotel.id} className="card mb-4">
+              {/* Header */}
+              <div className="card-header fw-semibold d-flex align-items-center gap-3">
+                <span>
+                  {entry.hotel.name}
+                  <span className="ms-2 text-muted fw-normal small">{entry.hotel.code}</span>
                 </span>
-                <span className="badge bg-primary fw-normal" title="Distinct room types from CR-API imagery">
-                  CR-API: {entry.crRoomCount ?? '—'} rooms
+                <span className="ms-auto">
+                  <span
+                    className="badge bg-primary fw-normal"
+                    title="CR-API room count"
+                  >
+                    CR-API: {entry.crRooms.length} rooms
+                  </span>
                 </span>
-              </span>
-            </div>
-
-            <div className="card-body">
-              {/* Room name lists */}
-              <div className="row g-3 mb-3">
-                <div className="col-12 col-md-6">
-                  <div className="fw-semibold small mb-1">Scan room names</div>
-                  {entry.scanRoomNames && entry.scanRoomNames.length > 0 ? (
-                    <ul className="list-unstyled mb-0 small">
-                      {entry.scanRoomNames.map(n => <li key={n} className="text-muted">{n}</li>)}
-                    </ul>
-                  ) : (
-                    <span className="text-muted small">None</span>
-                  )}
-                </div>
-                <div className="col-12 col-md-6">
-                  <div className="fw-semibold small mb-1">CR-API room names</div>
-                  {entry.crRoomNames && entry.crRoomNames.length > 0 ? (
-                    <ul className="list-unstyled mb-0 small">
-                      {entry.crRoomNames.map(n => <li key={n} className="text-muted">{n}</li>)}
-                    </ul>
-                  ) : (
-                    <span className="text-muted small">None</span>
-                  )}
-                </div>
               </div>
 
-              <div className="mt-2">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={() => setExpandedImages(prev => {
-                    const next = new Set(prev);
-                    if (next.has(entry.hotel.id)) next.delete(entry.hotel.id);
-                    else next.add(entry.hotel.id);
-                    return next;
-                  })}
-                >
-                  <i className={`fas fa-chevron-${expandedImages.has(entry.hotel.id) ? 'up' : 'down'} me-1`} />
-                  {expandedImages.has(entry.hotel.id) ? 'Hide' : 'Show'} images
-                </button>
-              </div>
-
-              {expandedImages.has(entry.hotel.id) && (
-                <>
-                  <hr className="my-3" />
-                  <div className="row g-4">
-                    <div className="col-12 col-md-6">
-                      <div className="fw-semibold small mb-2"><i className="fas fa-camera me-1" />Scan Screenshot</div>
-                      {entry.screenshot ? (
-                        <img src={entry.screenshot.url} alt={`${entry.hotel.name} screenshot`} style={{ width: '100%', borderRadius: 4 }} />
-                      ) : (
-                        <p className="text-muted mb-0 small">No screenshot captured for this scan.</p>
-                      )}
-                    </div>
-
-                    <div className="col-12 col-md-6">
-                      <div className="fw-semibold small mb-2"><i className="fas fa-images me-1" />Room Imagery</div>
-                      {entry.roomImagery.length > 0 ? (
-                        entry.roomImagery.map(item => (
-                          <div key={item.room_name} className="mb-3">
-                            <div className="small fw-semibold mb-1">{item.room_name}</div>
-                            <img src={item.image_url} alt={item.room_name} style={{ width: '100%', maxWidth: 260, borderRadius: 4 }} />
+              <div className="card-body">
+                <div className="row g-3">
+                  {/* ── Left: CR-API rooms ── */}
+                  <div className="col-12 col-md-6">
+                    <div className="fw-semibold small mb-2">CR-API Rooms</div>
+                    {entry.crRooms.length === 0 ? (
+                      <p className="text-muted small mb-0">No CR-API rooms synced</p>
+                    ) : (
+                      <div className="d-flex flex-column gap-2">
+                        {entry.crRooms.map((room, idx) => (
+                          <div key={idx} className="d-flex gap-2 align-items-start">
+                            {room.image_url && (
+                              <img
+                                src={room.image_url}
+                                alt={room.name}
+                                style={{
+                                  width: 56,
+                                  height: 40,
+                                  objectFit: 'cover',
+                                  borderRadius: 4,
+                                  flexShrink: 0,
+                                }}
+                              />
+                            )}
+                            <div>
+                              <div className="small fw-semibold">{room.name}</div>
+                              {room.room_code && (
+                                <div className="small text-muted">{room.room_code}</div>
+                              )}
+                              {room.global_types && room.global_types.length > 0 && (
+                                <div className="d-flex flex-wrap gap-1 mt-1">
+                                  {room.global_types.map(gt => (
+                                    <span key={gt} className="badge bg-secondary fw-normal small">
+                                      {gt}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        ))
-                      ) : (
-                        <p className="text-muted mb-0 small">No imagery data for this hotel.</p>
-                      )}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </>
-              )}
+
+                  {/* ── Right: Playwright results ── */}
+                  <div className="col-12 col-md-6">
+                    <div className="fw-semibold small mb-2">Playwright Results</div>
+                    {entry.playwrightResults === null ? (
+                      <p className="text-muted small mb-0">
+                        No scan data — run a scan above
+                      </p>
+                    ) : (
+                      <div className="accordion accordion-flush" id={`acc-${entry.hotel.id}`}>
+                        {OCCUPANCY_CONFIGS.map(occ => {
+                          const result = entry.playwrightResults?.[occ.label] ?? null;
+                          const isOpen =
+                            expandedOcc.get(entry.hotel.id)?.has(occ.label) ?? false;
+                          return (
+                            <div key={occ.label} className="accordion-item">
+                              <h2 className="accordion-header">
+                                <button
+                                  className={`accordion-button py-2 small${isOpen ? '' : ' collapsed'}`}
+                                  type="button"
+                                  onClick={() => toggleOcc(entry.hotel.id, occ.label)}
+                                >
+                                  <span className="me-2">{occ.label}</span>
+                                  {result && !result.error && result.rooms !== null && (
+                                    <span className="badge bg-secondary fw-normal">
+                                      {result.rooms.length} rooms
+                                    </span>
+                                  )}
+                                  {result?.error && (
+                                    <span className="badge bg-danger fw-normal">Error</span>
+                                  )}
+                                  {!result && (
+                                    <span className="badge bg-light text-muted fw-normal">
+                                      Not scanned
+                                    </span>
+                                  )}
+                                </button>
+                              </h2>
+                              {isOpen && (
+                                <div className="accordion-collapse">
+                                  <div className="accordion-body py-2 px-3">
+                                    {!result ? (
+                                      <p className="text-muted small mb-0">Not scanned</p>
+                                    ) : result.error ? (
+                                      <p className="text-danger small mb-0">{result.error}</p>
+                                    ) : (
+                                      <>
+                                        {result.rooms && result.rooms.length > 0 ? (
+                                          <ul className="list-unstyled mb-0 small">
+                                            {result.rooms.map((r, i) => (
+                                              <li key={i} className="mb-1">
+                                                {r.name}
+                                                {r.imageMissing && (
+                                                  <span className="ms-1 text-warning">
+                                                    ⚠ image missing
+                                                  </span>
+                                                )}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        ) : (
+                                          <p className="text-muted small mb-0">No rooms found</p>
+                                        )}
+                                        {result.screenshot_url && (
+                                          <div className="mt-2">
+                                            <img
+                                              src={result.screenshot_url}
+                                              alt={`${entry.hotel.name} ${occ.label}`}
+                                              style={{ width: '100%', borderRadius: 4 }}
+                                            />
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+
+        {!loadingEntries && entries.length === 0 && !entriesError && (
+          <p className="text-muted">No data loaded yet.</p>
+        )}
       </div>
     </main>
   );
