@@ -35,11 +35,25 @@ type PlaywrightOccResult = {
 };
 
 type HotelEntry = {
-  hotel: { id: number; name: string; code: string; brand: string | null };
+  hotel: { id: number; name: string; code: string; brand: string | null; region: string | null; country: string | null };
   crRooms: CrRoom[];
   playwrightScanId: number | null;
   playwrightResults: Record<string, PlaywrightOccResult> | null;
 };
+
+type GroupBy = 'none' | 'brand' | 'region';
+type AttentionFilter = 'all' | 'attention' | 'fixable';
+
+function hasAttention(entry: HotelEntry): boolean {
+  if (!entry.playwrightResults) return false;
+  return Object.values(entry.playwrightResults).some(r => r.rooms?.some(rm => rm.imageMissing));
+}
+
+function isFixable(entry: HotelEntry): boolean {
+  const hasMissingImg = Object.values(entry.playwrightResults ?? {}).some(r => r.rooms?.some(rm => rm.imageMissing));
+  const hasCrImages = entry.crRooms.some(r => r.image_url);
+  return hasMissingImg && hasCrImages;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -79,8 +93,38 @@ export default function RoomsCrApiPage() {
   const [starting, setStarting] = React.useState(false);
   const [startError, setStartError] = React.useState<string | null>(null);
 
-  // Expanded accordion state: hotelId → set of occupancy labels
   const [expandedOcc, setExpandedOcc] = React.useState<Map<number, Set<string>>>(new Map());
+
+  // ── Filters & grouping ────────────────────────────────────────────────────
+  const [nameFilter, setNameFilter] = React.useState('');
+  const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
+  const [attentionFilter, setAttentionFilter] = React.useState<AttentionFilter>('all');
+
+  const filtered = React.useMemo(() => {
+    const q = nameFilter.trim().toLowerCase();
+    return entries.filter(e => {
+      if (q && !e.hotel.name.toLowerCase().includes(q) && !e.hotel.code.toLowerCase().includes(q)) return false;
+      if (attentionFilter === 'attention' && !hasAttention(e)) return false;
+      if (attentionFilter === 'fixable' && !isFixable(e)) return false;
+      return true;
+    });
+  }, [entries, nameFilter, attentionFilter]);
+
+  const groups = React.useMemo(() => {
+    if (groupBy === 'none') {
+      return filtered.map(e => ({ key: String(e.hotel.id), label: e.hotel.name, entries: [e] }));
+    }
+    const map = new Map<string, HotelEntry[]>();
+    for (const e of filtered) {
+      const key = groupBy === 'brand' ? (e.hotel.brand ?? '(No Brand)') : (e.hotel.region ?? '(No Region)');
+      const arr = map.get(key) ?? [];
+      arr.push(e);
+      map.set(key, arr);
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, es]) => ({ key, label: key, entries: es.sort((a, b) => a.hotel.name.localeCompare(b.hotel.name)) }));
+  }, [filtered, groupBy]);
 
   // ── Load scan history ──────────────────────────────────────────────────────
 
@@ -305,24 +349,46 @@ export default function RoomsCrApiPage() {
           </div>
         </div>
 
-        {/* ── Scan history select ── */}
-        <div className="card mb-4">
-          <div className="card-body row g-3 align-items-end">
-            <div className="col-sm-5">
-              <label className="form-label fw-semibold">Playwright Scan History</label>
-              <select
-                className="form-select form-select-sm"
-                value={selectedScanId ?? ''}
-                onChange={e => setSelectedScanId(Number(e.target.value) || null)}
-              >
-                <option value="">— select a scan —</option>
-                {scans.map(s => (
-                  <option key={s.id} value={s.id}>
-                    #{s.id} — {s.check_in} — {s.status} ({s.processed}/{s.total})
-                    {s.finished_at ? ` — finished ${fmt(s.finished_at)}` : ''}
-                  </option>
-                ))}
-              </select>
+        {/* ── Filters & grouping toolbar ── */}
+        <div className="card mb-3">
+          <div className="card-body py-2">
+            <div className="d-flex flex-wrap align-items-end gap-3">
+              <div>
+                <label className="form-label form-label-sm mb-1 fw-semibold">Filter hotel</label>
+                <input type="text" className="form-control form-control-sm" style={{ width: 200 }} placeholder="Name or code…" value={nameFilter} onChange={e => setNameFilter(e.target.value)} />
+              </div>
+              <div>
+                <label className="form-label form-label-sm mb-1 fw-semibold">Group by</label>
+                <div className="btn-group btn-group-sm">
+                  {(['none', 'brand', 'region'] as GroupBy[]).map(g => (
+                    <button key={g} type="button" className={`btn btn-outline-secondary${groupBy === g ? ' active' : ''}`} onClick={() => setGroupBy(g)}>
+                      {g === 'none' ? 'Per Hotel' : g.charAt(0).toUpperCase() + g.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="form-label form-label-sm mb-1 fw-semibold">Filter</label>
+                <div className="btn-group btn-group-sm">
+                  <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'all' ? ' active' : ''}`} onClick={() => setAttentionFilter('all')}>All</button>
+                  <button type="button" className={`btn btn-outline-warning${attentionFilter === 'attention' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'attention' ? 'all' : 'attention')}>⚠ Attention needed</button>
+                  <button type="button" className={`btn btn-outline-info${attentionFilter === 'fixable' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'fixable' ? 'all' : 'fixable')}>⚡ Fix potential</button>
+                </div>
+              </div>
+              <div className="ms-auto d-flex align-items-end gap-3">
+                <span className="small text-muted">{filtered.length} hotel{filtered.length !== 1 ? 's' : ''}</span>
+                <div>
+                  <label className="form-label form-label-sm mb-1 fw-semibold">Scan</label>
+                  <select className="form-select form-select-sm" style={{ minWidth: 240 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value) || null)}>
+                    <option value="">— no scan selected —</option>
+                    {scans.map(s => (
+                      <option key={s.id} value={s.id}>
+                        #{s.id} — {s.check_in} — {s.status} ({s.processed}/{s.total})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -343,22 +409,28 @@ export default function RoomsCrApiPage() {
         )}
 
         {/* ── Hotel cards ── */}
-        {!loadingEntries &&
-          entries.map(entry => (
-            <div key={entry.hotel.id} className="card mb-4">
+        {!loadingEntries && groups.map(group => (
+          <div key={group.key}>
+            {groupBy !== 'none' && (
+              <div className="d-flex align-items-center gap-2 mb-2 mt-3">
+                <h6 className="mb-0 fw-bold">{group.label}</h6>
+                <span className="badge bg-secondary fw-normal">{group.entries.length}</span>
+              </div>
+            )}
+            {group.entries.map(entry => (
+            <div key={entry.hotel.id} className="card mb-3">
               {/* Header */}
-              <div className="card-header fw-semibold d-flex align-items-center gap-3">
+              <div className="card-header fw-semibold d-flex align-items-center gap-2 flex-wrap">
                 <span>
                   {entry.hotel.name}
                   <span className="ms-2 text-muted fw-normal small">{entry.hotel.code}</span>
+                  {entry.hotel.brand && <span className="ms-2 badge bg-light text-dark fw-normal">{entry.hotel.brand}</span>}
+                  {entry.hotel.region && <span className="ms-1 text-muted fw-normal small">{entry.hotel.region}{entry.hotel.country ? `, ${entry.hotel.country}` : ''}</span>}
                 </span>
-                <span className="ms-auto">
-                  <span
-                    className="badge bg-primary fw-normal"
-                    title="CR-API room count"
-                  >
-                    CR-API: {entry.crRooms.length} rooms
-                  </span>
+                <span className="ms-auto d-flex gap-2 align-items-center">
+                  {hasAttention(entry) && <span className="badge bg-warning text-dark">⚠ attention</span>}
+                  {isFixable(entry) && <span className="badge bg-info text-dark">⚡ fixable</span>}
+                  <span className="badge bg-primary fw-normal">CR-API: {entry.crRooms.length}</span>
                 </span>
               </div>
 
@@ -493,9 +565,11 @@ export default function RoomsCrApiPage() {
               </div>
             </div>
           ))}
+          </div>
+        ))}
 
-        {!loadingEntries && entries.length === 0 && !entriesError && (
-          <p className="text-muted">No data loaded yet.</p>
+        {!loadingEntries && filtered.length === 0 && !entriesError && (
+          <p className="text-muted">{entries.length === 0 ? 'No data loaded yet.' : 'No hotels match the current filters.'}</p>
         )}
       </div>
     </main>

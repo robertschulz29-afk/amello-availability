@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
 
   try {
     // Load active+bookable hotels ordered by name
-    const hotelsQ = await query<{ id: number; name: string; code: string; brand: string | null }>(
-      `SELECT id, name, code, brand FROM hotels WHERE active = true AND bookable = true ORDER BY name`,
+    const hotelsQ = await query<{ id: number; name: string; code: string; brand: string | null; region: string | null; country: string | null }>(
+      `SELECT id, name, code, brand, region, country FROM hotels WHERE active = true AND bookable = true ORDER BY name`,
       [],
     );
 
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
     }
 
     const result = hotelsQ.rows.map(h => ({
-      hotel: { id: h.id, name: h.name, code: h.code, brand: h.brand },
+      hotel: { id: h.id, name: h.name, code: h.code, brand: h.brand, region: h.region, country: h.country },
       crRooms: crRoomsMap.get(h.id) ?? [],
       playwrightScanId,
       playwrightResults: playwrightMap.has(h.id)
