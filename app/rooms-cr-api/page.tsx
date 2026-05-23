@@ -108,6 +108,214 @@ const QUALITY_COLORS: Record<Quality, string> = {
   horrible: 'danger',
 };
 
+// ── Mapping table helpers ─────────────────────────────────────────────────────
+
+type MappingRow = {
+  key:      string;
+  crCode:   string;
+  scanCode: string;
+  crName:   string;
+  scanName: string;
+  inCr:     boolean;
+  inScan:   boolean;
+  inBoth:   boolean;
+  imgCr:    boolean;
+  imgScan:  boolean;
+  imgBoth:  boolean;
+};
+
+function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, PlaywrightOccResult> | null): MappingRow[] {
+  // Deduplicate scan rooms across all occupancies: a room "has image" if !imageMissing in any occ
+  const scanRoomMap = new Map<string, { roomCode: string; roomName: string; hasImage: boolean }>();
+  for (const result of Object.values(playwrightResults ?? {})) {
+    for (const r of result.rooms ?? []) {
+      const key = r.roomCode || r.roomName;
+      const existing = scanRoomMap.get(key);
+      const hasImage = !r.imageMissing;
+      if (!existing || hasImage) {
+        scanRoomMap.set(key, { roomCode: r.roomCode, roomName: r.roomName, hasImage: hasImage || (existing?.hasImage ?? false) });
+      }
+    }
+  }
+
+  // CR-API: image map and name→code map
+  const crImgMap = new Map<string, boolean>();
+  const crNameToKey = new Map<string, string>();
+  for (const r of crRooms) {
+    const key = r.room_code || r.name;
+    crImgMap.set(key, !!r.image_url);
+    if (r.room_code) crNameToKey.set(r.name.trim().toLowerCase(), r.room_code);
+  }
+
+  const allCodes = new Map<string, { crCode: string; scanCode: string; crName: string; scanName: string; inCr: boolean; inScan: boolean; imgCr: boolean; imgScan: boolean }>();
+
+  for (const r of crRooms) {
+    const key = r.room_code || r.name;
+    if (!allCodes.has(key)) allCodes.set(key, { crCode: '', scanCode: '', crName: '', scanName: '', inCr: false, inScan: false, imgCr: false, imgScan: false });
+    const entry = allCodes.get(key)!;
+    entry.crCode = r.room_code ?? '';
+    entry.crName = r.name;
+    entry.inCr   = true;
+    entry.imgCr  = !!r.image_url;
+  }
+
+  for (const [key, data] of scanRoomMap) {
+    const resolvedKey = (!data.roomCode && crNameToKey.has(data.roomName.trim().toLowerCase()))
+      ? crNameToKey.get(data.roomName.trim().toLowerCase())!
+      : key;
+    if (!allCodes.has(resolvedKey)) allCodes.set(resolvedKey, { crCode: '', scanCode: '', crName: '', scanName: '', inCr: false, inScan: false, imgCr: false, imgScan: false });
+    const entry = allCodes.get(resolvedKey)!;
+    entry.scanCode = data.roomCode;
+    entry.scanName = data.roomName;
+    entry.inScan   = true;
+    entry.imgScan  = data.hasImage;
+  }
+
+  return [...allCodes.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, d]) => ({
+      key,
+      crCode:   d.crCode,
+      scanCode: d.scanCode,
+      crName:   d.crName,
+      scanName: d.scanName,
+      inCr:     d.inCr,
+      inScan:   d.inScan,
+      inBoth:   d.inCr && d.inScan,
+      imgCr:    d.imgCr,
+      imgScan:  d.imgScan,
+      imgBoth:  d.imgCr && d.imgScan,
+    }));
+}
+
+type MatchFilter  = 'all' | 'match' | 'mismatch';
+type ImgFilter    = 'all' | 'yes' | 'no';
+
+function MappingTable({ rows }: { rows: MappingRow[] }) {
+  const [matchFilter,  setMatchFilter]  = React.useState<MatchFilter>('all');
+  const [imgCrFilter,  setImgCrFilter]  = React.useState<ImgFilter>('all');
+  const [imgScanFilter, setImgScanFilter] = React.useState<ImgFilter>('all');
+  const [fixableOnly,  setFixableOnly]  = React.useState(false);
+
+  const fixableCount = rows.filter(r => !r.inBoth && r.inCr && !r.inScan && r.imgCr).length
+    + rows.filter(r => !r.inBoth && !r.inCr && r.inScan && !r.imgScan).length;
+
+  const visible = rows.filter(r => {
+    if (fixableOnly) {
+      return (r.inCr && !r.inScan && r.imgCr) || (!r.inCr && r.inScan && !r.imgScan);
+    }
+    if (matchFilter === 'match'    && !r.inBoth) return false;
+    if (matchFilter === 'mismatch' &&  r.inBoth) return false;
+    if (imgCrFilter   === 'yes' && !r.imgCr)   return false;
+    if (imgCrFilter   === 'no'  &&  r.imgCr)   return false;
+    if (imgScanFilter === 'yes' && !r.imgScan)  return false;
+    if (imgScanFilter === 'no'  &&  r.imgScan)  return false;
+    return true;
+  });
+
+  const inBoth    = rows.filter(r => r.inBoth).length;
+  const crOnly    = rows.filter(r => r.inCr  && !r.inScan).length;
+  const scanOnly  = rows.filter(r => r.inScan && !r.inCr).length;
+
+  function reset() {
+    setMatchFilter('all'); setImgCrFilter('all'); setImgScanFilter('all'); setFixableOnly(false);
+  }
+
+  function RadioGroup<T extends string>({ name, value, options, onChange }: { name: string; value: T; options: { val: T; label: string }[]; onChange: (v: T) => void }) {
+    return (
+      <span className="d-inline-flex gap-2 align-items-center">
+        {options.map(o => (
+          <label key={o.val} className="d-flex align-items-center gap-1 small" style={{ cursor: 'pointer' }}>
+            <input type="radio" name={name} checked={value === o.val} onChange={() => onChange(o.val)} style={{ cursor: 'pointer' }} />
+            {o.label}
+          </label>
+        ))}
+      </span>
+    );
+  }
+
+  const yn = (v: boolean) => v
+    ? <span className="text-success fw-semibold">Yes</span>
+    : <span className="text-danger">No</span>;
+
+  return (
+    <div className="mt-3 pt-3 border-top">
+      <div className="fw-semibold small mb-2">
+        Code Mapping — CR-API ↔ Scan
+        <span className="ms-2 text-muted fw-normal">({rows.length} codes)</span>
+      </div>
+
+      {/* Filters */}
+      <div className="d-flex flex-wrap align-items-center gap-3 mb-2 small">
+        <span className="d-flex align-items-center gap-2">
+          <span className="fw-semibold">Match:</span>
+          <RadioGroup name={`match-${rows.length}`} value={matchFilter} options={[{ val: 'all', label: 'All' }, { val: 'match', label: 'Match only' }, { val: 'mismatch', label: 'Missing match' }]} onChange={v => { setMatchFilter(v); setFixableOnly(false); }} />
+        </span>
+        <span className="d-flex align-items-center gap-2">
+          <span className="fw-semibold">Img CR-API:</span>
+          <RadioGroup name={`imgcr-${rows.length}`} value={imgCrFilter} options={[{ val: 'all', label: 'All' }, { val: 'yes', label: 'Yes' }, { val: 'no', label: 'No' }]} onChange={v => { setImgCrFilter(v); setFixableOnly(false); }} />
+        </span>
+        <span className="d-flex align-items-center gap-2">
+          <span className="fw-semibold">Img Scan:</span>
+          <RadioGroup name={`imgscan-${rows.length}`} value={imgScanFilter} options={[{ val: 'all', label: 'All' }, { val: 'yes', label: 'Yes' }, { val: 'no', label: 'No' }]} onChange={v => { setImgScanFilter(v); setFixableOnly(false); }} />
+        </span>
+        {fixableCount > 0 && (
+          <button type="button" className={`btn btn-sm ${fixableOnly ? 'btn-info' : 'btn-outline-info'}`} onClick={() => setFixableOnly(f => !f)}>
+            ⚡ Fixable only ({fixableCount})
+          </button>
+        )}
+        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={reset}>Reset</button>
+      </div>
+
+      {/* Stats bar */}
+      <div className="small text-muted mb-2">
+        {inBoth} matched · {crOnly} CR-API only · {scanOnly} Scan only
+        {fixableCount > 0 && <span className="ms-2 text-info fw-semibold">⚡ {fixableCount} fixable</span>}
+      </div>
+
+      {/* Table */}
+      {visible.length === 0 ? (
+        <p className="text-muted small mb-0">No rows match the current filters.</p>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="table table-sm table-bordered mb-0 small">
+            <thead className="table-light">
+              <tr>
+                <th>Code CR-API</th>
+                <th>Code Scan</th>
+                <th>CR-API Name</th>
+                <th>Scan Name</th>
+                <th className="text-center">In CR-API</th>
+                <th className="text-center">In Scan</th>
+                <th className="text-center">In Both</th>
+                <th className="text-center">Img CR-API</th>
+                <th className="text-center">Img Scan</th>
+                <th className="text-center">Img Both</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(r => (
+                <tr key={r.key} className={!r.inBoth ? 'table-warning' : undefined}>
+                  <td className="font-monospace">{r.crCode || '—'}</td>
+                  <td className="font-monospace">{r.scanCode || '—'}</td>
+                  <td>{r.crName || '—'}</td>
+                  <td>{r.scanName || '—'}</td>
+                  <td className="text-center">{yn(r.inCr)}</td>
+                  <td className="text-center">{yn(r.inScan)}</td>
+                  <td className="text-center">{yn(r.inBoth)}</td>
+                  <td className="text-center">{yn(r.imgCr)}</td>
+                  <td className="text-center">{yn(r.imgScan)}</td>
+                  <td className="text-center">{yn(r.imgBoth)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function tomorrow(): string {
@@ -646,6 +854,11 @@ export default function RoomsCrApiPage() {
                     )}
                   </div>
                 </div>
+
+                {/* ── Mapping table ── */}
+                {(entry.crRooms.length > 0 || entry.playwrightResults !== null) && (
+                  <MappingTable rows={buildMapping(entry.crRooms, entry.playwrightResults)} />
+                )}
               </div>
             </div>
           ))}

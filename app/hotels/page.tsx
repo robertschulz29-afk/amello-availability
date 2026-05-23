@@ -49,6 +49,7 @@ export default function Page() {
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
 
   const [syncBusy, setSyncBusy] = React.useState(false);
+  const [syncBusyCrApi, setSyncBusyCrApi] = React.useState(false);
   const [syncWarnings, setSyncWarnings] = React.useState<string[]>([]);
 
   const [globalTypeOptions, setGlobalTypeOptions] = React.useState<GlobalType[]>([]);
@@ -163,18 +164,38 @@ export default function Page() {
     setSyncWarnings([]);
     setSyncBusy(true);
     try {
-      const result = await fetchJSON('/api/hotels/sync', { method: 'POST' });
+      const result = await fetchJSON('/api/hotels/sync?mode=amello', { method: 'POST' });
       if (result.error) throw new Error(result.error);
       setHotels(Array.isArray(result.hotels) ? result.hotels : []);
       setSyncWarnings(result.errors ?? []);
       setSuccessMsg(
-        `Sync complete: ${result.synced} hotel${result.synced !== 1 ? 's' : ''} synced` +
+        `Amello sync complete: ${result.synced} hotel${result.synced !== 1 ? 's' : ''} synced` +
         (result.skipped > 0 ? `, ${result.skipped} skipped` : '') + '.',
       );
     } catch (e: any) {
       setLoadError(e.message || 'Sync failed');
     } finally {
       setSyncBusy(false);
+    }
+  };
+
+  const updateCrApiData = async () => {
+    setLoadError(null);
+    setSuccessMsg(null);
+    setSyncWarnings([]);
+    setSyncBusyCrApi(true);
+    try {
+      const result = await fetchJSON('/api/hotels/sync?mode=crapi', { method: 'POST' });
+      if (result.error) throw new Error(result.error);
+      setSyncWarnings(result.errors ?? []);
+      setSuccessMsg(
+        `CR-API sync complete: ${result.updated} hotel${result.updated !== 1 ? 's' : ''} updated` +
+        (result.skipped > 0 ? `, ${result.skipped} skipped` : '') + '.',
+      );
+    } catch (e: any) {
+      setLoadError(e.message || 'CR-API sync failed');
+    } finally {
+      setSyncBusyCrApi(false);
     }
   };
 
@@ -339,14 +360,19 @@ export default function Page() {
                 ))}
               </div>
             </div>
-            <div className="ms-auto">
-              <button className="btn btn-dark" onClick={updateHotelList} disabled={syncBusy}>
+            <div className="ms-auto d-flex gap-2">
+              <button className="btn btn-dark" onClick={updateHotelList} disabled={syncBusy || syncBusyCrApi}>
                 {syncBusy
                   ? <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Syncing…</>
                   : 'Update Hotel List'
                 }
               </button>
-              
+              <button className="btn btn-outline-dark" onClick={updateCrApiData} disabled={syncBusy || syncBusyCrApi}>
+                {syncBusyCrApi
+                  ? <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Updating CR-API…</>
+                  : 'Update CR-API Data'
+                }
+              </button>
             </div>
             <button
                   className="btn btn-outline-secondary"
