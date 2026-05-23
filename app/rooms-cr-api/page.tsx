@@ -136,6 +136,68 @@ const QUALITY_DESCRIPTIONS: Record<Quality, string> = {
   horrible: 'No scan room has an image',
 };
 
+// ── Filter help popup ─────────────────────────────────────────────────────────
+
+const FILTER_HELP = [
+  { label: '⚠ Attention needed', desc: 'At least one scan room is missing an image.' },
+  { label: '⚡ Fix potential',    desc: 'At least one scan room has no image AND at least one unmapped CR-API room has an image — a potential source to fill the gap.' },
+];
+
+function FilterHelpButton() {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-label="What do filter options mean?"
+        aria-expanded={open}
+        style={{
+          width: 16, height: 16, padding: 0, fontSize: '0.65rem', lineHeight: 1,
+          border: '1px solid currentColor', borderRadius: '50%',
+          background: 'transparent', cursor: 'pointer', color: 'var(--bs-secondary)',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        ?
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', zIndex: 1060, top: '120%', left: 0,
+          minWidth: 320, background: 'var(--bs-body-bg)',
+          border: '1px solid var(--bs-border-color)', borderRadius: '0.375rem',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: '0.6rem 0.75rem',
+        }}>
+          <div className="d-flex align-items-center justify-content-between mb-2">
+            <span className="small fw-semibold">Filter options</span>
+            <button type="button" className="btn-close btn-close-sm" aria-label="Close" onClick={() => setOpen(false)} style={{ fontSize: '0.65rem' }} />
+          </div>
+          <ul className="list-unstyled mb-0 small">
+            {FILTER_HELP.map(f => (
+              <li key={f.label} className="mb-1">
+                <span className="fw-semibold">{f.label}:</span>{' '}
+                <span className="text-muted">{f.desc}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Quality help popup ────────────────────────────────────────────────────────
 
 function QualityHelpButton() {
@@ -950,7 +1012,10 @@ export default function RoomsCrApiPage() {
                 </div>
               </div>
               <div>
-                <div className="form-label form-label-sm mb-1 fw-semibold" id="lbl-filter">Filter</div>
+                <div className="d-flex align-items-center gap-1 mb-1">
+                  <span className="form-label form-label-sm fw-semibold mb-0" id="lbl-filter">Filter</span>
+                  <FilterHelpButton />
+                </div>
                 <div className="btn-group btn-group-sm" role="group" aria-labelledby="lbl-filter">
                   <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'all' ? ' active' : ''}`} onClick={() => setAttentionFilter('all')}>All</button>
                   <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'attention' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'attention' ? 'all' : 'attention')}>⚠ Attention needed</button>
