@@ -17,7 +17,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const CHUNK_SIZE = 10;
+const CHUNK_SIZE = 1;
 
 let chromiumPath: string | undefined;
 
@@ -45,6 +45,19 @@ export async function POST(req: NextRequest) {
   if (!Number.isFinite(scanId) || scanId <= 0) {
     return NextResponse.json({ error: 'invalid scanId' }, { status: 400 });
   }
+
+  try {
+    return await runChunk({ scanId, offset, takeScreenshot, appUrl });
+  } catch (e: any) {
+    console.error('[process] unhandled error', e.message);
+    await sql`UPDATE playwright_scans SET status = 'failed', finished_at = NOW() WHERE id = ${scanId}`.catch(() => {});
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
+  scanId: number; offset: number; takeScreenshot: boolean; appUrl: string;
+}): Promise<NextResponse> {
 
   // Verify scan still active
   const scanQ = await sql`SELECT status, check_in FROM playwright_scans WHERE id = ${scanId}`;
@@ -97,7 +110,7 @@ export async function POST(req: NextRequest) {
           const page = await browser.newPage();
           await page.setViewport({ width: 1440, height: 900 });
           try {
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
+            await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 });
           } catch {
             // partial load — still try to extract data
           }
