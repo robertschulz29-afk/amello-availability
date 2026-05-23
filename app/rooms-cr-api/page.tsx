@@ -108,6 +108,15 @@ const QUALITY_COLORS: Record<Quality, string> = {
   horrible: 'danger',
 };
 
+const QUALITY_DESCRIPTIONS: Record<Quality, string> = {
+  perfect:  'All scan rooms have images; all names match CR-API exactly',
+  verygood: 'All scan rooms have images; some scan names not in CR-API',
+  good:     'All scan rooms have images; some CR-API rooms with images not in scan',
+  mediocre: 'Most scan rooms have images (≥50%)',
+  poor:     'Fewer than half of scan rooms have images',
+  horrible: 'No scan rooms have images',
+};
+
 // ── CR-API room list (collapsible) ────────────────────────────────────────────
 
 function CrApiRoomList({ rooms }: { rooms: CrRoom[] }) {
@@ -287,8 +296,24 @@ function MappingTable({ rows }: { rows: MappingRow[] }) {
     ? <span className="text-success fw-semibold">Yes</span>
     : <span className="text-danger">No</span>;
 
+  function matchBadge(r: MappingRow) {
+    if (r.inBoth) {
+      return <span className="badge bg-success-subtle text-success-emphasis">Both</span>;
+    }
+    if (r.inCr && !r.inScan) {
+      return <span className="badge bg-warning-subtle text-warning-emphasis">CR-API only</span>;
+    }
+    return <span className="badge bg-danger-subtle text-danger-emphasis">Scan only</span>;
+  }
+
+  function rowClass(r: MappingRow): string | undefined {
+    if (r.inBoth) return undefined;
+    if (r.inCr && !r.inScan) return 'table-warning';
+    return 'table-danger';
+  }
+
   return (
-    <div className="mt-3 pt-3 border-top">
+    <div>
       <div className="fw-semibold small mb-2">
         Code Mapping — CR-API ↔ Scan
         <span className="ms-2 text-muted fw-normal">({rows.length} codes)</span>
@@ -334,9 +359,7 @@ function MappingTable({ rows }: { rows: MappingRow[] }) {
                 <th>Code Scan</th>
                 <th>CR-API Name</th>
                 <th>Scan Name</th>
-                <th className="text-center">In CR-API</th>
-                <th className="text-center">In Scan</th>
-                <th className="text-center">In Both</th>
+                <th className="text-center">Match</th>
                 <th className="text-center">Img CR-API</th>
                 <th className="text-center">Img Scan</th>
                 <th className="text-center">Img Both</th>
@@ -344,14 +367,12 @@ function MappingTable({ rows }: { rows: MappingRow[] }) {
             </thead>
             <tbody>
               {visible.map(r => (
-                <tr key={r.key} className={!r.inBoth ? 'table-warning' : undefined}>
+                <tr key={r.key} className={rowClass(r)}>
                   <td className="font-monospace">{r.crCode || '—'}</td>
                   <td className="font-monospace">{r.scanCode || '—'}</td>
                   <td>{r.crName || '—'}</td>
                   <td>{r.scanName || '—'}</td>
-                  <td className="text-center">{yn(r.inCr)}</td>
-                  <td className="text-center">{yn(r.inScan)}</td>
-                  <td className="text-center">{yn(r.inBoth)}</td>
+                  <td className="text-center">{matchBadge(r)}</td>
                   <td className="text-center">{yn(r.imgCr)}</td>
                   <td className="text-center">{yn(r.imgScan)}</td>
                   <td className="text-center">{yn(r.imgBoth)}</td>
@@ -405,6 +426,9 @@ export default function RoomsCrApiPage() {
 
   const [expandedOcc, setExpandedOcc] = React.useState<Map<number, Set<string>>>(new Map());
 
+  // Expanded hotel card IDs — empty Set means all collapsed by default
+  const [expandedHotels, setExpandedHotels] = React.useState<Set<number>>(new Set());
+
   // ── Filters & grouping ────────────────────────────────────────────────────
   const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
   const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
@@ -442,6 +466,33 @@ export default function RoomsCrApiPage() {
       .map(([key, es]) => ({ key, label: key, entries: es.sort((a, b) => a.hotel.name.localeCompare(b.hotel.name)) }));
   }, [filtered, groupBy]);
 
+  // All visible hotel IDs (for expand/collapse all)
+  const allVisibleIds = React.useMemo(
+    () => filtered.map(e => e.hotel.id),
+    [filtered],
+  );
+  const anyExpanded = allVisibleIds.some(id => expandedHotels.has(id));
+
+  function toggleExpandAll() {
+    if (anyExpanded) {
+      setExpandedHotels(new Set());
+    } else {
+      setExpandedHotels(new Set(allVisibleIds));
+    }
+  }
+
+  function toggleHotel(hotelId: number) {
+    setExpandedHotels(prev => {
+      const next = new Set(prev);
+      if (next.has(hotelId)) {
+        next.delete(hotelId);
+      } else {
+        next.add(hotelId);
+      }
+      return next;
+    });
+  }
+
   // ── Load scan history ──────────────────────────────────────────────────────
 
   const loadScans = React.useCallback(async () => {
@@ -478,8 +529,9 @@ export default function RoomsCrApiPage() {
             : '/api/rooms-cr-api';
         const data = await fetchJSON(url, { cache: 'no-store' });
         setEntries(Array.isArray(data) ? data : []);
-      } catch (e: any) {
-        setEntriesError(e.message || 'Failed to load data');
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Failed to load data';
+        setEntriesError(msg);
       } finally {
         setLoadingEntries(false);
       }
@@ -548,8 +600,9 @@ export default function RoomsCrApiPage() {
         finished_at: null,
       });
       await loadScans();
-    } catch (e: any) {
-      setStartError(e.message || 'Failed to start scan');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to start scan';
+      setStartError(msg);
     } finally {
       setStarting(false);
     }
@@ -669,7 +722,7 @@ export default function RoomsCrApiPage() {
         {/* ── Filters & grouping toolbar ── */}
         <div className="card mb-3">
           <div className="card-body py-2">
-            {/* Row 1: Scan selection */}
+            {/* Row 1: Scan selection + expand/collapse all */}
             <div className="d-flex align-items-end gap-3 pb-2 mb-2 border-bottom">
               <div>
                 <label htmlFor="scan-select" className="form-label form-label-sm mb-1 fw-semibold">Scan</label>
@@ -682,7 +735,16 @@ export default function RoomsCrApiPage() {
                   ))}
                 </select>
               </div>
-              <span className="ms-auto small text-muted align-self-end pb-1">{entries.length} hotel{entries.length !== 1 ? 's' : ''}{filtered.length !== entries.length ? ` (${filtered.length} shown)` : ''}</span>
+              <span className="small text-muted align-self-end pb-1">{entries.length} hotel{entries.length !== 1 ? 's' : ''}{filtered.length !== entries.length ? ` (${filtered.length} shown)` : ''}</span>
+              {filtered.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary ms-auto align-self-end"
+                  onClick={toggleExpandAll}
+                >
+                  {anyExpanded ? 'Collapse All' : 'Expand All'}
+                </button>
+              )}
             </div>
             {/* Row 2: Filters */}
             <div className="d-flex flex-wrap align-items-end gap-3">
@@ -713,11 +775,25 @@ export default function RoomsCrApiPage() {
                 <div className="btn-group btn-group-sm flex-wrap" role="group" aria-labelledby="lbl-quality">
                   <button type="button" className={`btn btn-outline-secondary${qualityFilter === 'all' ? ' active' : ''}`} onClick={() => setQualityFilter('all')}>All</button>
                   {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
-                    <button key={q} type="button" className={`btn btn-outline-secondary${qualityFilter === q ? ' active' : ''}`} onClick={() => setQualityFilter(qualityFilter === q ? 'all' : q)}>
+                    <button
+                      key={q}
+                      type="button"
+                      className={`btn btn-outline-secondary${qualityFilter === q ? ' active' : ''}`}
+                      onClick={() => setQualityFilter(qualityFilter === q ? 'all' : q)}
+                      title={QUALITY_DESCRIPTIONS[q]}
+                    >
                       {QUALITY_LABELS[q]}
                     </button>
                   ))}
                 </div>
+                <details className="mt-1">
+                  <summary className="small text-muted" style={{ cursor: 'pointer' }}>What do quality levels mean?</summary>
+                  <ul className="list-unstyled mb-0 mt-1 small text-muted ps-1">
+                    {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
+                      <li key={q}><span className="fw-semibold">{QUALITY_LABELS[q]}:</span> {QUALITY_DESCRIPTIONS[q]}</li>
+                    ))}
+                  </ul>
+                </details>
               </div>
             </div>
           </div>
@@ -747,132 +823,168 @@ export default function RoomsCrApiPage() {
                 <span className="badge bg-secondary fw-normal">{group.entries.length}</span>
               </div>
             )}
-            {group.entries.map(entry => (
-            <div key={entry.hotel.id} className="card mb-3">
-              {/* Header */}
-              <div className="card-header fw-semibold d-flex align-items-center gap-2 flex-wrap">
-                <span>
-                  {entry.hotel.name}
-                  <span className="ms-2 text-muted fw-normal small">{entry.hotel.code}</span>
-                  {entry.hotel.brand && <span className="ms-2 badge bg-light text-dark fw-normal">{entry.hotel.brand}</span>}
-                  {entry.hotel.region && <span className="ms-1 text-muted fw-normal small">{entry.hotel.region}{entry.hotel.country ? `, ${entry.hotel.country}` : ''}</span>}
-                </span>
-                <span className="ms-auto d-flex gap-2 align-items-center">
-                  {hasAttention(entry) && <span className="badge bg-warning text-dark">⚠ attention</span>}
-                  {isFixable(entry) && <span className="badge bg-info text-dark">⚡ fixable</span>}
-                  {(() => { const q = computeQuality(entry); return q ? <span className={`badge bg-${QUALITY_COLORS[q]}${q === 'mediocre' || q === 'poor' ? ' text-dark' : ''} fw-normal`}>{QUALITY_LABELS[q]}</span> : null; })()}
-                  <span className="badge bg-primary fw-normal">CR-API: {entry.crRooms.length}</span>
-                </span>
-              </div>
+            {group.entries.map(entry => {
+              const isOpen = expandedHotels.has(entry.hotel.id);
+              const mappingRows = entry.playwrightResults !== null
+                ? buildMapping(entry.crRooms, entry.playwrightResults)
+                : null;
+              const matched  = mappingRows ? mappingRows.filter(r => r.inBoth).length : 0;
+              const crOnly   = mappingRows ? mappingRows.filter(r => r.inCr && !r.inScan).length : 0;
+              const scanOnly = mappingRows ? mappingRows.filter(r => !r.inCr && r.inScan).length : 0;
 
-              <div className="card-body">
-                <div className="row g-3">
-                  {/* ── Left: CR-API rooms ── */}
-                  <div className="col-12 col-md-6">
-                    <CrApiRoomList rooms={entry.crRooms} />
+              return (
+                <div key={entry.hotel.id} className="card mb-2">
+                  {/* Header — clickable toggle */}
+                  <div
+                    className="card-header fw-semibold d-flex align-items-center gap-2 flex-wrap"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => toggleHotel(entry.hotel.id)}
+                    role="button"
+                    aria-expanded={isOpen}
+                  >
+                    {/* Chevron */}
+                    <span style={{ fontSize: '0.7rem', transition: 'transform 0.15s', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'none' }}>
+                      &#9654;
+                    </span>
+
+                    {/* Hotel meta */}
+                    <span>
+                      {entry.hotel.name}
+                      <span className="ms-2 text-muted fw-normal small">{entry.hotel.code}</span>
+                      {entry.hotel.brand && <span className="ms-2 badge bg-light text-dark fw-normal">{entry.hotel.brand}</span>}
+                      {entry.hotel.region && <span className="ms-1 text-muted fw-normal small">{entry.hotel.region}{entry.hotel.country ? `, ${entry.hotel.country}` : ''}</span>}
+                    </span>
+
+                    {/* Mapping summary (collapsed state) */}
+                    {mappingRows !== null && (
+                      <span className="text-muted fw-normal small ms-2">
+                        {matched} matched · {crOnly} CR-API only · {scanOnly} scan only
+                      </span>
+                    )}
+
+                    {/* Badges */}
+                    <span className="ms-auto d-flex gap-2 align-items-center">
+                      {hasAttention(entry) && <span className="badge bg-warning text-dark">⚠ attention</span>}
+                      {isFixable(entry) && <span className="badge bg-info text-dark">⚡ fixable</span>}
+                      {(() => { const q = computeQuality(entry); return q ? <span className={`badge bg-${QUALITY_COLORS[q]}${q === 'mediocre' || q === 'poor' ? ' text-dark' : ''} fw-normal`}>{QUALITY_LABELS[q]}</span> : null; })()}
+                      <span className="badge bg-primary fw-normal">CR-API: {entry.crRooms.length}</span>
+                    </span>
                   </div>
 
-                  {/* ── Right: Playwright results ── */}
-                  <div className="col-12 col-md-6">
-                    <div className="fw-semibold small mb-2">Playwright Results</div>
-                    {entry.playwrightResults === null ? (
-                      <p className="text-muted small mb-0">
-                        No scan data — run a scan above
-                      </p>
-                    ) : (
-                      <div className="accordion accordion-flush" id={`acc-${entry.hotel.id}`}>
-                        {OCCUPANCY_CONFIGS.map(occ => {
-                          const result = entry.playwrightResults?.[occ.folder] ?? null;
-                          const isOpen =
-                            expandedOcc.get(entry.hotel.id)?.has(occ.label) ?? false;
-                          return (
-                            <div key={occ.label} className="accordion-item">
-                              <h2 className="accordion-header">
-                                <button
-                                  className={`accordion-button py-2 small${isOpen ? '' : ' collapsed'}`}
-                                  type="button"
-                                  onClick={() => toggleOcc(entry.hotel.id, occ.label)}
-                                >
-                                  <span className="me-2">{occ.label}</span>
-                                  {result && !result.error && result.rooms !== null && (
-                                    <span className="badge bg-secondary fw-normal">
-                                      {result.rooms.length} rooms
-                                    </span>
-                                  )}
-                                  {result?.error && (
-                                    <span className="badge bg-danger fw-normal">Error</span>
-                                  )}
-                                  {!result && (
-                                    <span className="badge bg-light text-muted fw-normal">
-                                      Not scanned
-                                    </span>
-                                  )}
-                                </button>
-                              </h2>
-                              {isOpen && (
-                                <div className="accordion-collapse">
-                                  <div className="accordion-body py-2 px-3">
-                                    {!result ? (
-                                      <p className="text-muted small mb-0">Not scanned</p>
-                                    ) : result.error ? (
-                                      <p className="text-danger small mb-0">{result.error}</p>
-                                    ) : (
-                                      <>
-                                        {result.rooms && result.rooms.length > 0 ? (
-                                          <table className="table table-sm table-bordered mb-0 small">
-                                            <thead className="table-light">
-                                              <tr>
-                                                <th style={{ width: '22%' }}>Code</th>
-                                                <th>Room name</th>
-                                                <th className="text-center" style={{ width: 80 }}>Image</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody>
-                                              {result.rooms.map((r, i) => (
-                                                <tr key={i}>
-                                                  <td className="font-monospace text-muted">{r.roomCode || '—'}</td>
-                                                  <td>{r.roomName}</td>
-                                                  <td className="text-center">
-                                                    {r.imageMissing
-                                                      ? <span className="text-danger fw-semibold">No</span>
-                                                      : <span className="text-success fw-semibold">Yes</span>}
-                                                  </td>
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
-                                        ) : (
-                                          <p className="text-muted small mb-0">No rooms found</p>
+                  {/* Card body — only render when expanded */}
+                  {isOpen && (
+                    <div className="card-body">
+                      {/* 1. Code Mapping table */}
+                      {(entry.crRooms.length > 0 || entry.playwrightResults !== null) && mappingRows !== null && (
+                        <MappingTable rows={mappingRows} />
+                      )}
+
+                      <hr className="my-2" style={{ opacity: 0.3 }} />
+
+                      {/* 2. Playwright Results */}
+                      <div className="row g-3">
+                        <div className="col-12 col-md-6">
+                          <div className="fw-semibold small mb-2">Playwright Results</div>
+                          {entry.playwrightResults === null ? (
+                            <p className="text-muted small mb-0">
+                              No scan data — run a scan above
+                            </p>
+                          ) : (
+                            <div className="accordion accordion-flush" id={`acc-${entry.hotel.id}`}>
+                              {OCCUPANCY_CONFIGS.map(occ => {
+                                const result = entry.playwrightResults?.[occ.folder] ?? null;
+                                const isOccOpen =
+                                  expandedOcc.get(entry.hotel.id)?.has(occ.label) ?? false;
+                                return (
+                                  <div key={occ.label} className="accordion-item">
+                                    <h2 className="accordion-header">
+                                      <button
+                                        className={`accordion-button py-2 small${isOccOpen ? '' : ' collapsed'}`}
+                                        type="button"
+                                        onClick={() => toggleOcc(entry.hotel.id, occ.label)}
+                                      >
+                                        <span className="me-2">{occ.label}</span>
+                                        {result && !result.error && result.rooms !== null && (
+                                          <span className="badge bg-secondary fw-normal">
+                                            {result.rooms.length} rooms
+                                          </span>
                                         )}
-                                        {result.screenshot_url && (
-                                          <div className="mt-2">
-                                            <img
-                                              src={result.screenshot_url}
-                                              alt={`${entry.hotel.name} ${occ.label}`}
-                                              style={{ width: '100%', borderRadius: 4 }}
-                                            />
-                                          </div>
+                                        {result?.error && (
+                                          <span className="badge bg-danger fw-normal">Error</span>
                                         )}
-                                      </>
+                                        {!result && (
+                                          <span className="badge bg-light text-muted fw-normal">
+                                            Not scanned
+                                          </span>
+                                        )}
+                                      </button>
+                                    </h2>
+                                    {isOccOpen && (
+                                      <div className="accordion-collapse">
+                                        <div className="accordion-body py-2 px-3">
+                                          {!result ? (
+                                            <p className="text-muted small mb-0">Not scanned</p>
+                                          ) : result.error ? (
+                                            <p className="text-danger small mb-0">{result.error}</p>
+                                          ) : (
+                                            <>
+                                              {result.rooms && result.rooms.length > 0 ? (
+                                                <table className="table table-sm table-bordered mb-0 small">
+                                                  <thead className="table-light">
+                                                    <tr>
+                                                      <th style={{ width: '22%' }}>Code</th>
+                                                      <th>Room name</th>
+                                                      <th className="text-center" style={{ width: 80 }}>Image</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {result.rooms.map((r, i) => (
+                                                      <tr key={i}>
+                                                        <td className="font-monospace text-muted">{r.roomCode || '—'}</td>
+                                                        <td>{r.roomName}</td>
+                                                        <td className="text-center">
+                                                          {r.imageMissing
+                                                            ? <span className="text-danger fw-semibold">No</span>
+                                                            : <span className="text-success fw-semibold">Yes</span>}
+                                                        </td>
+                                                      </tr>
+                                                    ))}
+                                                  </tbody>
+                                                </table>
+                                              ) : (
+                                                <p className="text-muted small mb-0">No rooms found</p>
+                                              )}
+                                              {result.screenshot_url && (
+                                                <div className="mt-2">
+                                                  <img
+                                                    src={result.screenshot_url}
+                                                    alt={`${entry.hotel.name} ${occ.label}`}
+                                                    style={{ width: '100%', borderRadius: 4 }}
+                                                  />
+                                                </div>
+                                              )}
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
-                                </div>
-                              )}
+                                );
+                              })}
                             </div>
-                          );
-                        })}
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
 
-                {/* ── Mapping table ── */}
-                {(entry.crRooms.length > 0 || entry.playwrightResults !== null) && (
-                  <MappingTable rows={buildMapping(entry.crRooms, entry.playwrightResults)} />
-                )}
-              </div>
-            </div>
-          ))}
+                      <hr className="my-2" style={{ opacity: 0.3 }} />
+
+                      {/* 3. CR-API Rooms */}
+                      <CrApiRoomList rooms={entry.crRooms} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ))}
 
