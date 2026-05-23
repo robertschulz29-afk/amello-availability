@@ -22,7 +22,7 @@ export function buildHotelSlug(name: string, code: string): string {
 
 export function buildTuiUrl(slug: string, checkIn: string, occupancyParam: string): string {
   const d = new Date(checkIn + 'T00:00:00Z');
-  d.setUTCDate(d.getUTCDate() + 1);
+  d.setUTCDate(d.getUTCDate() + 7);
   const checkOut = d.toISOString().slice(0, 10);
   return `https://www.tuiamello.com/en-DE/hotel/${slug}/?departure-date=${checkIn}&return-date=${checkOut}&rooms=${occupancyParam}`;
 }
