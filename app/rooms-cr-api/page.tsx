@@ -282,7 +282,7 @@ function CrRoomTable({ rows }: { rows: CrRoom[] }) {
 }
 
 function RoomsPanel({
-  hotelId, hotelName, crRooms, playwrightResults, expandedOcc, toggleOcc, fixPotentialActive = false,
+  hotelId, hotelName, crRooms, playwrightResults, expandedOcc, toggleOcc,
 }: {
   hotelId: number;
   hotelName: string;
@@ -290,7 +290,6 @@ function RoomsPanel({
   playwrightResults: Record<string, PlaywrightOccResult> | null;
   expandedOcc: Map<number, Set<string>>;
   toggleOcc: (hotelId: number, label: string) => void;
-  fixPotentialActive?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
 
@@ -325,7 +324,7 @@ function RoomsPanel({
                     <CrRoomTable rows={withImage} />
                   </div>
                 )}
-                {!fixPotentialActive && withoutImage.length > 0 && (
+                {withoutImage.length > 0 && (
                   <div>
                     <div className="small text-danger mb-1">Without image ({withoutImage.length})</div>
                     <ul className="list-unstyled mb-0 small ps-1">
@@ -501,11 +500,13 @@ function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, Playw
 type MatchFilter  = 'all' | 'match' | 'mismatch';
 type ImgFilter    = 'all' | 'yes' | 'no';
 
-function MappingTable({ rows }: { rows: MappingRow[] }) {
+function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]; fixPotentialActive?: boolean }) {
   const [matchFilter,  setMatchFilter]  = React.useState<MatchFilter>('all');
   const [imgCrFilter,  setImgCrFilter]  = React.useState<ImgFilter>('all');
   const [imgScanFilter, setImgScanFilter] = React.useState<ImgFilter>('all');
   const [fixableOnly,  setFixableOnly]  = React.useState(false);
+
+  const showFixable = fixPotentialActive || fixableOnly;
 
   const fixableApplicable = rows.some(r => r.inScan && !r.imgScan) && rows.some(r => r.inCr && !r.inScan && r.imgCr);
   const fixableCount = fixableApplicable
@@ -513,7 +514,7 @@ function MappingTable({ rows }: { rows: MappingRow[] }) {
     : 0;
 
   const visible = rows.filter(r => {
-    if (fixableOnly) {
+    if (showFixable) {
       return (r.inCr && !r.inScan && r.imgCr) || (r.inScan && !r.imgScan);
     }
     if (matchFilter === 'match'    && !r.inBoth) return false;
@@ -1136,14 +1137,13 @@ export default function RoomsCrApiPage() {
                         playwrightResults={entry.playwrightResults}
                         expandedOcc={expandedOcc}
                         toggleOcc={toggleOcc}
-                        fixPotentialActive={attentionFilter === 'fixable'}
                       />
 
                       {/* 2. Code Mapping table */}
                       {(entry.crRooms.length > 0 || entry.playwrightResults !== null) && mappingRows !== null && (
                         <>
                           <hr className="my-2" style={{ opacity: 0.3 }} />
-                          <MappingTable rows={mappingRows} />
+                          <MappingTable rows={mappingRows} fixPotentialActive={attentionFilter === 'fixable'} />
                         </>
                       )}
                     </div>
