@@ -40,12 +40,12 @@ export async function POST(req: NextRequest) {
       ORDER BY room_name
     `;
 
-    // Imagery rooms from room_imagery
+    // Imagery rooms from cr_api_rooms
     const imageryRoomsQ = await sql`
-      SELECT room_name
-      FROM room_imagery
+      SELECT name AS room_name
+      FROM cr_api_rooms
       WHERE hotel_id = ${hotelId}
-      ORDER BY room_name
+      ORDER BY name
     `;
 
     const scanRooms: string[] = scanRoomsQ.rows.map((r: any) => r.room_name);

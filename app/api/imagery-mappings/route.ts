@@ -39,12 +39,12 @@ export async function GET(req: NextRequest) {
       [hotelIds],
     );
 
-    // All room_imagery rows (imagery rooms + urls)
+    // All cr_api_rooms rows (imagery rooms + urls)
     const imageryQ = await query(
-      `SELECT hotel_id, room_name, image_url
-       FROM room_imagery
+      `SELECT hotel_id, name AS room_name, image_url
+       FROM cr_api_rooms
        WHERE hotel_id = ANY($1::int[])
-       ORDER BY hotel_id, room_name`,
+       ORDER BY hotel_id, name`,
       [hotelIds],
     );
 

@@ -43,8 +43,8 @@ export async function GET(req: NextRequest) {
        JOIN hotels h ON h.id = sr_rooms.hotel_id
        LEFT JOIN imagery_mappings im
          ON im.hotel_id = sr_rooms.hotel_id AND im.scan_room_name = sr_rooms.room_name
-       LEFT JOIN room_imagery ri
-         ON ri.hotel_id = im.hotel_id AND ri.room_name = im.imagery_room_name
+       LEFT JOIN cr_api_rooms ri
+         ON ri.hotel_id = im.hotel_id AND ri.name = im.imagery_room_name
        WHERE 1=1 ${hotelWhere} ${missingFilter}
        ORDER BY h.name, sr_rooms.room_name`,
       [],

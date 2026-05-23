@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
         [scanId],
       ),
       query<{ hotel_id: number; room_name: string; image_url: string }>(
-        `SELECT hotel_id, room_name, image_url FROM room_imagery ORDER BY hotel_id, room_name`,
+        `SELECT hotel_id, name AS room_name, image_url FROM cr_api_rooms ORDER BY hotel_id, name`,
         [],
       ),
       // Distinct room names from amello scan results for this scan
@@ -39,10 +39,10 @@ export async function GET(req: NextRequest) {
          GROUP BY sr.hotel_id`,
         [scanId],
       ),
-      // Distinct room names per hotel in room_imagery (CR-API)
+      // Distinct room names per hotel in cr_api_rooms
       query<{ hotel_id: number; room_names: string[] }>(
-        `SELECT hotel_id, array_agg(DISTINCT room_name ORDER BY room_name) AS room_names
-         FROM room_imagery
+        `SELECT hotel_id, array_agg(DISTINCT name ORDER BY name) AS room_names
+         FROM cr_api_rooms
          GROUP BY hotel_id`,
         [],
       ),

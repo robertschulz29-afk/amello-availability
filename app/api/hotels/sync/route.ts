@@ -129,7 +129,7 @@ export async function POST(): Promise<NextResponse> {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            query: `{ getHotelByCode(code: "${code}") { globalTypes details { images { title url } rooms { globalTypes } } } }`,
+            query: `{ getHotelByCode(code: "${code}") { globalTypes details { rooms { name code globalTypes images { url } } } } }`,
           }),
           signal: AbortSignal.timeout(8000),
         });
@@ -146,13 +146,12 @@ export async function POST(): Promise<NextResponse> {
           }
         }
 
-        // Room-level global types
-        if (Array.isArray(hotel?.details?.rooms)) {
-          for (const room of hotel.details.rooms) {
-            if (Array.isArray(room?.globalTypes)) {
-              for (const v of room.globalTypes) {
-                if (typeof v === 'string') collected.add(v);
-              }
+        // Room-level global types (also collected into hotel-level set)
+        const rooms: any[] = hotel?.details?.rooms ?? [];
+        for (const room of rooms) {
+          if (Array.isArray(room?.globalTypes)) {
+            for (const v of room.globalTypes) {
+              if (typeof v === 'string') collected.add(v);
             }
           }
         }
@@ -165,26 +164,26 @@ export async function POST(): Promise<NextResponse> {
           );
         }
 
-        // Upsert Wohnbeispiel room images
-        const wohnImages: { roomName: string; imageUrl: string }[] = (hotel?.details?.images ?? [])
-          .filter((img: any) => typeof img.title === 'string' && img.title.startsWith('Wohnbeispiel ') && img.url)
-          .reduce((acc: { roomName: string; imageUrl: string }[], img: any) => {
-            const roomName = img.title.slice('Wohnbeispiel '.length);
-            if (!acc.find(x => x.roomName === roomName)) acc.push({ roomName, imageUrl: img.url });
-            return acc;
-          }, []);
-
-        if (wohnImages.length > 0) {
+        // Upsert rooms from CR-API into cr_api_rooms
+        if (rooms.length > 0) {
           const hotelRow = await query(`SELECT id FROM hotels WHERE code = $1`, [code]);
           const hotelId = hotelRow.rows[0]?.id;
           if (hotelId) {
-            for (const img of wohnImages) {
+            for (const room of rooms) {
+              const roomCode: string | null = room.code ?? null;
+              if (!roomCode) continue;
+              const roomName: string | null = room.name ?? null;
+              const imageUrl: string | null = room.images?.[0]?.url ?? null;
+              const roomGlobalTypes: string[] = Array.isArray(room.globalTypes) ? room.globalTypes.filter((v: any) => typeof v === 'string') : [];
               await query(
-                `INSERT INTO room_imagery (hotel_id, room_name, image_url, updated_at)
-                 VALUES ($1, $2, $3, NOW())
-                 ON CONFLICT (hotel_id, room_name)
-                 DO UPDATE SET image_url = EXCLUDED.image_url, updated_at = NOW()`,
-                [hotelId, img.roomName, img.imageUrl],
+                `INSERT INTO cr_api_rooms (hotel_id, name, room_code, image_url, global_types, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, NOW())
+                 ON CONFLICT (hotel_id, room_code) DO UPDATE
+                   SET name         = EXCLUDED.name,
+                       image_url    = EXCLUDED.image_url,
+                       global_types = EXCLUDED.global_types,
+                       updated_at   = NOW()`,
+                [hotelId, roomName, roomCode, imageUrl, JSON.stringify(roomGlobalTypes)],
               );
             }
           }

@@ -34,11 +34,11 @@ export async function GET(req: NextRequest) {
 
     const result = await query(
       `SELECT ri.id, ri.hotel_id, h.name AS hotel_name, h.code AS hotel_code,
-              ri.room_name, ri.image_url, ri.updated_at
-       FROM room_imagery ri
+              ri.name AS room_name, ri.room_code, ri.image_url, ri.global_types, ri.updated_at
+       FROM cr_api_rooms ri
        JOIN hotels h ON h.id = ri.hotel_id
        ${where}
-       ORDER BY h.name, ri.room_name`,
+       ORDER BY h.name, ri.name`,
       params,
     );
 
