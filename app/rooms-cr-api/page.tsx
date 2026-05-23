@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
+import { HotelCombobox } from '@/app/components/HotelCombobox';
 import { OCCUPANCY_CONFIGS } from '@/lib/playwright-scan-helpers';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -148,21 +149,25 @@ export default function RoomsCrApiPage() {
   const [expandedOcc, setExpandedOcc] = React.useState<Map<number, Set<string>>>(new Map());
 
   // ── Filters & grouping ────────────────────────────────────────────────────
-  const [nameFilter, setNameFilter] = React.useState('');
+  const [selectedHotelIds, setSelectedHotelIds] = React.useState<number[]>([]);
   const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
   const [attentionFilter, setAttentionFilter] = React.useState<AttentionFilter>('all');
   const [qualityFilter, setQualityFilter] = React.useState<QualityFilter>('all');
 
+  const allHotels = React.useMemo(
+    () => entries.map(e => ({ id: e.hotel.id, name: e.hotel.name, code: e.hotel.code, brand: e.hotel.brand ?? undefined })),
+    [entries],
+  );
+
   const filtered = React.useMemo(() => {
-    const q = nameFilter.trim().toLowerCase();
     return entries.filter(e => {
-      if (q && !e.hotel.name.toLowerCase().includes(q) && !e.hotel.code.toLowerCase().includes(q)) return false;
+      if (selectedHotelIds.length > 0 && !selectedHotelIds.includes(e.hotel.id)) return false;
       if (attentionFilter === 'attention' && !hasAttention(e)) return false;
       if (attentionFilter === 'fixable' && !isFixable(e)) return false;
       if (qualityFilter !== 'all' && computeQuality(e) !== qualityFilter) return false;
       return true;
     });
-  }, [entries, nameFilter, attentionFilter, qualityFilter]);
+  }, [entries, selectedHotelIds, attentionFilter, qualityFilter]);
 
   const groups = React.useMemo(() => {
     if (groupBy === 'none') {
@@ -406,13 +411,29 @@ export default function RoomsCrApiPage() {
         {/* ── Filters & grouping toolbar ── */}
         <div className="card mb-3">
           <div className="card-body py-2">
-            <div className="d-flex flex-wrap align-items-end gap-3">
+            {/* Row 1: Scan selection */}
+            <div className="d-flex align-items-end gap-3 pb-2 mb-2 border-bottom">
               <div>
-                <label className="form-label form-label-sm mb-1 fw-semibold">Filter hotel</label>
-                <input type="text" className="form-control form-control-sm" style={{ width: 200 }} placeholder="Name or code…" value={nameFilter} onChange={e => setNameFilter(e.target.value)} />
+                <div className="form-label form-label-sm mb-1 fw-semibold">Scan</div>
+                <select className="form-select form-select-sm" style={{ minWidth: 260 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value) || null)}>
+                  <option value="">— no scan selected —</option>
+                  {scans.map(s => (
+                    <option key={s.id} value={s.id}>
+                      #{s.id} — {s.check_in} — {s.status} ({s.processed}/{s.total})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <span className="ms-auto small text-muted align-self-end pb-1">{filtered.length} hotel{filtered.length !== 1 ? 's' : ''}</span>
+            </div>
+            {/* Row 2: Filters */}
+            <div className="d-flex flex-wrap gap-3">
+              <div>
+                <div className="form-label form-label-sm mb-1 fw-semibold">Hotels</div>
+                <HotelCombobox hotels={allHotels} selectedIds={selectedHotelIds} onChange={setSelectedHotelIds} />
               </div>
               <div>
-                <label className="form-label form-label-sm mb-1 fw-semibold">Group by</label>
+                <div className="form-label form-label-sm mb-1 fw-semibold">Group by</div>
                 <div className="btn-group btn-group-sm">
                   {(['none', 'brand', 'region'] as GroupBy[]).map(g => (
                     <button key={g} type="button" className={`btn btn-outline-secondary${groupBy === g ? ' active' : ''}`} onClick={() => setGroupBy(g)}>
@@ -422,16 +443,15 @@ export default function RoomsCrApiPage() {
                 </div>
               </div>
               <div>
-                <label className="form-label form-label-sm mb-1 fw-semibold">Filter</label>
+                <div className="form-label form-label-sm mb-1 fw-semibold">Filter</div>
                 <div className="btn-group btn-group-sm">
                   <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'all' ? ' active' : ''}`} onClick={() => setAttentionFilter('all')}>All</button>
                   <button type="button" className={`btn btn-outline-warning${attentionFilter === 'attention' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'attention' ? 'all' : 'attention')}>⚠ Attention needed</button>
                   <button type="button" className={`btn btn-outline-info${attentionFilter === 'fixable' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'fixable' ? 'all' : 'fixable')}>⚡ Fix potential</button>
                 </div>
               </div>
-
               <div>
-                <label className="form-label form-label-sm mb-1 fw-semibold">Mapping quality</label>
+                <div className="form-label form-label-sm mb-1 fw-semibold">Mapping quality</div>
                 <div className="btn-group btn-group-sm flex-wrap">
                   <button type="button" className={`btn btn-outline-secondary${qualityFilter === 'all' ? ' active' : ''}`} onClick={() => setQualityFilter('all')}>All</button>
                   {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
@@ -439,20 +459,6 @@ export default function RoomsCrApiPage() {
                       {QUALITY_LABELS[q]}
                     </button>
                   ))}
-                </div>
-              </div>
-              <div className="ms-auto d-flex align-items-end gap-3">
-                <span className="small text-muted">{filtered.length} hotel{filtered.length !== 1 ? 's' : ''}</span>
-                <div>
-                  <label className="form-label form-label-sm mb-1 fw-semibold">Scan</label>
-                  <select className="form-select form-select-sm" style={{ minWidth: 240 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value) || null)}>
-                    <option value="">— no scan selected —</option>
-                    {scans.map(s => (
-                      <option key={s.id} value={s.id}>
-                        #{s.id} — {s.check_in} — {s.status} ({s.processed}/{s.total})
-                      </option>
-                    ))}
-                  </select>
                 </div>
               </div>
             </div>
