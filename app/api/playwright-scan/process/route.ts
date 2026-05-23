@@ -102,7 +102,7 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
       });
 
       for (const cfg of OCCUPANCY_CONFIGS) {
-        const url = buildTuiUrl(slug, checkIn, cfg.param);
+        const url = buildTuiUrl(slug, checkIn, cfg.param, hotel.code);
         let rooms: Array<{ roomId: string; roomCode: string; roomName: string; imageMissing: boolean }> = [];
         let screenshotUrl: string | null = null;
         let errorMsg: string | null = null;

@@ -20,9 +20,9 @@ export function buildHotelSlug(name: string, code: string): string {
     .replace(/-$/, '') + '-' + code;
 }
 
-export function buildTuiUrl(slug: string, checkIn: string, occupancyParam: string): string {
+export function buildTuiUrl(slug: string, checkIn: string, occupancyParam: string, hotelCode: string): string {
   const d = new Date(checkIn + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + 7);
   const checkOut = d.toISOString().slice(0, 10);
-  return `https://www.tuiamello.com/en-DE/hotel/${slug}/?departure-date=${checkIn}&return-date=${checkOut}&rooms=${occupancyParam}`;
+  return `https://www.tuiamello.com/en-DE/hotel/${slug}/?departure-date=${checkIn}&return-date=${checkOut}&destination=${hotelCode}&destination-type=hotel-id&rooms=${occupancyParam}`;
 }
