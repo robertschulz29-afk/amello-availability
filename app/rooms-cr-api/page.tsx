@@ -173,7 +173,16 @@ function QualityHelpButton() {
           border: '1px solid var(--bs-border-color)', borderRadius: '0.375rem',
           boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: '0.6rem 0.75rem',
         }}>
-          <div className="small fw-semibold mb-2">Mapping quality levels</div>
+          <div className="d-flex align-items-center justify-content-between mb-2">
+            <span className="small fw-semibold">Mapping quality levels</span>
+            <button
+              type="button"
+              className="btn-close btn-close-sm"
+              aria-label="Close"
+              onClick={() => setOpen(false)}
+              style={{ fontSize: '0.65rem' }}
+            />
+          </div>
           <ul className="list-unstyled mb-0 small">
             {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
               <li key={q} className="mb-1">
