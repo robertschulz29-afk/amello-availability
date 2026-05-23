@@ -264,7 +264,7 @@ function QualityHelpButton() {
 // ── Combined Rooms panel (CR-API + Amello Rooms, collapsible) ────────────────
 
 function RoomsPanel({
-  hotelId, hotelName, crRooms, playwrightResults, expandedOcc, toggleOcc,
+  hotelId, hotelName, crRooms, playwrightResults, expandedOcc, toggleOcc, crApiImageOnly = false,
 }: {
   hotelId: number;
   hotelName: string;
@@ -272,11 +272,12 @@ function RoomsPanel({
   playwrightResults: Record<string, PlaywrightOccResult> | null;
   expandedOcc: Map<number, Set<string>>;
   toggleOcc: (hotelId: number, label: string) => void;
+  crApiImageOnly?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
 
   const withImage    = crRooms.filter(r => r.image_url);
-  const withoutImage = crRooms.filter(r => !r.image_url);
+  const withoutImage = crApiImageOnly ? [] : crRooms.filter(r => !r.image_url);
 
   function CrTable({ rows }: { rows: CrRoom[] }) {
     return (
@@ -1129,6 +1130,7 @@ export default function RoomsCrApiPage() {
                         playwrightResults={entry.playwrightResults}
                         expandedOcc={expandedOcc}
                         toggleOcc={toggleOcc}
+                        crApiImageOnly={attentionFilter === 'fixable'}
                       />
 
                       {/* 2. Code Mapping table */}
