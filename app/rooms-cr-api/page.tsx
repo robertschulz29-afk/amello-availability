@@ -78,15 +78,14 @@ function computeQuality(entry: HotelEntry): Quality | null {
   if (ratio < 0.5) return 'poor';
   if (withImg < scanRooms.size) return 'mediocre';
 
-  // All scan rooms have images — check CR-API coverage
-  const crNamesLower = new Set(entry.crRooms.map(r => r.name.trim().toLowerCase()));
+  // All scan rooms have images — check CR-API coverage (only rooms WITH image count)
   const crNamesWithImgLower = new Set(entry.crRooms.filter(r => r.image_url).map(r => r.name.trim().toLowerCase()));
   const scanNamesLower = [...scanRooms.keys()].map(n => n.trim().toLowerCase());
 
   const hasUnmappedCrWithImg = [...crNamesWithImgLower].some(n => !scanNamesLower.includes(n));
   if (hasUnmappedCrWithImg) return 'good';
 
-  const allNamesMatch = scanNamesLower.every(n => crNamesLower.has(n));
+  const allNamesMatch = scanNamesLower.every(n => crNamesWithImgLower.has(n));
   return allNamesMatch ? 'perfect' : 'verygood';
 }
 
@@ -122,6 +121,30 @@ const QUALITY_DESCRIPTIONS: Record<Quality, string> = {
 function CrApiRoomList({ rooms }: { rooms: CrRoom[] }) {
   const [open, setOpen] = React.useState(false);
 
+  const withImage    = rooms.filter(r => r.image_url);
+  const withoutImage = rooms.filter(r => !r.image_url);
+
+  function RoomTable({ rows }: { rows: CrRoom[] }) {
+    return (
+      <table className="table table-sm table-bordered mb-0 small">
+        <thead className="table-light">
+          <tr>
+            <th style={{ width: '25%' }}>Code</th>
+            <th>Name</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((room, idx) => (
+            <tr key={idx}>
+              <td className="font-monospace text-muted">{room.room_code || '—'}</td>
+              <td>{room.name}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
   return (
     <div>
       <button
@@ -137,28 +160,20 @@ function CrApiRoomList({ rooms }: { rooms: CrRoom[] }) {
           {rooms.length === 0 ? (
             <p className="text-muted small mb-0">No CR-API rooms synced</p>
           ) : (
-            <table className="table table-sm table-bordered mb-0 small">
-              <thead className="table-light">
-                <tr>
-                  <th style={{ width: '25%' }}>Code</th>
-                  <th>Name</th>
-                  <th className="text-center" style={{ width: 70 }}>Image</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rooms.map((room, idx) => (
-                  <tr key={idx}>
-                    <td className="font-monospace text-muted">{room.room_code || '—'}</td>
-                    <td>{room.name}</td>
-                    <td className="text-center">
-                      {room.image_url
-                        ? <span className="text-success fw-semibold">Yes</span>
-                        : <span className="text-danger">No</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="d-flex flex-column gap-3">
+              {withImage.length > 0 && (
+                <div>
+                  <div className="small fw-semibold text-success mb-1">With image ({withImage.length})</div>
+                  <RoomTable rows={withImage} />
+                </div>
+              )}
+              {withoutImage.length > 0 && (
+                <div>
+                  <div className="small fw-semibold text-danger mb-1">Without image ({withoutImage.length})</div>
+                  <RoomTable rows={withoutImage} />
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
