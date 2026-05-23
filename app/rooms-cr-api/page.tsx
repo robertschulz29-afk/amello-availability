@@ -53,9 +53,11 @@ function hasAttention(entry: HotelEntry): boolean {
 }
 
 function isFixable(entry: HotelEntry): boolean {
-  const hasMissingImg = Object.values(entry.playwrightResults ?? {}).some(r => r.rooms?.some(rm => rm.imageMissing));
-  const hasCrImages = entry.crRooms.some(r => r.image_url);
-  return hasMissingImg && hasCrImages;
+  if (!entry.playwrightResults) return false;
+  const rows = buildMapping(entry.crRooms, entry.playwrightResults);
+  const hasScanNoImage   = rows.some(r => r.inScan && !r.imgScan);
+  const hasCrOnlyWithImg = rows.some(r => r.inCr && !r.inScan && r.imgCr);
+  return hasScanNoImage && hasCrOnlyWithImg;
 }
 
 function computeQuality(entry: HotelEntry): Quality | null {
@@ -436,12 +438,14 @@ function MappingTable({ rows }: { rows: MappingRow[] }) {
   const [imgScanFilter, setImgScanFilter] = React.useState<ImgFilter>('all');
   const [fixableOnly,  setFixableOnly]  = React.useState(false);
 
-  const fixableCount = rows.filter(r => !r.inBoth && r.inCr && !r.inScan && r.imgCr).length
-    + rows.filter(r => !r.inBoth && !r.inCr && r.inScan && !r.imgScan).length;
+  const fixableApplicable = rows.some(r => r.inScan && !r.imgScan) && rows.some(r => r.inCr && !r.inScan && r.imgCr);
+  const fixableCount = fixableApplicable
+    ? rows.filter(r => (r.inCr && !r.inScan && r.imgCr) || (r.inScan && !r.imgScan)).length
+    : 0;
 
   const visible = rows.filter(r => {
     if (fixableOnly) {
-      return (r.inCr && !r.inScan && r.imgCr) || (!r.inCr && r.inScan && !r.imgScan);
+      return (r.inCr && !r.inScan && r.imgCr) || (r.inScan && !r.imgScan);
     }
     if (matchFilter === 'match'    && !r.inBoth) return false;
     if (matchFilter === 'mismatch' &&  r.inBoth) return false;
