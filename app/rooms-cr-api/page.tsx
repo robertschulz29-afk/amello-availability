@@ -134,6 +134,60 @@ const QUALITY_DESCRIPTIONS: Record<Quality, string> = {
   horrible: 'No scan room has an image',
 };
 
+// ── Quality help popup ────────────────────────────────────────────────────────
+
+function QualityHelpButton() {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-label="What do quality levels mean?"
+        aria-expanded={open}
+        style={{
+          width: 16, height: 16, padding: 0, fontSize: '0.65rem', lineHeight: 1,
+          border: '1px solid currentColor', borderRadius: '50%',
+          background: 'transparent', cursor: 'pointer', color: 'var(--bs-secondary)',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        ?
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', zIndex: 1060, top: '120%', left: 0,
+          minWidth: 340, background: 'var(--bs-body-bg)',
+          border: '1px solid var(--bs-border-color)', borderRadius: '0.375rem',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: '0.6rem 0.75rem',
+        }}>
+          <div className="small fw-semibold mb-2">Mapping quality levels</div>
+          <ul className="list-unstyled mb-0 small">
+            {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
+              <li key={q} className="mb-1">
+                <span className="fw-semibold">{QUALITY_LABELS[q]}:</span>{' '}
+                <span className="text-muted">{QUALITY_DESCRIPTIONS[q]}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Combined Rooms panel (CR-API + Amello Rooms, collapsible) ────────────────
 
 function RoomsPanel({
@@ -891,7 +945,10 @@ export default function RoomsCrApiPage() {
                 </div>
               </div>
               <div>
-                <div className="form-label form-label-sm mb-1 fw-semibold" id="lbl-quality">Mapping quality</div>
+                <div className="d-flex align-items-center gap-1 mb-1">
+                  <span className="form-label form-label-sm fw-semibold mb-0" id="lbl-quality">Mapping quality</span>
+                  <QualityHelpButton />
+                </div>
                 <div className="btn-group btn-group-sm flex-wrap" role="group" aria-labelledby="lbl-quality">
                   <button type="button" className={`btn btn-outline-secondary${qualityFilter === 'all' ? ' active' : ''}`} onClick={() => setQualityFilter('all')}>All</button>
                   {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
@@ -900,20 +957,11 @@ export default function RoomsCrApiPage() {
                       type="button"
                       className={`btn btn-outline-secondary${qualityFilter === q ? ' active' : ''}`}
                       onClick={() => setQualityFilter(qualityFilter === q ? 'all' : q)}
-                      title={QUALITY_DESCRIPTIONS[q]}
                     >
                       {QUALITY_LABELS[q]}
                     </button>
                   ))}
                 </div>
-                <details className="mt-1">
-                  <summary className="small text-muted" style={{ cursor: 'pointer' }}>What do quality levels mean?</summary>
-                  <ul className="list-unstyled mb-0 mt-1 small text-muted ps-1">
-                    {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
-                      <li key={q}><span className="fw-semibold">{QUALITY_LABELS[q]}:</span> {QUALITY_DESCRIPTIONS[q]}</li>
-                    ))}
-                  </ul>
-                </details>
               </div>
             </div>
           </div>
