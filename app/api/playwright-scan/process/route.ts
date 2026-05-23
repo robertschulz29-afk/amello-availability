@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { query, sql } from '@/lib/db';
+import { createClient } from '@supabase/supabase-js';
+import {
+  OCCUPANCY_CONFIGS, ROOM_CARD_SELECTOR, ROOM_NAME_SELECTOR, IMAGE_CONTAINER_SELECTOR,
+  buildHotelSlug, buildTuiUrl,
+} from '@/lib/playwright-scan-helpers';
 
 function resolveAppUrl(req: NextRequest): string {
   if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
@@ -6,12 +12,6 @@ function resolveAppUrl(req: NextRequest): string {
   const proto = req.headers.get('x-forwarded-proto') ?? 'https';
   return `${proto}://${host}`;
 }
-import { query, sql } from '@/lib/db';
-import { createClient } from '@supabase/supabase-js';
-import {
-  OCCUPANCY_CONFIGS, ROOM_CARD_SELECTOR, ROOM_NAME_SELECTOR, IMAGE_CONTAINER_SELECTOR,
-  buildHotelSlug, buildTuiUrl,
-} from '@/lib/playwright-scan-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
