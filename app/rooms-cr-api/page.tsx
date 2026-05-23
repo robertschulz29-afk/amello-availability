@@ -452,7 +452,7 @@ function MappingTable({ rows }: { rows: MappingRow[] }) {
           <RadioGroup name={`imgscan-${rows.length}`} value={imgScanFilter} options={[{ val: 'all', label: 'All' }, { val: 'yes', label: 'Yes' }, { val: 'no', label: 'No' }]} onChange={v => { setImgScanFilter(v); setFixableOnly(false); }} />
         </span>
         {fixableCount > 0 && (
-          <button type="button" className={`btn btn-sm ${fixableOnly ? 'btn-info' : 'btn-outline-info'}`} onClick={() => setFixableOnly(f => !f)}>
+          <button type="button" className={`btn btn-sm ${fixableOnly ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={() => setFixableOnly(f => !f)}>
             ⚡ Fixable only ({fixableCount})
           </button>
         )}
@@ -886,8 +886,8 @@ export default function RoomsCrApiPage() {
                 <div className="form-label form-label-sm mb-1 fw-semibold" id="lbl-filter">Filter</div>
                 <div className="btn-group btn-group-sm" role="group" aria-labelledby="lbl-filter">
                   <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'all' ? ' active' : ''}`} onClick={() => setAttentionFilter('all')}>All</button>
-                  <button type="button" className={`btn btn-outline-warning${attentionFilter === 'attention' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'attention' ? 'all' : 'attention')}>⚠ Attention needed</button>
-                  <button type="button" className={`btn btn-outline-info${attentionFilter === 'fixable' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'fixable' ? 'all' : 'fixable')}>⚡ Fix potential</button>
+                  <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'attention' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'attention' ? 'all' : 'attention')}>⚠ Attention needed</button>
+                  <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'fixable' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'fixable' ? 'all' : 'fixable')}>⚡ Fix potential</button>
                 </div>
               </div>
               <div>
