@@ -29,7 +29,7 @@ type CrRoom = {
 type PlaywrightOccResult = {
   hotel_id: number;
   occupancy: string;
-  rooms: Array<{ name: string; imageMissing: boolean }> | null;
+  rooms: Array<{ roomName: string; imageMissing: boolean }> | null;
   screenshot_url: string | null;
   error: string | null;
 };
@@ -417,7 +417,7 @@ export default function RoomsCrApiPage() {
                     ) : (
                       <div className="accordion accordion-flush" id={`acc-${entry.hotel.id}`}>
                         {OCCUPANCY_CONFIGS.map(occ => {
-                          const result = entry.playwrightResults?.[occ.label] ?? null;
+                          const result = entry.playwrightResults?.[occ.folder] ?? null;
                           const isOpen =
                             expandedOcc.get(entry.hotel.id)?.has(occ.label) ?? false;
                           return (
@@ -457,7 +457,7 @@ export default function RoomsCrApiPage() {
                                           <ul className="list-unstyled mb-0 small">
                                             {result.rooms.map((r, i) => (
                                               <li key={i} className="mb-1">
-                                                {r.name}
+                                                {r.roomName}
                                                 {r.imageMissing && (
                                                   <span className="ms-1 text-warning">
                                                     ⚠ image missing

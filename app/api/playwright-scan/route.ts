@@ -1,110 +1,76 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import { query, sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// POST — trigger a new playwright scan
-// Body: { checkIn: string, takeScreenshot?: boolean }
+// POST — trigger a new scan
 export async function POST(req: NextRequest) {
-  let body: { checkIn?: string; takeScreenshot?: boolean };
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+    const body = await req.json().catch(() => ({}));
+    const { checkIn, takeScreenshot = false } = body;
 
-  const { checkIn, takeScreenshot = false } = body;
+    if (!checkIn || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn)) {
+      return NextResponse.json({ error: 'checkIn must be YYYY-MM-DD' }, { status: 400 });
+    }
 
-  // Validate checkIn format
-  if (!checkIn || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn)) {
-    return NextResponse.json({ error: 'checkIn must be a YYYY-MM-DD date' }, { status: 400 });
-  }
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    if (!appUrl) {
+      return NextResponse.json({ error: 'NEXT_PUBLIC_APP_URL is not configured' }, { status: 500 });
+    }
 
-  // Block if a scan is already running
-  const runningQ = await query<{ id: number }>(
-    `SELECT id FROM playwright_scans WHERE status = 'running' LIMIT 1`,
-    [],
-  );
-  if (runningQ.rows.length > 0) {
-    return NextResponse.json(
-      { error: 'A scan is already running', scanId: runningQ.rows[0].id },
-      { status: 409 },
+    // Block concurrent scans
+    const running = await sql`SELECT id FROM playwright_scans WHERE status = 'running' LIMIT 1`;
+    if (running.rows.length > 0) {
+      return NextResponse.json(
+        { error: 'A scan is already running', scanId: running.rows[0].id },
+        { status: 409 },
+      );
+    }
+
+    const hotels = await query(
+      `SELECT id FROM hotels WHERE active = true AND bookable = true`,
+      [],
     );
-  }
+    const total = hotels.rows.length * 4;
 
-  // Load active+bookable hotels
-  const hotelsQ = await query<{ id: number; name: string; code: string }>(
-    `SELECT id, name, code FROM hotels WHERE active = true AND bookable = true ORDER BY id`,
-    [],
-  );
-  const hotels = hotelsQ.rows;
-  const total = hotels.length * 4; // 4 occupancy configs
+    const scanRow = await sql`
+      INSERT INTO playwright_scans (check_in, take_screenshot, total)
+      VALUES (${checkIn}, ${takeScreenshot}, ${total})
+      RETURNING id
+    `;
+    const scanId = scanRow.rows[0].id;
 
-  // Insert the scan row
-  const insertQ = await query<{ id: number }>(
-    `INSERT INTO playwright_scans (check_in, take_screenshot, status, total)
-     VALUES ($1, $2, 'running', $3)
-     RETURNING id`,
-    [checkIn, takeScreenshot, total],
-  );
-  const scanId = insertQ.rows[0].id;
-
-  // Fire-and-forget: POST to process endpoint with first chunk
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (!appUrl) {
-    console.error('[playwright-scan] NEXT_PUBLIC_APP_URL is not set — cannot self-call process');
-  } else {
-    // No await — fire and forget
+    // Fire-and-forget first chunk
     fetch(`${appUrl}/api/playwright-scan/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scanId, offset: 0, takeScreenshot }),
-    }).catch(err => {
-      console.error('[playwright-scan] Failed to fire process request:', err);
-    });
-  }
+    }).catch((e) => console.error('[playwright-scan] failed to start process', e));
 
-  return NextResponse.json({ scanId, total });
+    return NextResponse.json({ scanId, total });
+  } catch (e: any) {
+    console.error('[POST /api/playwright-scan]', e);
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
 }
 
 // GET — poll scan status
-// Query param: scanId
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const scanId = Number(searchParams.get('scanId'));
+  try {
+    const { searchParams } = new URL(req.url);
+    const scanId = Number(searchParams.get('scanId'));
+    if (!Number.isFinite(scanId) || scanId <= 0) {
+      return NextResponse.json({ error: 'invalid scanId' }, { status: 400 });
+    }
 
-  if (!Number.isFinite(scanId) || scanId <= 0) {
-    return NextResponse.json({ error: 'scanId query param required' }, { status: 400 });
+    const row = await sql`
+      SELECT id, check_in, take_screenshot, status, total, processed, errors, created_at, finished_at
+      FROM playwright_scans WHERE id = ${scanId}
+    `;
+    if (!row.rows.length) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    return NextResponse.json(row.rows[0]);
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
   }
-
-  const scanQ = await query(
-    `SELECT id, check_in, take_screenshot, status, total, processed, errors, created_at, finished_at
-     FROM playwright_scans WHERE id = $1`,
-    [scanId],
-  );
-
-  if (scanQ.rows.length === 0) {
-    return NextResponse.json({ error: 'scan not found' }, { status: 404 });
-  }
-
-  return NextResponse.json(scanQ.rows[0]);
-}
-
-// DELETE — cancel a running scan
-export async function DELETE(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const scanId = Number(searchParams.get('scanId'));
-
-  if (!Number.isFinite(scanId) || scanId <= 0) {
-    return NextResponse.json({ error: 'scanId query param required' }, { status: 400 });
-  }
-
-  await query(
-    `UPDATE playwright_scans SET status = 'cancelled', finished_at = NOW()
-     WHERE id = $1 AND status = 'running'`,
-    [scanId],
-  );
-
-  return NextResponse.json({ ok: true });
 }
