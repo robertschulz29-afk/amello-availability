@@ -61,32 +61,50 @@ function isFixable(entry: HotelEntry): boolean {
 function computeQuality(entry: HotelEntry): Quality | null {
   if (!entry.playwrightResults) return null;
 
-  // Collect unique scan rooms across all occupancies; a room "has image" if !imageMissing in any occupancy
-  const scanRooms = new Map<string, boolean>();
+  // Deduplicate scan rooms across all occupancies; keyed by roomCode || roomName.
+  // hasImage = true if !imageMissing in any occupancy.
+  const scanRooms = new Map<string, { roomName: string; hasImage: boolean }>();
   for (const result of Object.values(entry.playwrightResults)) {
     for (const r of result.rooms ?? []) {
+      const key = r.roomCode || r.roomName;
       const hasImage = !r.imageMissing;
-      if (!scanRooms.has(r.roomName) || hasImage) scanRooms.set(r.roomName, hasImage);
+      const existing = scanRooms.get(key);
+      if (!existing || hasImage) {
+        scanRooms.set(key, { roomName: r.roomName, hasImage: hasImage || (existing?.hasImage ?? false) });
+      }
     }
   }
   if (scanRooms.size === 0) return null;
 
-  const withImg = [...scanRooms.values()].filter(Boolean).length;
+  const withImg = [...scanRooms.values()].filter(r => r.hasImage).length;
   const ratio = withImg / scanRooms.size;
 
   if (withImg === 0) return 'horrible';
   if (ratio < 0.5) return 'poor';
   if (withImg < scanRooms.size) return 'mediocre';
 
-  // All scan rooms have images — check CR-API coverage (only rooms WITH image count)
-  const crNamesWithImgLower = new Set(entry.crRooms.filter(r => r.image_url).map(r => r.name.trim().toLowerCase()));
-  const scanNamesLower = [...scanRooms.keys()].map(n => n.trim().toLowerCase());
+  // All scan rooms have images — check CR-API coverage (only rooms WITH image count).
+  // Keyed by room_code || name, same logic as buildMapping.
+  const crWithImg = new Map<string, string>(); // key → name
+  for (const r of entry.crRooms) {
+    if (r.image_url) crWithImg.set(r.room_code || r.name, r.name);
+  }
 
-  const hasUnmappedCrWithImg = [...crNamesWithImgLower].some(n => !scanNamesLower.includes(n));
+  // Good: any CR-API-with-image room not found in scan keys
+  const scanKeys = new Set(scanRooms.keys());
+  const hasUnmappedCrWithImg = [...crWithImg.keys()].some(k => !scanKeys.has(k));
   if (hasUnmappedCrWithImg) return 'good';
 
-  const allNamesMatch = scanNamesLower.every(n => crNamesWithImgLower.has(n));
-  return allNamesMatch ? 'perfect' : 'verygood';
+  // Perfect vs Very good: for all matched pairs (same key in both), do names match?
+  let allMatchedNamesEqual = true;
+  for (const [key, scan] of scanRooms) {
+    const crName = crWithImg.get(key);
+    if (crName !== undefined && crName.trim().toLowerCase() !== scan.roomName.trim().toLowerCase()) {
+      allMatchedNamesEqual = false;
+      break;
+    }
+  }
+  return allMatchedNamesEqual ? 'perfect' : 'verygood';
 }
 
 const QUALITY_LABELS: Record<Quality, string> = {
@@ -108,12 +126,12 @@ const QUALITY_COLORS: Record<Quality, string> = {
 };
 
 const QUALITY_DESCRIPTIONS: Record<Quality, string> = {
-  perfect:  'All scan rooms have images; all names match CR-API exactly',
-  verygood: 'All scan rooms have images; some scan names not in CR-API',
-  good:     'All scan rooms have images; some CR-API rooms with images not in scan',
-  mediocre: 'Most scan rooms have images (≥50%)',
-  poor:     'Fewer than half of scan rooms have images',
-  horrible: 'No scan rooms have images',
+  perfect:  'All scan rooms have images; all matched names equal CR-API names; no unmapped CR-API rooms with images',
+  verygood: 'All scan rooms have images; no unmapped CR-API rooms with images; names may differ',
+  good:     'All scan rooms have images; unmapped CR-API rooms with images exist',
+  mediocre: '≥50% of scan rooms have images; at least 1 missing',
+  poor:     '<50% of scan rooms have images; at least 1 present',
+  horrible: 'No scan room has an image',
 };
 
 // ── CR-API room list (collapsible) ────────────────────────────────────────────
@@ -441,7 +459,7 @@ export default function RoomsCrApiPage() {
 
   const [expandedOcc, setExpandedOcc] = React.useState<Map<number, Set<string>>>(new Map());
 
-  // Expanded hotel card IDs — empty Set means all collapsed by default
+  // Expanded hotel card IDs — all open by default when entries load
   const [expandedHotels, setExpandedHotels] = React.useState<Set<number>>(new Set());
 
   // ── Filters & grouping ────────────────────────────────────────────────────
@@ -543,7 +561,9 @@ export default function RoomsCrApiPage() {
             ? `/api/rooms-cr-api?playwrightScanId=${scanId}`
             : '/api/rooms-cr-api';
         const data = await fetchJSON(url, { cache: 'no-store' });
-        setEntries(Array.isArray(data) ? data : []);
+        const loaded: HotelEntry[] = Array.isArray(data) ? data : [];
+        setEntries(loaded);
+        setExpandedHotels(new Set(loaded.map((e: HotelEntry) => e.hotel.id)));
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Failed to load data';
         setEntriesError(msg);
@@ -857,10 +877,11 @@ export default function RoomsCrApiPage() {
                     role="button"
                     aria-expanded={isOpen}
                   >
-                    {/* Chevron */}
-                    <span style={{ fontSize: '0.7rem', transition: 'transform 0.15s', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'none' }}>
-                      &#9654;
-                    </span>
+                    {/* Chevron — Bootstrap accordion-style SVG */}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"
+                      style={{ flexShrink: 0, transition: 'transform 0.15s ease', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                      <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
+                    </svg>
 
                     {/* Hotel meta */}
                     <span>
@@ -889,10 +910,8 @@ export default function RoomsCrApiPage() {
                   {/* Card body — only render when expanded */}
                   {isOpen && (
                     <div className="card-body">
-                      {/* 1. Code Mapping table */}
-                      {(entry.crRooms.length > 0 || entry.playwrightResults !== null) && mappingRows !== null && (
-                        <MappingTable rows={mappingRows} />
-                      )}
+                      {/* 1. CR-API Rooms (collapsed by default) */}
+                      <CrApiRoomList rooms={entry.crRooms} />
 
                       <hr className="my-2" style={{ opacity: 0.3 }} />
 
@@ -991,10 +1010,13 @@ export default function RoomsCrApiPage() {
                         </div>
                       </div>
 
-                      <hr className="my-2" style={{ opacity: 0.3 }} />
-
-                      {/* 3. CR-API Rooms */}
-                      <CrApiRoomList rooms={entry.crRooms} />
+                      {/* 3. Code Mapping table */}
+                      {(entry.crRooms.length > 0 || entry.playwrightResults !== null) && mappingRows !== null && (
+                        <>
+                          <hr className="my-2" style={{ opacity: 0.3 }} />
+                          <MappingTable rows={mappingRows} />
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
