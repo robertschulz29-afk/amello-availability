@@ -263,8 +263,26 @@ function QualityHelpButton() {
 
 // ── Combined Rooms panel (CR-API + Amello Rooms, collapsible) ────────────────
 
+function CrRoomTable({ rows }: { rows: CrRoom[] }) {
+  return (
+    <table className="table table-sm table-bordered mb-0 small">
+      <thead className="table-light">
+        <tr><th style={{ width: '25%' }}>Code</th><th>Name</th></tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i}>
+            <td className="font-monospace text-muted">{r.room_code || '—'}</td>
+            <td>{r.name}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function RoomsPanel({
-  hotelId, hotelName, crRooms, playwrightResults, expandedOcc, toggleOcc, crApiImageOnly = false,
+  hotelId, hotelName, crRooms, playwrightResults, expandedOcc, toggleOcc,
 }: {
   hotelId: number;
   hotelName: string;
@@ -272,30 +290,11 @@ function RoomsPanel({
   playwrightResults: Record<string, PlaywrightOccResult> | null;
   expandedOcc: Map<number, Set<string>>;
   toggleOcc: (hotelId: number, label: string) => void;
-  crApiImageOnly?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
 
-  const withImage    = crRooms.filter(r => r.image_url);
-  const withoutImage = crApiImageOnly ? [] : crRooms.filter(r => !r.image_url);
-
-  function CrTable({ rows }: { rows: CrRoom[] }) {
-    return (
-      <table className="table table-sm table-bordered mb-0 small">
-        <thead className="table-light">
-          <tr><th style={{ width: '25%' }}>Code</th><th>Name</th></tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td className="font-monospace text-muted">{r.room_code || '—'}</td>
-              <td>{r.name}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
+  const withImage    = crRooms.filter(r =>  r.image_url);
+  const withoutImage = crRooms.filter(r => !r.image_url);
 
   return (
     <div>
@@ -312,7 +311,9 @@ function RoomsPanel({
         <div className="mt-2 d-flex flex-column gap-3">
           {/* CR-API rooms */}
           <div>
-            <div className="small fw-semibold text-muted mb-1">CR-API Rooms ({crRooms.length})</div>
+            <div className="small fw-semibold text-muted mb-1">
+              CR-API Rooms ({crRooms.length})
+            </div>
             {crRooms.length === 0 ? (
               <p className="text-muted small mb-0">No CR-API rooms synced</p>
             ) : (
@@ -320,13 +321,13 @@ function RoomsPanel({
                 {withImage.length > 0 && (
                   <div>
                     <div className="small text-success mb-1">With image ({withImage.length})</div>
-                    <CrTable rows={withImage} />
+                    <CrRoomTable rows={withImage} />
                   </div>
                 )}
                 {withoutImage.length > 0 && (
                   <div>
                     <div className="small text-danger mb-1">Without image ({withoutImage.length})</div>
-                    <CrTable rows={withoutImage} />
+                    <CrRoomTable rows={withoutImage} />
                   </div>
                 )}
               </div>
@@ -1130,7 +1131,6 @@ export default function RoomsCrApiPage() {
                         playwrightResults={entry.playwrightResults}
                         expandedOcc={expandedOcc}
                         toggleOcc={toggleOcc}
-                        crApiImageOnly={attentionFilter === 'fixable'}
                       />
 
                       {/* 2. Code Mapping table */}
