@@ -125,33 +125,33 @@ export async function POST(): Promise<NextResponse> {
   await Promise.allSettled(
     successfulCodes.map(async (code) => {
       try {
-        const res = await fetch(TUI_GRAPHQL, {
+        // GraphQL: hotel-level globalTypes only
+        const gqlRes = await fetch(TUI_GRAPHQL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            query: `{ getHotelByCode(code: "${code}") { globalTypes details { rooms { name code globalTypes images { url } } } } }`,
+            query: `{ getHotelByCode(code: "${code}") { globalTypes details { rooms { globalTypes } } } }`,
           }),
           signal: AbortSignal.timeout(8000),
         });
-        if (!res.ok) return;
-        const body = await res.json();
-        const hotel = body?.data?.getHotelByCode;
 
         const collected = new Set<string>();
+        if (gqlRes.ok) {
+          const gqlBody = await gqlRes.json();
+          const hotel = gqlBody?.data?.getHotelByCode;
 
-        // Hotel-level global types
-        if (Array.isArray(hotel?.globalTypes)) {
-          for (const v of hotel.globalTypes) {
-            if (typeof v === 'string') collected.add(v);
-          }
-        }
-
-        // Room-level global types (also collected into hotel-level set)
-        const rooms: any[] = hotel?.details?.rooms ?? [];
-        for (const room of rooms) {
-          if (Array.isArray(room?.globalTypes)) {
-            for (const v of room.globalTypes) {
+          if (Array.isArray(hotel?.globalTypes)) {
+            for (const v of hotel.globalTypes) {
               if (typeof v === 'string') collected.add(v);
+            }
+          }
+          if (Array.isArray(hotel?.details?.rooms)) {
+            for (const room of hotel.details.rooms) {
+              if (Array.isArray(room?.globalTypes)) {
+                for (const v of room.globalTypes) {
+                  if (typeof v === 'string') collected.add(v);
+                }
+              }
             }
           }
         }
@@ -164,26 +164,33 @@ export async function POST(): Promise<NextResponse> {
           );
         }
 
-        // Upsert rooms from CR-API into cr_api_rooms
-        if (rooms.length > 0) {
+        // REST API: room data (code, title, imageUrls) — same source as reference fetch_cr_api.js
+        const TUI_REST = 'https://prod.api.tui/content/hotels';
+        const restRes = await fetch(`${TUI_REST}/${code}?data=true&details=true`, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!restRes.ok) return;
+        const restBody = await restRes.json();
+        const rawRooms: any[] = restBody?.details?.rooms ?? [];
+
+        if (rawRooms.length > 0) {
           const hotelRow = await query(`SELECT id FROM hotels WHERE code = $1`, [code]);
           const hotelId = hotelRow.rows[0]?.id;
           if (hotelId) {
-            for (const room of rooms) {
+            for (const room of rawRooms) {
               const roomCode: string | null = room.code ?? null;
               if (!roomCode) continue;
-              const roomName: string | null = room.name ?? null;
-              const imageUrl: string | null = room.images?.[0]?.url ?? null;
-              const roomGlobalTypes: string[] = Array.isArray(room.globalTypes) ? room.globalTypes.filter((v: any) => typeof v === 'string') : [];
+              const roomName: string | null = room.title ?? null;
+              const imageUrl: string | null = room.imageUrls?.[0] ?? null;
               await query(
                 `INSERT INTO cr_api_rooms (hotel_id, name, room_code, image_url, global_types, updated_at)
                  VALUES ($1, $2, $3, $4, $5, NOW())
                  ON CONFLICT (hotel_id, room_code) DO UPDATE
                    SET name         = EXCLUDED.name,
                        image_url    = EXCLUDED.image_url,
-                       global_types = EXCLUDED.global_types,
                        updated_at   = NOW()`,
-                [hotelId, roomName, roomCode, imageUrl, JSON.stringify(roomGlobalTypes)],
+                [hotelId, roomName, roomCode, imageUrl, JSON.stringify([])],
               );
             }
           }

@@ -43,6 +43,8 @@ type HotelEntry = {
 
 type GroupBy = 'none' | 'brand' | 'region';
 type AttentionFilter = 'all' | 'attention' | 'fixable';
+type Quality = 'perfect' | 'verygood' | 'good' | 'mediocre' | 'poor' | 'horrible';
+type QualityFilter = 'all' | Quality;
 
 function hasAttention(entry: HotelEntry): boolean {
   if (!entry.playwrightResults) return false;
@@ -54,6 +56,56 @@ function isFixable(entry: HotelEntry): boolean {
   const hasCrImages = entry.crRooms.some(r => r.image_url);
   return hasMissingImg && hasCrImages;
 }
+
+function computeQuality(entry: HotelEntry): Quality | null {
+  if (!entry.playwrightResults) return null;
+
+  // Collect unique scan rooms across all occupancies; a room "has image" if !imageMissing in any occupancy
+  const scanRooms = new Map<string, boolean>();
+  for (const result of Object.values(entry.playwrightResults)) {
+    for (const r of result.rooms ?? []) {
+      const hasImage = !r.imageMissing;
+      if (!scanRooms.has(r.roomName) || hasImage) scanRooms.set(r.roomName, hasImage);
+    }
+  }
+  if (scanRooms.size === 0) return null;
+
+  const withImg = [...scanRooms.values()].filter(Boolean).length;
+  const ratio = withImg / scanRooms.size;
+
+  if (withImg === 0) return 'horrible';
+  if (ratio < 0.5) return 'poor';
+  if (withImg < scanRooms.size) return 'mediocre';
+
+  // All scan rooms have images — check CR-API coverage
+  const crNamesLower = new Set(entry.crRooms.map(r => r.name.trim().toLowerCase()));
+  const crNamesWithImgLower = new Set(entry.crRooms.filter(r => r.image_url).map(r => r.name.trim().toLowerCase()));
+  const scanNamesLower = [...scanRooms.keys()].map(n => n.trim().toLowerCase());
+
+  const hasUnmappedCrWithImg = [...crNamesWithImgLower].some(n => !scanNamesLower.includes(n));
+  if (hasUnmappedCrWithImg) return 'good';
+
+  const allNamesMatch = scanNamesLower.every(n => crNamesLower.has(n));
+  return allNamesMatch ? 'perfect' : 'verygood';
+}
+
+const QUALITY_LABELS: Record<Quality, string> = {
+  perfect:  'Perfect',
+  verygood: 'Very good',
+  good:     'Good',
+  mediocre: 'Mediocre',
+  poor:     'Poor',
+  horrible: 'Horrible',
+};
+
+const QUALITY_COLORS: Record<Quality, string> = {
+  perfect:  'success',
+  verygood: 'primary',
+  good:     'info',
+  mediocre: 'warning',
+  poor:     'orange',
+  horrible: 'danger',
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -99,6 +151,7 @@ export default function RoomsCrApiPage() {
   const [nameFilter, setNameFilter] = React.useState('');
   const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
   const [attentionFilter, setAttentionFilter] = React.useState<AttentionFilter>('all');
+  const [qualityFilter, setQualityFilter] = React.useState<QualityFilter>('all');
 
   const filtered = React.useMemo(() => {
     const q = nameFilter.trim().toLowerCase();
@@ -106,9 +159,10 @@ export default function RoomsCrApiPage() {
       if (q && !e.hotel.name.toLowerCase().includes(q) && !e.hotel.code.toLowerCase().includes(q)) return false;
       if (attentionFilter === 'attention' && !hasAttention(e)) return false;
       if (attentionFilter === 'fixable' && !isFixable(e)) return false;
+      if (qualityFilter !== 'all' && computeQuality(e) !== qualityFilter) return false;
       return true;
     });
-  }, [entries, nameFilter, attentionFilter]);
+  }, [entries, nameFilter, attentionFilter, qualityFilter]);
 
   const groups = React.useMemo(() => {
     if (groupBy === 'none') {
@@ -375,6 +429,18 @@ export default function RoomsCrApiPage() {
                   <button type="button" className={`btn btn-outline-info${attentionFilter === 'fixable' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'fixable' ? 'all' : 'fixable')}>⚡ Fix potential</button>
                 </div>
               </div>
+
+              <div>
+                <label className="form-label form-label-sm mb-1 fw-semibold">Mapping quality</label>
+                <div className="btn-group btn-group-sm flex-wrap">
+                  <button type="button" className={`btn btn-outline-secondary${qualityFilter === 'all' ? ' active' : ''}`} onClick={() => setQualityFilter('all')}>All</button>
+                  {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
+                    <button key={q} type="button" className={`btn btn-outline-secondary${qualityFilter === q ? ' active' : ''}`} onClick={() => setQualityFilter(qualityFilter === q ? 'all' : q)}>
+                      {QUALITY_LABELS[q]}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="ms-auto d-flex align-items-end gap-3">
                 <span className="small text-muted">{filtered.length} hotel{filtered.length !== 1 ? 's' : ''}</span>
                 <div>
@@ -430,6 +496,7 @@ export default function RoomsCrApiPage() {
                 <span className="ms-auto d-flex gap-2 align-items-center">
                   {hasAttention(entry) && <span className="badge bg-warning text-dark">⚠ attention</span>}
                   {isFixable(entry) && <span className="badge bg-info text-dark">⚡ fixable</span>}
+                  {(() => { const q = computeQuality(entry); return q ? <span className={`badge bg-${QUALITY_COLORS[q]}${q === 'mediocre' || q === 'poor' ? ' text-dark' : ''} fw-normal`}>{QUALITY_LABELS[q]}</span> : null; })()}
                   <span className="badge bg-primary fw-normal">CR-API: {entry.crRooms.length}</span>
                 </span>
               </div>
