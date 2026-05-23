@@ -45,12 +45,16 @@ export async function POST(req: NextRequest) {
     `;
     const scanId = scanRow.rows[0].id;
 
-    // Fire-and-forget first chunk
-    fetch(`${appUrl}/api/playwright-scan/process`, {
+    // Await the first chunk kick-off — Vercel kills unawaited fetches on response
+    const kickoff = await fetch(`${appUrl}/api/playwright-scan/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scanId, offset: 0, takeScreenshot, appUrl }),
-    }).catch((e) => console.error('[playwright-scan] failed to start process', e));
+    }).catch((e: any) => { console.error('[playwright-scan] failed to start process', e); return null; });
+
+    if (!kickoff?.ok) {
+      console.error('[playwright-scan] process kickoff returned', kickoff?.status);
+    }
 
     return NextResponse.json({ scanId, total });
   } catch (e: any) {
