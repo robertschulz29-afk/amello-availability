@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+function resolveAppUrl(req: NextRequest): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? new URL(req.url).host;
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+  return `${proto}://${host}`;
+}
 import { query, sql } from '@/lib/db';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -33,6 +40,7 @@ export async function POST(req: NextRequest) {
   const scanId   = Number(body?.scanId);
   const offset   = Number.isFinite(body?.offset) ? Number(body.offset) : 0;
   const takeScreenshot: boolean = body?.takeScreenshot === true;
+  const appUrl: string = body?.appUrl ?? resolveAppUrl(req);
 
   if (!Number.isFinite(scanId) || scanId <= 0) {
     return NextResponse.json({ error: 'invalid scanId' }, { status: 400 });
@@ -195,12 +203,10 @@ export async function POST(req: NextRequest) {
   if (done) {
     await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW() WHERE id = ${scanId}`;
   } else {
-    const reqUrl = new URL(req.url);
-    const appUrl = `${reqUrl.protocol}//${reqUrl.host}`;
     fetch(`${appUrl}/api/playwright-scan/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scanId, offset: nextOffset, takeScreenshot }),
+      body: JSON.stringify({ scanId, offset: nextOffset, takeScreenshot, appUrl }),
     }).catch((e) => console.error('[process] self-call failed', e));
   }
 

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, sql } from '@/lib/db';
 
+function resolveAppUrl(req: NextRequest): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? new URL(req.url).host;
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+  return `${proto}://${host}`;
+}
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -14,8 +21,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'checkIn must be YYYY-MM-DD' }, { status: 400 });
     }
 
-    const reqUrl = new URL(req.url);
-    const appUrl = `${reqUrl.protocol}//${reqUrl.host}`;
+    const appUrl = resolveAppUrl(req);
 
     // Block concurrent scans
     const running = await sql`SELECT id FROM playwright_scans WHERE status = 'running' LIMIT 1`;
@@ -43,7 +49,7 @@ export async function POST(req: NextRequest) {
     fetch(`${appUrl}/api/playwright-scan/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scanId, offset: 0, takeScreenshot }),
+      body: JSON.stringify({ scanId, offset: 0, takeScreenshot, appUrl }),
     }).catch((e) => console.error('[playwright-scan] failed to start process', e));
 
     return NextResponse.json({ scanId, total });
