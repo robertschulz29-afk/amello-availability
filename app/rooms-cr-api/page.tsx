@@ -231,6 +231,7 @@ export default function RoomsCrApiPage() {
   );
 
   React.useEffect(() => {
+    setSelectedHotelIds([]);
     loadEntries(selectedScanId);
   }, [selectedScanId, loadEntries]);
 
@@ -414,8 +415,8 @@ export default function RoomsCrApiPage() {
             {/* Row 1: Scan selection */}
             <div className="d-flex align-items-end gap-3 pb-2 mb-2 border-bottom">
               <div>
-                <div className="form-label form-label-sm mb-1 fw-semibold">Scan</div>
-                <select className="form-select form-select-sm" style={{ minWidth: 260 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value) || null)}>
+                <label htmlFor="scan-select" className="form-label form-label-sm mb-1 fw-semibold">Scan</label>
+                <select id="scan-select" className="form-select form-select-sm" style={{ minWidth: 260 }} value={selectedScanId ?? ''} onChange={e => setSelectedScanId(Number(e.target.value) || null)}>
                   <option value="">— no scan selected —</option>
                   {scans.map(s => (
                     <option key={s.id} value={s.id}>
@@ -424,17 +425,17 @@ export default function RoomsCrApiPage() {
                   ))}
                 </select>
               </div>
-              <span className="ms-auto small text-muted align-self-end pb-1">{filtered.length} hotel{filtered.length !== 1 ? 's' : ''}</span>
+              <span className="ms-auto small text-muted align-self-end pb-1">{entries.length} hotel{entries.length !== 1 ? 's' : ''}{filtered.length !== entries.length ? ` (${filtered.length} shown)` : ''}</span>
             </div>
             {/* Row 2: Filters */}
-            <div className="d-flex flex-wrap gap-3">
+            <div className="d-flex flex-wrap align-items-end gap-3">
               <div>
-                <div className="form-label form-label-sm mb-1 fw-semibold">Hotels</div>
-                <HotelCombobox hotels={allHotels} selectedIds={selectedHotelIds} onChange={setSelectedHotelIds} />
+                <div className="form-label form-label-sm mb-1 fw-semibold" id="lbl-hotels">Hotels</div>
+                <HotelCombobox hotels={allHotels} selectedIds={selectedHotelIds} onChange={setSelectedHotelIds} size="sm" />
               </div>
               <div>
-                <div className="form-label form-label-sm mb-1 fw-semibold">Group by</div>
-                <div className="btn-group btn-group-sm">
+                <div className="form-label form-label-sm mb-1 fw-semibold" id="lbl-groupby">Group by</div>
+                <div className="btn-group btn-group-sm" role="group" aria-labelledby="lbl-groupby">
                   {(['none', 'brand', 'region'] as GroupBy[]).map(g => (
                     <button key={g} type="button" className={`btn btn-outline-secondary${groupBy === g ? ' active' : ''}`} onClick={() => setGroupBy(g)}>
                       {g === 'none' ? 'Per Hotel' : g.charAt(0).toUpperCase() + g.slice(1)}
@@ -443,16 +444,16 @@ export default function RoomsCrApiPage() {
                 </div>
               </div>
               <div>
-                <div className="form-label form-label-sm mb-1 fw-semibold">Filter</div>
-                <div className="btn-group btn-group-sm">
+                <div className="form-label form-label-sm mb-1 fw-semibold" id="lbl-filter">Filter</div>
+                <div className="btn-group btn-group-sm" role="group" aria-labelledby="lbl-filter">
                   <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'all' ? ' active' : ''}`} onClick={() => setAttentionFilter('all')}>All</button>
                   <button type="button" className={`btn btn-outline-warning${attentionFilter === 'attention' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'attention' ? 'all' : 'attention')}>⚠ Attention needed</button>
                   <button type="button" className={`btn btn-outline-info${attentionFilter === 'fixable' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'fixable' ? 'all' : 'fixable')}>⚡ Fix potential</button>
                 </div>
               </div>
               <div>
-                <div className="form-label form-label-sm mb-1 fw-semibold">Mapping quality</div>
-                <div className="btn-group btn-group-sm flex-wrap">
+                <div className="form-label form-label-sm mb-1 fw-semibold" id="lbl-quality">Mapping quality</div>
+                <div className="btn-group btn-group-sm flex-wrap" role="group" aria-labelledby="lbl-quality">
                   <button type="button" className={`btn btn-outline-secondary${qualityFilter === 'all' ? ' active' : ''}`} onClick={() => setQualityFilter('all')}>All</button>
                   {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
                     <button key={q} type="button" className={`btn btn-outline-secondary${qualityFilter === q ? ' active' : ''}`} onClick={() => setQualityFilter(qualityFilter === q ? 'all' : q)}>
@@ -599,18 +600,28 @@ export default function RoomsCrApiPage() {
                                     ) : (
                                       <>
                                         {result.rooms && result.rooms.length > 0 ? (
-                                          <ul className="list-unstyled mb-0 small">
-                                            {result.rooms.map((r, i) => (
-                                              <li key={i} className="mb-1">
-                                                {r.roomName}
-                                                {r.imageMissing && (
-                                                  <span className="ms-1 text-warning">
-                                                    ⚠ image missing
-                                                  </span>
-                                                )}
-                                              </li>
-                                            ))}
-                                          </ul>
+                                          <table className="table table-sm table-bordered mb-0 small">
+                                            <thead className="table-light">
+                                              <tr>
+                                                <th style={{ width: 36 }}>#</th>
+                                                <th>Room name</th>
+                                                <th className="text-center" style={{ width: 80 }}>Image</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {result.rooms.map((r, i) => (
+                                                <tr key={i}>
+                                                  <td className="text-muted">{i + 1}</td>
+                                                  <td>{r.roomName}</td>
+                                                  <td className="text-center">
+                                                    {r.imageMissing
+                                                      ? <span className="text-danger fw-semibold">No</span>
+                                                      : <span className="text-success fw-semibold">Yes</span>}
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
                                         ) : (
                                           <p className="text-muted small mb-0">No rooms found</p>
                                         )}
