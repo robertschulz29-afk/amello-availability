@@ -327,11 +327,7 @@ function RoomsPanel({
                 {withoutImage.length > 0 && (
                   <div>
                     <div className="small text-danger mb-1">Without image ({withoutImage.length})</div>
-                    <ul className="list-unstyled mb-0 small ps-1">
-                      {withoutImage.map((r, i) => (
-                        <li key={i} className="text-muted">{r.name}{r.room_code ? <span className="font-monospace ms-1 opacity-50">({r.room_code})</span> : null}</li>
-                      ))}
-                    </ul>
+                    <CrRoomTable rows={withoutImage} />
                   </div>
                 )}
               </div>
