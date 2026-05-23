@@ -110,7 +110,7 @@ const QUALITY_COLORS: Record<Quality, string> = {
 
 // ── CR-API room list (collapsible) ────────────────────────────────────────────
 
-function CrApiRoomList({ rooms, hotelId }: { rooms: CrRoom[]; hotelId: number }) {
+function CrApiRoomList({ rooms }: { rooms: CrRoom[] }) {
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -769,7 +769,7 @@ export default function RoomsCrApiPage() {
                 <div className="row g-3">
                   {/* ── Left: CR-API rooms ── */}
                   <div className="col-12 col-md-6">
-                    <CrApiRoomList rooms={entry.crRooms} hotelId={entry.hotel.id} />
+                    <CrApiRoomList rooms={entry.crRooms} />
                   </div>
 
                   {/* ── Right: Playwright results ── */}
