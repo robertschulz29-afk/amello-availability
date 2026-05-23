@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { query, sql } from '@/lib/db';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -110,7 +111,7 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
           const page = await browser.newPage();
           await page.setViewport({ width: 1440, height: 900 });
           try {
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 });
+            await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
           } catch {
             // partial load — still try to extract data
           }
@@ -216,11 +217,13 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
   if (done) {
     await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW() WHERE id = ${scanId}`;
   } else {
-    fetch(`${appUrl}/api/playwright-scan/process`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scanId, offset: nextOffset, takeScreenshot, appUrl }),
-    }).catch((e) => console.error('[process] self-call failed', e));
+    waitUntil(
+      fetch(`${appUrl}/api/playwright-scan/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scanId, offset: nextOffset, takeScreenshot, appUrl }),
+      }).catch((e) => console.error('[process] self-call failed', e)),
+    );
   }
 
   return NextResponse.json({ processed: chunkProcessed, errors: chunkErrors, done });

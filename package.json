@@ -13,6 +13,7 @@
   "dependencies": {
     "@sparticuz/chromium-min": "^143.0.4",
     "@supabase/supabase-js": "^2.98.0",
+    "@vercel/functions": "^3.6.0",
     "cheerio": "^1.0.0-rc.12",
     "next": "14.2.6",
     "pg": "^8.12.0",
