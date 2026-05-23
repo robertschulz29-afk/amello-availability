@@ -5,7 +5,8 @@ export const OCCUPANCY_CONFIGS = [
   { param: '2%2C+9', folder: 'rooms_2_child9', label: '2 Adults + Child 9' },
 ] as const;
 
-export const ROOM_NAME_SELECTOR      = '.CardRoom_card-room__heading__eM_Eo';
+export const ROOM_CARD_SELECTOR       = '.CardRoom_card-room__ntcA4[id]';
+export const ROOM_NAME_SELECTOR       = '.CardRoom_card-room__heading__eM_Eo';
 export const IMAGE_CONTAINER_SELECTOR = '.CardRoom_card-room__image-container__cN3mR';
 
 export function buildHotelSlug(name: string, code: string): string {

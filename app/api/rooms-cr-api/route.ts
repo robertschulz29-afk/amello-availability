@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     type PlaywrightResult = {
       hotel_id: number;
       occupancy: string;
-      rooms: Array<{ roomName: string; imageMissing: boolean }> | null;
+      rooms: Array<{ roomId: string; roomCode: string; roomName: string; imageMissing: boolean }> | null;
       screenshot_url: string | null;
       error: string | null;
     };

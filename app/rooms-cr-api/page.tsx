@@ -30,7 +30,7 @@ type CrRoom = {
 type PlaywrightOccResult = {
   hotel_id: number;
   occupancy: string;
-  rooms: Array<{ roomName: string; imageMissing: boolean }> | null;
+  rooms: Array<{ roomId: string; roomCode: string; roomName: string; imageMissing: boolean }> | null;
   screenshot_url: string | null;
   error: string | null;
 };
@@ -603,7 +603,7 @@ export default function RoomsCrApiPage() {
                                           <table className="table table-sm table-bordered mb-0 small">
                                             <thead className="table-light">
                                               <tr>
-                                                <th style={{ width: 36 }}>#</th>
+                                                <th style={{ width: '22%' }}>Code</th>
                                                 <th>Room name</th>
                                                 <th className="text-center" style={{ width: 80 }}>Image</th>
                                               </tr>
@@ -611,7 +611,7 @@ export default function RoomsCrApiPage() {
                                             <tbody>
                                               {result.rooms.map((r, i) => (
                                                 <tr key={i}>
-                                                  <td className="text-muted">{i + 1}</td>
+                                                  <td className="font-monospace text-muted">{r.roomCode || '—'}</td>
                                                   <td>{r.roomName}</td>
                                                   <td className="text-center">
                                                     {r.imageMissing

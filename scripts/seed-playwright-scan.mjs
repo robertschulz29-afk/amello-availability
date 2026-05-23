@@ -27,6 +27,13 @@ const CONFIG_MAP = {
 const CHECK_IN = '2026-09-09'; // derived from the URLs in the reference data
 
 async function main() {
+  // Clear existing scan data when --truncate flag is passed
+  if (process.argv.includes('--truncate')) {
+    console.log('Truncating playwright_scan_results and playwright_scans…');
+    await pool.query('TRUNCATE playwright_scan_results, playwright_scans RESTART IDENTITY CASCADE');
+    console.log('Done.');
+  }
+
   console.log('Reading', SCAN_RESULTS_PATH);
   const entries = JSON.parse(fs.readFileSync(SCAN_RESULTS_PATH, 'utf8'));
   console.log(`Loaded ${entries.length} entries`);
@@ -57,9 +64,14 @@ async function main() {
       continue;
     }
 
-    // Normalize rooms: keep only roomName + imageMissing to match our schema
+    // Normalize rooms: preserve roomId, roomCode, roomName, imageMissing
     const rooms = Array.isArray(entry.rooms)
-      ? entry.rooms.map(r => ({ roomName: r.roomName, imageMissing: r.imageMissing ?? false }))
+      ? entry.rooms.map(r => ({
+          roomId:       r.roomId       ?? '',
+          roomCode:     r.roomCode     ?? '',
+          roomName:     r.roomName     ?? '',
+          imageMissing: r.imageMissing ?? false,
+        }))
       : [];
 
     try {

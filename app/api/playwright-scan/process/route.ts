@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, sql } from '@/lib/db';
 import { createClient } from '@supabase/supabase-js';
 import {
-  OCCUPANCY_CONFIGS, ROOM_NAME_SELECTOR, IMAGE_CONTAINER_SELECTOR,
+  OCCUPANCY_CONFIGS, ROOM_CARD_SELECTOR, ROOM_NAME_SELECTOR, IMAGE_CONTAINER_SELECTOR,
   buildHotelSlug, buildTuiUrl,
 } from '@/lib/playwright-scan-helpers';
 
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
 
       for (const cfg of OCCUPANCY_CONFIGS) {
         const url = buildTuiUrl(slug, checkIn, cfg.param);
-        let rooms: Array<{ roomName: string; imageMissing: boolean }> = [];
+        let rooms: Array<{ roomId: string; roomCode: string; roomName: string; imageMissing: boolean }> = [];
         let screenshotUrl: string | null = null;
         let errorMsg: string | null = null;
 
@@ -95,16 +95,33 @@ export async function POST(req: NextRequest) {
           }
 
           rooms = await page.evaluate(
-            (nameSelector: string, containerSelector: string) => {
+            (cardSelector: string, nameSelector: string, containerSelector: string) => {
+              const cards = Array.from(document.querySelectorAll(cardSelector));
+              if (cards.length > 0) {
+                return cards.map(card => {
+                  const fullId   = card.id ?? '';
+                  const roomCode = fullId.split('_')[0];
+                  const heading  = card.querySelector(nameSelector);
+                  const imgCont  = card.querySelector(containerSelector);
+                  return {
+                    roomId:       fullId,
+                    roomCode,
+                    roomName:     heading?.textContent?.trim() ?? '',
+                    imageMissing: imgCont?.textContent?.includes('Image coming soon') ?? false,
+                  };
+                });
+              }
+              // Fallback: old selectors without id (no roomCode/roomId available)
               const headings   = Array.from(document.querySelectorAll(nameSelector));
               const containers = Array.from(document.querySelectorAll(containerSelector));
               return headings.map((h, i) => ({
-                roomName: h.textContent?.trim() ?? '',
-                imageMissing: containers[i]
-                  ? containers[i].textContent?.includes('Image coming soon') ?? false
-                  : false,
+                roomId:       '',
+                roomCode:     '',
+                roomName:     h.textContent?.trim() ?? '',
+                imageMissing: containers[i]?.textContent?.includes('Image coming soon') ?? false,
               }));
             },
+            ROOM_CARD_SELECTOR,
             ROOM_NAME_SELECTOR,
             IMAGE_CONTAINER_SELECTOR,
           );
