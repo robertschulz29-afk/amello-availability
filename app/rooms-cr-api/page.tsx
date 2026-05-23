@@ -134,28 +134,34 @@ const QUALITY_DESCRIPTIONS: Record<Quality, string> = {
   horrible: 'No scan room has an image',
 };
 
-// ── CR-API room list (collapsible) ────────────────────────────────────────────
+// ── Combined Rooms panel (CR-API + Amello Rooms, collapsible) ────────────────
 
-function CrApiRoomList({ rooms }: { rooms: CrRoom[] }) {
+function RoomsPanel({
+  hotelId, hotelName, crRooms, playwrightResults, expandedOcc, toggleOcc,
+}: {
+  hotelId: number;
+  hotelName: string;
+  crRooms: CrRoom[];
+  playwrightResults: Record<string, PlaywrightOccResult> | null;
+  expandedOcc: Map<number, Set<string>>;
+  toggleOcc: (hotelId: number, label: string) => void;
+}) {
   const [open, setOpen] = React.useState(false);
 
-  const withImage    = rooms.filter(r => r.image_url);
-  const withoutImage = rooms.filter(r => !r.image_url);
+  const withImage    = crRooms.filter(r => r.image_url);
+  const withoutImage = crRooms.filter(r => !r.image_url);
 
-  function RoomTable({ rows }: { rows: CrRoom[] }) {
+  function CrTable({ rows }: { rows: CrRoom[] }) {
     return (
       <table className="table table-sm table-bordered mb-0 small">
         <thead className="table-light">
-          <tr>
-            <th style={{ width: '25%' }}>Code</th>
-            <th>Name</th>
-          </tr>
+          <tr><th style={{ width: '25%' }}>Code</th><th>Name</th></tr>
         </thead>
         <tbody>
-          {rows.map((room, idx) => (
-            <tr key={idx}>
-              <td className="font-monospace text-muted">{room.room_code || '—'}</td>
-              <td>{room.name}</td>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td className="font-monospace text-muted">{r.room_code || '—'}</td>
+              <td>{r.name}</td>
             </tr>
           ))}
         </tbody>
@@ -171,28 +177,107 @@ function CrApiRoomList({ rooms }: { rooms: CrRoom[] }) {
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
       >
-        CR-API Rooms ({rooms.length}) {open ? '▲' : '▼'}
+        Rooms {open ? '▲' : '▼'}
       </button>
+
       {open && (
-        <div className="mt-2">
-          {rooms.length === 0 ? (
-            <p className="text-muted small mb-0">No CR-API rooms synced</p>
-          ) : (
-            <div className="d-flex flex-column gap-3">
-              {withImage.length > 0 && (
-                <div>
-                  <div className="small fw-semibold text-success mb-1">With image ({withImage.length})</div>
-                  <RoomTable rows={withImage} />
-                </div>
-              )}
-              {withoutImage.length > 0 && (
-                <div>
-                  <div className="small fw-semibold text-danger mb-1">Without image ({withoutImage.length})</div>
-                  <RoomTable rows={withoutImage} />
-                </div>
-              )}
-            </div>
-          )}
+        <div className="mt-2 d-flex flex-column gap-3">
+          {/* CR-API rooms */}
+          <div>
+            <div className="small fw-semibold text-muted mb-1">CR-API Rooms ({crRooms.length})</div>
+            {crRooms.length === 0 ? (
+              <p className="text-muted small mb-0">No CR-API rooms synced</p>
+            ) : (
+              <div className="d-flex flex-column gap-2">
+                {withImage.length > 0 && (
+                  <div>
+                    <div className="small text-success mb-1">With image ({withImage.length})</div>
+                    <CrTable rows={withImage} />
+                  </div>
+                )}
+                {withoutImage.length > 0 && (
+                  <div>
+                    <div className="small text-danger mb-1">Without image ({withoutImage.length})</div>
+                    <CrTable rows={withoutImage} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Amello Rooms (scan results per occupancy) */}
+          <div>
+            <div className="small fw-semibold text-muted mb-1">Amello Rooms</div>
+            {playwrightResults === null ? (
+              <p className="text-muted small mb-0">No scan data — run a scan above</p>
+            ) : (
+              <div className="accordion accordion-flush" id={`acc-${hotelId}`}>
+                {OCCUPANCY_CONFIGS.map(occ => {
+                  const result = playwrightResults?.[occ.folder] ?? null;
+                  const isOccOpen = expandedOcc.get(hotelId)?.has(occ.label) ?? false;
+                  return (
+                    <div key={occ.label} className="accordion-item">
+                      <h2 className="accordion-header">
+                        <button
+                          className={`accordion-button py-2 small${isOccOpen ? '' : ' collapsed'}`}
+                          type="button"
+                          onClick={() => toggleOcc(hotelId, occ.label)}
+                        >
+                          <span className="me-2">{occ.label}</span>
+                          {result && !result.error && result.rooms !== null && (
+                            <span className="badge bg-secondary fw-normal">{result.rooms.length} rooms</span>
+                          )}
+                          {result?.error && <span className="badge bg-danger fw-normal">Error</span>}
+                          {!result && <span className="badge bg-light text-muted fw-normal">Not scanned</span>}
+                        </button>
+                      </h2>
+                      {isOccOpen && (
+                        <div className="accordion-collapse">
+                          <div className="accordion-body py-2 px-3">
+                            {!result ? (
+                              <p className="text-muted small mb-0">Not scanned</p>
+                            ) : result.error ? (
+                              <p className="text-danger small mb-0">{result.error}</p>
+                            ) : result.rooms && result.rooms.length > 0 ? (
+                              <table className="table table-sm table-bordered mb-0 small">
+                                <thead className="table-light">
+                                  <tr>
+                                    <th style={{ width: '22%' }}>Code</th>
+                                    <th>Room name</th>
+                                    <th className="text-center" style={{ width: 80 }}>Image</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {result.rooms.map((r, i) => (
+                                    <tr key={i}>
+                                      <td className="font-monospace text-muted">{r.roomCode || '—'}</td>
+                                      <td>{r.roomName}</td>
+                                      <td className="text-center">
+                                        {r.imageMissing
+                                          ? <span className="text-danger fw-semibold">No</span>
+                                          : <span className="text-success fw-semibold">Yes</span>}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <p className="text-muted small mb-0">No rooms found</p>
+                            )}
+                            {result?.screenshot_url && (
+                              <div className="mt-2">
+                                <img src={result.screenshot_url} alt={`${hotelName} ${occ.label}`} style={{ width: '100%', borderRadius: 4 }} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -676,7 +761,7 @@ export default function RoomsCrApiPage() {
 
         {/* ── Scan trigger card ── */}
         <div className="card mb-4">
-          <div className="card-header fw-semibold">Playwright Scan</div>
+          <div className="card-header fw-semibold">Amello Rooms Scan</div>
           <div className="card-body">
             {startError && (
               <div className="alert alert-danger alert-dismissible py-2" role="alert">
@@ -910,107 +995,17 @@ export default function RoomsCrApiPage() {
                   {/* Card body — only render when expanded */}
                   {isOpen && (
                     <div className="card-body">
-                      {/* 1. CR-API Rooms (collapsed by default) */}
-                      <CrApiRoomList rooms={entry.crRooms} />
+                      {/* 1. Rooms panel — CR-API + Amello combined, collapsible */}
+                      <RoomsPanel
+                        hotelId={entry.hotel.id}
+                        hotelName={entry.hotel.name}
+                        crRooms={entry.crRooms}
+                        playwrightResults={entry.playwrightResults}
+                        expandedOcc={expandedOcc}
+                        toggleOcc={toggleOcc}
+                      />
 
-                      <hr className="my-2" style={{ opacity: 0.3 }} />
-
-                      {/* 2. Playwright Results */}
-                      <div className="row g-3">
-                        <div className="col-12 col-md-6">
-                          <div className="fw-semibold small mb-2">Playwright Results</div>
-                          {entry.playwrightResults === null ? (
-                            <p className="text-muted small mb-0">
-                              No scan data — run a scan above
-                            </p>
-                          ) : (
-                            <div className="accordion accordion-flush" id={`acc-${entry.hotel.id}`}>
-                              {OCCUPANCY_CONFIGS.map(occ => {
-                                const result = entry.playwrightResults?.[occ.folder] ?? null;
-                                const isOccOpen =
-                                  expandedOcc.get(entry.hotel.id)?.has(occ.label) ?? false;
-                                return (
-                                  <div key={occ.label} className="accordion-item">
-                                    <h2 className="accordion-header">
-                                      <button
-                                        className={`accordion-button py-2 small${isOccOpen ? '' : ' collapsed'}`}
-                                        type="button"
-                                        onClick={() => toggleOcc(entry.hotel.id, occ.label)}
-                                      >
-                                        <span className="me-2">{occ.label}</span>
-                                        {result && !result.error && result.rooms !== null && (
-                                          <span className="badge bg-secondary fw-normal">
-                                            {result.rooms.length} rooms
-                                          </span>
-                                        )}
-                                        {result?.error && (
-                                          <span className="badge bg-danger fw-normal">Error</span>
-                                        )}
-                                        {!result && (
-                                          <span className="badge bg-light text-muted fw-normal">
-                                            Not scanned
-                                          </span>
-                                        )}
-                                      </button>
-                                    </h2>
-                                    {isOccOpen && (
-                                      <div className="accordion-collapse">
-                                        <div className="accordion-body py-2 px-3">
-                                          {!result ? (
-                                            <p className="text-muted small mb-0">Not scanned</p>
-                                          ) : result.error ? (
-                                            <p className="text-danger small mb-0">{result.error}</p>
-                                          ) : (
-                                            <>
-                                              {result.rooms && result.rooms.length > 0 ? (
-                                                <table className="table table-sm table-bordered mb-0 small">
-                                                  <thead className="table-light">
-                                                    <tr>
-                                                      <th style={{ width: '22%' }}>Code</th>
-                                                      <th>Room name</th>
-                                                      <th className="text-center" style={{ width: 80 }}>Image</th>
-                                                    </tr>
-                                                  </thead>
-                                                  <tbody>
-                                                    {result.rooms.map((r, i) => (
-                                                      <tr key={i}>
-                                                        <td className="font-monospace text-muted">{r.roomCode || '—'}</td>
-                                                        <td>{r.roomName}</td>
-                                                        <td className="text-center">
-                                                          {r.imageMissing
-                                                            ? <span className="text-danger fw-semibold">No</span>
-                                                            : <span className="text-success fw-semibold">Yes</span>}
-                                                        </td>
-                                                      </tr>
-                                                    ))}
-                                                  </tbody>
-                                                </table>
-                                              ) : (
-                                                <p className="text-muted small mb-0">No rooms found</p>
-                                              )}
-                                              {result.screenshot_url && (
-                                                <div className="mt-2">
-                                                  <img
-                                                    src={result.screenshot_url}
-                                                    alt={`${entry.hotel.name} ${occ.label}`}
-                                                    style={{ width: '100%', borderRadius: 4 }}
-                                                  />
-                                                </div>
-                                              )}
-                                            </>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* 3. Code Mapping table */}
+                      {/* 2. Code Mapping table */}
                       {(entry.crRooms.length > 0 || entry.playwrightResults !== null) && mappingRows !== null && (
                         <>
                           <hr className="my-2" style={{ opacity: 0.3 }} />
