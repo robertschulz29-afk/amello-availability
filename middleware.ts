@@ -6,11 +6,12 @@ import { verifySessionToken, COOKIE_NAME } from '@/lib/auth-edge';
 const PUBLIC_PATHS = [
   '/login',
   '/api/auth/login',
-  '/api/scans',          // scan creation, listing, stop, delete
-  '/api/scan-sources',   // source toggle
-  '/api/hotels',         // hotel data
-  '/api/settings',       // app settings (cookies etc.)
-  '/api/global_types',   // global types and filter group management
+  '/api/scans',               // scan creation, listing, stop, delete
+  '/api/scan-sources',        // source toggle
+  '/api/hotels',              // hotel data
+  '/api/settings',            // app settings (cookies etc.)
+  '/api/global_types',        // global types and filter group management
+  '/api/playwright-scan',     // scan trigger + status polling + process chunks
 ];
 
 export async function middleware(request: NextRequest) {
