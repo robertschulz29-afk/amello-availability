@@ -21,6 +21,7 @@ export interface RateInfo {
 
 export interface RoomInfo {
   name: string | null;
+  contentId: string | null;
   rates: RateInfo[];
 }
 
@@ -84,6 +85,9 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
     // Get room name
     const roomName = room.name || room.roomName || room.title || room.type || null;
 
+    const contentId: string | null = typeof room.contentId === 'string' ? room.contentId
+      : room.contentId != null ? String(room.contentId) : null;
+
     // Try to get currency from room if not found at root level
     const roomCurrency = extractCurrency(room) || globalCurrency;
 
@@ -146,6 +150,7 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
     if (extractedRates.length > 0) {
       result.rooms.push({
         name: roomName,
+        contentId,
         rates: extractedRates,
       });
     }
