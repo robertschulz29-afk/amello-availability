@@ -108,6 +108,55 @@ const QUALITY_COLORS: Record<Quality, string> = {
   horrible: 'danger',
 };
 
+// ── CR-API room list (collapsible) ────────────────────────────────────────────
+
+function CrApiRoomList({ rooms, hotelId }: { rooms: CrRoom[]; hotelId: number }) {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="btn btn-link btn-sm text-start p-0 fw-semibold text-decoration-none small"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+      >
+        CR-API Rooms ({rooms.length}) {open ? '▲' : '▼'}
+      </button>
+      {open && (
+        <div className="mt-2">
+          {rooms.length === 0 ? (
+            <p className="text-muted small mb-0">No CR-API rooms synced</p>
+          ) : (
+            <table className="table table-sm table-bordered mb-0 small">
+              <thead className="table-light">
+                <tr>
+                  <th style={{ width: '25%' }}>Code</th>
+                  <th>Name</th>
+                  <th className="text-center" style={{ width: 70 }}>Image</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rooms.map((room, idx) => (
+                  <tr key={idx}>
+                    <td className="font-monospace text-muted">{room.room_code || '—'}</td>
+                    <td>{room.name}</td>
+                    <td className="text-center">
+                      {room.image_url
+                        ? <span className="text-success fw-semibold">Yes</span>
+                        : <span className="text-danger">No</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Mapping table helpers ─────────────────────────────────────────────────────
 
 type MappingRow = {
@@ -720,45 +769,7 @@ export default function RoomsCrApiPage() {
                 <div className="row g-3">
                   {/* ── Left: CR-API rooms ── */}
                   <div className="col-12 col-md-6">
-                    <div className="fw-semibold small mb-2">CR-API Rooms</div>
-                    {entry.crRooms.length === 0 ? (
-                      <p className="text-muted small mb-0">No CR-API rooms synced</p>
-                    ) : (
-                      <div className="d-flex flex-column gap-2">
-                        {entry.crRooms.map((room, idx) => (
-                          <div key={idx} className="d-flex gap-2 align-items-start">
-                            {room.image_url && (
-                              <img
-                                src={room.image_url}
-                                alt={room.name}
-                                style={{
-                                  width: 56,
-                                  height: 40,
-                                  objectFit: 'cover',
-                                  borderRadius: 4,
-                                  flexShrink: 0,
-                                }}
-                              />
-                            )}
-                            <div>
-                              <div className="small fw-semibold">{room.name}</div>
-                              {room.room_code && (
-                                <div className="small text-muted">{room.room_code}</div>
-                              )}
-                              {room.global_types && room.global_types.length > 0 && (
-                                <div className="d-flex flex-wrap gap-1 mt-1">
-                                  {room.global_types.map(gt => (
-                                    <span key={gt} className="badge bg-secondary fw-normal small">
-                                      {gt}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <CrApiRoomList rooms={entry.crRooms} hotelId={entry.hotel.id} />
                   </div>
 
                   {/* ── Right: Playwright results ── */}
