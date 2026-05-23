@@ -195,14 +195,13 @@ export async function POST(req: NextRequest) {
   if (done) {
     await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW() WHERE id = ${scanId}`;
   } else {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-    if (appUrl) {
-      fetch(`${appUrl}/api/playwright-scan/process`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scanId, offset: nextOffset, takeScreenshot }),
-      }).catch((e) => console.error('[process] self-call failed', e));
-    }
+    const reqUrl = new URL(req.url);
+    const appUrl = `${reqUrl.protocol}//${reqUrl.host}`;
+    fetch(`${appUrl}/api/playwright-scan/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scanId, offset: nextOffset, takeScreenshot }),
+    }).catch((e) => console.error('[process] self-call failed', e));
   }
 
   return NextResponse.json({ processed: chunkProcessed, errors: chunkErrors, done });

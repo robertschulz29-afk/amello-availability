@@ -14,10 +14,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'checkIn must be YYYY-MM-DD' }, { status: 400 });
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-    if (!appUrl) {
-      return NextResponse.json({ error: 'NEXT_PUBLIC_APP_URL is not configured' }, { status: 500 });
-    }
+    const reqUrl = new URL(req.url);
+    const appUrl = `${reqUrl.protocol}//${reqUrl.host}`;
 
     // Block concurrent scans
     const running = await sql`SELECT id FROM playwright_scans WHERE status = 'running' LIMIT 1`;
