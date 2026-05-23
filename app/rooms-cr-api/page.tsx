@@ -282,7 +282,7 @@ function CrRoomTable({ rows }: { rows: CrRoom[] }) {
 }
 
 function RoomsPanel({
-  hotelId, hotelName, crRooms, playwrightResults, expandedOcc, toggleOcc,
+  hotelId, hotelName, crRooms, playwrightResults, expandedOcc, toggleOcc, fixPotentialActive = false,
 }: {
   hotelId: number;
   hotelName: string;
@@ -290,6 +290,7 @@ function RoomsPanel({
   playwrightResults: Record<string, PlaywrightOccResult> | null;
   expandedOcc: Map<number, Set<string>>;
   toggleOcc: (hotelId: number, label: string) => void;
+  fixPotentialActive?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
 
@@ -324,10 +325,14 @@ function RoomsPanel({
                     <CrRoomTable rows={withImage} />
                   </div>
                 )}
-                {withoutImage.length > 0 && (
+                {!fixPotentialActive && withoutImage.length > 0 && (
                   <div>
                     <div className="small text-danger mb-1">Without image ({withoutImage.length})</div>
-                    <CrRoomTable rows={withoutImage} />
+                    <ul className="list-unstyled mb-0 small ps-1">
+                      {withoutImage.map((r, i) => (
+                        <li key={i} className="text-muted">{r.name}{r.room_code ? <span className="font-monospace ms-1 opacity-50">({r.room_code})</span> : null}</li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>
@@ -1131,6 +1136,7 @@ export default function RoomsCrApiPage() {
                         playwrightResults={entry.playwrightResults}
                         expandedOcc={expandedOcc}
                         toggleOcc={toggleOcc}
+                        fixPotentialActive={attentionFilter === 'fixable'}
                       />
 
                       {/* 2. Code Mapping table */}
