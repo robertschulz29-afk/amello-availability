@@ -58,7 +58,8 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
   const supabase = takeScreenshot ? getSupabaseClient() : null;
 
   const LAUNCH_ARGS = [
-    '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+    '--no-sandbox', '--disable-setuid-sandbox', '--no-zygote',
+    '--disable-dev-shm-usage', '--disable-gpu',
     '--disk-cache-size=0', '--media-cache-size=0', '--disable-application-cache',
   ];
 
