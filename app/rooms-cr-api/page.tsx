@@ -717,6 +717,25 @@ export default function RoomsCrApiPage() {
       .map(([key, es]) => ({ key, label: key, entries: es.sort((a, b) => a.hotel.name.localeCompare(b.hotel.name)) }));
   }, [filtered, groupBy]);
 
+  const scanSummary = React.useMemo(() => {
+    return OCCUPANCY_CONFIGS.map(cfg => {
+      const available = new Set<string>();
+      const withImg   = new Set<string>();
+      const noImg     = new Set<string>();
+      for (const e of entries) {
+        const result = e.playwrightResults?.[cfg.folder];
+        for (const r of result?.rooms ?? []) {
+          const key = r.roomCode || r.roomName;
+          if (!key) continue;
+          available.add(key);
+          if (r.imageMissing) noImg.add(key); else withImg.add(key);
+        }
+      }
+      return { label: cfg.label, available: available.size, withImg: withImg.size, noImg: noImg.size };
+    });
+  }, [entries]);
+
+
   // All visible hotel IDs (for expand/collapse all)
   const allVisibleIds = React.useMemo(
     () => filtered.map(e => e.hotel.id),
@@ -1048,6 +1067,37 @@ export default function RoomsCrApiPage() {
             </div>
           </div>
         </div>
+
+        {/* ── Summary ── */}
+        {!loadingEntries && entries.length > 0 && entries.some(e => e.playwrightResults) && (
+          <div className="card mb-4">
+            <div className="card-header fw-semibold">Scan Summary</div>
+            <div className="card-body p-0">
+              <table className="table table-sm table-bordered mb-0 small">
+                <thead className="table-light">
+                  <tr>
+                    <th style={{ width: '20%' }}></th>
+                    {scanSummary.map(s => <th key={s.label} className="text-center">{s.label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="fw-semibold">Available rooms</td>
+                    {scanSummary.map(s => <td key={s.label} className="text-center">{s.available}</td>)}
+                  </tr>
+                  <tr>
+                    <td className="fw-semibold text-danger">Rooms w/o image</td>
+                    {scanSummary.map(s => <td key={s.label} className="text-center">{s.noImg}</td>)}
+                  </tr>
+                  <tr>
+                    <td className="fw-semibold text-success">Rooms w/ image</td>
+                    {scanSummary.map(s => <td key={s.label} className="text-center">{s.withImg}</td>)}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* ── Loading ── */}
         {loadingEntries && (
