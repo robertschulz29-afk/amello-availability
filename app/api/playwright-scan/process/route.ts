@@ -86,7 +86,7 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
   let chunkErrors    = 0;
 
   const executablePath = await getChromiumPath();
-  const puppeteer = (await import('puppeteer-core')).default;
+  const { chromium } = await import('playwright-core');
   const supabase = takeScreenshot ? getSupabaseClient() : null;
 
   for (const hotel of hotels) {
@@ -95,7 +95,7 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
     let page: any = null;
 
     try {
-      browser = await puppeteer.launch({
+      browser = await chromium.launch({
         executablePath,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process'],
         headless: true,
@@ -103,7 +103,7 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
 
       // One page reused across all occupancy configs (matches original approach)
       page = await browser.newPage();
-      await page.setViewport({ width: 1440, height: 900 });
+      await page.setViewportSize({ width: 1440, height: 900 });
 
       for (const cfg of OCCUPANCY_CONFIGS) {
         const url = buildTuiUrl(slug, checkIn, cfg.param);
@@ -113,13 +113,14 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
 
         try {
           try {
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
           } catch {
             // partial load — still attempt extraction
           }
 
-          // Wait for room cards to render (proven selector from original project)
+          // Exact sequence from original /list project
           await page.waitForSelector(ROOM_CARD_SELECTOR, { timeout: 15000 }).catch(() => {});
+          await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
 
           rooms = await page.evaluate(
             (cardSelector: string, nameSelector: string, containerSelector: string) => {
@@ -144,7 +145,7 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
 
           if (takeScreenshot && supabase) {
             try {
-              const buf = await page.screenshot({ type: 'jpeg', quality: 60, fullPage: true }) as Buffer;
+              const buf = Buffer.from(await page.screenshot({ type: 'jpeg', quality: 60, fullPage: true }));
               const storagePath = `playwright-${scanId}/${cfg.folder}/${hotel.code}.jpg`;
               const { error: uploadErr } = await supabase.storage
                 .from('scan-screenshots')
