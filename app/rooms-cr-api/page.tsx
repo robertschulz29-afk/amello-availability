@@ -637,9 +637,9 @@ function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]
                   <td>{r.crName || '—'}</td>
                   <td>{r.scanName || '—'}</td>
                   <td className="text-center">{matchBadge(r)}</td>
-                  <td className="text-center" style={{ borderLeft: '2px solid #6c757d' }}>{yn(r.imgCr)}</td>
-                  <td className="text-center">{yn(r.imgScan)}</td>
-                  <td className="text-center" style={{ borderRight: '2px solid #6c757d' }}>{yn(r.imgBoth)}</td>
+                  <td className="text-center" style={{ borderLeft: '2px solid #6c757d', borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>{yn(r.imgCr)}</td>
+                  <td className="text-center" style={{ borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>{yn(r.imgScan)}</td>
+                  <td className="text-center" style={{ borderRight: '2px solid #6c757d', borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>{yn(r.imgBoth)}</td>
                   {OCCUPANCY_CONFIGS.map(cfg => (
                     <td key={cfg.folder} className="text-center">{yn(!!r.occPresence[cfg.folder])}</td>
                   ))}
