@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, sql } from '@/lib/db';
-import { runChunk } from '@/lib/playwright-scan-runner';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300;
 
 // POST — trigger a new scan
 export async function POST(req: NextRequest) {
@@ -37,11 +35,6 @@ export async function POST(req: NextRequest) {
       RETURNING id
     `;
     const scanId = scanRow.rows[0].id;
-
-    // Kick off the first chunk directly — cron handles subsequent chunks
-    runChunk({ scanId, offset: 0, takeScreenshot }).catch((e: any) =>
-      console.error('[playwright-scan] kickoff chunk failed', e.message),
-    );
 
     return NextResponse.json({ scanId, total });
   } catch (e: any) {
