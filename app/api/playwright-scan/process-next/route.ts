@@ -19,7 +19,7 @@ async function processNext(req: NextRequest) {
 
   try {
     const scanQ = await sql`
-      SELECT id, check_in, take_screenshot
+      SELECT id, check_in, take_screenshot, retry_attempted
       FROM playwright_scans
       WHERE status = 'running'
       ORDER BY id ASC
@@ -33,6 +33,7 @@ async function processNext(req: NextRequest) {
     const scan = scanQ.rows[0];
     const scanId: number = scan.id;
     const takeScreenshot: boolean = scan.take_screenshot ?? false;
+    const retryAttempted: boolean = scan.retry_attempted ?? false;
 
     // Acquire lock: only proceed if no active lock (or lock expired)
     const lockResult = await sql`
@@ -57,6 +58,7 @@ async function processNext(req: NextRequest) {
     let chunksRun = 0;
     let lastResult: any = null;
 
+    // ── Main pass ──────────────────────────────────────────────────────────────
     while (Date.now() < deadline) {
       const offsetQ = await query(
         `SELECT COUNT(DISTINCT hotel_id)::int AS cnt FROM playwright_scan_results WHERE scan_id = $1`,
@@ -65,6 +67,38 @@ async function processNext(req: NextRequest) {
       const offset: number = offsetQ.rows[0].cnt;
 
       if (offset >= total) {
+        // Main pass complete — check for errors before marking done
+        if (!retryAttempted) {
+          const errorQ = await query(
+            `SELECT DISTINCT hotel_id FROM playwright_scan_results WHERE scan_id = $1 AND error IS NOT NULL`,
+            [scanId],
+          );
+          const errorHotelIds: number[] = errorQ.rows.map((r: { hotel_id: number }) => r.hotel_id);
+
+          if (errorHotelIds.length > 0) {
+            console.log(`[playwright-process-next] scan=${scanId} main pass done, retrying ${errorHotelIds.length} errored hotels`);
+            await sql`UPDATE playwright_scans SET retry_attempted = TRUE WHERE id = ${scanId}`;
+
+            // ── Retry pass ───────────────────────────────────────────────────
+            let retryOffset = 0;
+            while (Date.now() < deadline) {
+              if (retryOffset >= errorHotelIds.length) break;
+              console.log(`[playwright-process-next] scan=${scanId} retry offset=${retryOffset}/${errorHotelIds.length}`);
+              lastResult = await runChunk({ scanId, offset: retryOffset, takeScreenshot, hotelIds: errorHotelIds });
+              chunksRun++;
+              retryOffset += 3; // CHUNK_SIZE
+              if (lastResult.aborted) break;
+            }
+
+            if (retryOffset >= errorHotelIds.length) {
+              await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
+              return NextResponse.json({ message: 'Scan complete (with retry)', scanId, chunksRun });
+            }
+            // Retry not finished in this tick — release lock and let next tick continue
+            break;
+          }
+        }
+
         await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
         return NextResponse.json({ message: 'Scan complete', scanId, chunksRun });
       }
@@ -74,6 +108,36 @@ async function processNext(req: NextRequest) {
       chunksRun++;
 
       if (lastResult.done || lastResult.aborted) break;
+    }
+
+    // Handle retry pass resumption across cron ticks
+    if (retryAttempted) {
+      const remainingQ = await query(
+        `SELECT DISTINCT hotel_id FROM playwright_scan_results WHERE scan_id = $1 AND error IS NOT NULL`,
+        [scanId],
+      );
+      const remaining: number[] = remainingQ.rows.map((r: { hotel_id: number }) => r.hotel_id);
+
+      if (remaining.length === 0) {
+        await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
+        return NextResponse.json({ message: 'Scan complete (retry finished)', scanId, chunksRun });
+      }
+
+      // Still hotels left to retry — keep running
+      let retryOffset = 0;
+      while (Date.now() < deadline) {
+        if (retryOffset >= remaining.length) break;
+        console.log(`[playwright-process-next] scan=${scanId} retry (resumed) offset=${retryOffset}/${remaining.length}`);
+        lastResult = await runChunk({ scanId, offset: retryOffset, takeScreenshot, hotelIds: remaining });
+        chunksRun++;
+        retryOffset += 3;
+        if (lastResult.aborted) break;
+      }
+
+      if (retryOffset >= remaining.length) {
+        await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
+        return NextResponse.json({ message: 'Scan complete (retry finished)', scanId, chunksRun });
+      }
     }
 
     // Release lock so next cron tick can proceed immediately

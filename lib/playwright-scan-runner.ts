@@ -23,8 +23,8 @@ function getSupabaseClient() {
 
 export type RunChunkResult = { processed: number; errors: number; done: boolean; skipped?: boolean; reason?: string; error?: string; aborted?: boolean };
 
-export async function runChunk({ scanId, offset, takeScreenshot }: {
-  scanId: number; offset: number; takeScreenshot: boolean;
+export async function runChunk({ scanId, offset, takeScreenshot, hotelIds }: {
+  scanId: number; offset: number; takeScreenshot: boolean; hotelIds?: number[];
 }): Promise<RunChunkResult> {
 
   const scanQ = await sql`SELECT status, check_in FROM playwright_scans WHERE id = ${scanId}`;
@@ -37,17 +37,30 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
     ? scan.check_in.slice(0, 10)
     : new Date(scan.check_in).toISOString().slice(0, 10);
 
-  const hotelsQ = await query(
-    `SELECT id, name, code FROM hotels WHERE active = true AND bookable = true ORDER BY id LIMIT $1 OFFSET $2`,
-    [CHUNK_SIZE, offset],
-  );
-  const hotels = hotelsQ.rows as Array<{ id: number; name: string; code: string }>;
+  let hotels: Array<{ id: number; name: string; code: string }>;
+  let totalHotels: number;
 
-  const totalHotelsQ = await query(
-    `SELECT COUNT(*)::int AS cnt FROM hotels WHERE active = true AND bookable = true`,
-    [],
-  );
-  const totalHotels: number = totalHotelsQ.rows[0].cnt;
+  if (hotelIds && hotelIds.length > 0) {
+    // Retry mode: scrape only the specified hotels
+    const slice = hotelIds.slice(offset, offset + CHUNK_SIZE);
+    const hotelsQ = await query(
+      `SELECT id, name, code FROM hotels WHERE id = ANY($1) ORDER BY id`,
+      [slice],
+    );
+    hotels = hotelsQ.rows;
+    totalHotels = hotelIds.length;
+  } else {
+    const hotelsQ = await query(
+      `SELECT id, name, code FROM hotels WHERE active = true AND bookable = true ORDER BY id LIMIT $1 OFFSET $2`,
+      [CHUNK_SIZE, offset],
+    );
+    hotels = hotelsQ.rows;
+    const totalHotelsQ = await query(
+      `SELECT COUNT(*)::int AS cnt FROM hotels WHERE active = true AND bookable = true`,
+      [],
+    );
+    totalHotels = totalHotelsQ.rows[0].cnt;
+  }
 
   let chunkProcessed = 0;
   let chunkErrors    = 0;
