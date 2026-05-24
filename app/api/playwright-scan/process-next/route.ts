@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql, query } from '@/lib/db';
+import { runChunk } from '@/lib/playwright-scan-runner';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function resolveAppUrl(req: NextRequest): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? new URL(req.url).host;
-  const proto = req.headers.get('x-forwarded-proto') ?? 'https';
-  return `${proto}://${host}`;
-}
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) { return processNext(req); }
 export async function POST(req: NextRequest) { return processNext(req); }
@@ -23,7 +18,6 @@ async function processNext(req: NextRequest) {
   console.log('[playwright-process-next] cron tick', new Date().toISOString());
 
   try {
-    // Find the oldest running playwright scan
     const scanQ = await sql`
       SELECT id, check_in, take_screenshot
       FROM playwright_scans
@@ -40,14 +34,12 @@ async function processNext(req: NextRequest) {
     const scanId: number = scan.id;
     const takeScreenshot: boolean = scan.take_screenshot ?? false;
 
-    // Compute next offset: how many distinct hotels already have results
     const offsetQ = await query(
       `SELECT COUNT(DISTINCT hotel_id)::int AS cnt FROM playwright_scan_results WHERE scan_id = $1`,
       [scanId],
     );
     const offset: number = offsetQ.rows[0].cnt;
 
-    // Check total hotels
     const totalQ = await query(
       `SELECT COUNT(*)::int AS cnt FROM hotels WHERE active = true AND bookable = true`,
       [],
@@ -59,24 +51,9 @@ async function processNext(req: NextRequest) {
       return NextResponse.json({ message: 'Scan complete', scanId });
     }
 
-    const appUrl = resolveAppUrl(req);
-
     console.log(`[playwright-process-next] scan=${scanId} offset=${offset}/${total}`);
 
-    const res = await fetch(`${appUrl}/api/playwright-scan/process`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scanId, offset, takeScreenshot, appUrl }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      console.error('[playwright-process-next] process route error', res.status, text.slice(0, 200));
-      return NextResponse.json({ error: 'Process route failed', status: res.status }, { status: 500 });
-    }
-
-    const result = await res.json();
-    console.log('[playwright-process-next] done', result);
+    const result = await runChunk({ scanId, offset, takeScreenshot });
     return NextResponse.json({ scanId, offset, total, ...result });
 
   } catch (e: any) {
