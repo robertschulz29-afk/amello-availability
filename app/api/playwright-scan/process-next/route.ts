@@ -47,31 +47,39 @@ async function processNext(req: NextRequest) {
       return NextResponse.json({ message: 'Locked by another invocation', scanId });
     }
 
-    const offsetQ = await query(
-      `SELECT COUNT(DISTINCT hotel_id)::int AS cnt FROM playwright_scan_results WHERE scan_id = $1`,
-      [scanId],
-    );
-    const offset: number = offsetQ.rows[0].cnt;
-
     const totalQ = await query(
       `SELECT COUNT(*)::int AS cnt FROM hotels WHERE active = true AND bookable = true`,
       [],
     );
     const total: number = totalQ.rows[0].cnt;
 
-    if (offset >= total) {
-      await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
-      return NextResponse.json({ message: 'Scan complete', scanId });
+    const deadline = Date.now() + 240_000; // stop looping with 60s to spare before maxDuration
+    let chunksRun = 0;
+    let lastResult: any = null;
+
+    while (Date.now() < deadline) {
+      const offsetQ = await query(
+        `SELECT COUNT(DISTINCT hotel_id)::int AS cnt FROM playwright_scan_results WHERE scan_id = $1`,
+        [scanId],
+      );
+      const offset: number = offsetQ.rows[0].cnt;
+
+      if (offset >= total) {
+        await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
+        return NextResponse.json({ message: 'Scan complete', scanId, chunksRun });
+      }
+
+      console.log(`[playwright-process-next] scan=${scanId} offset=${offset}/${total}`);
+      lastResult = await runChunk({ scanId, offset, takeScreenshot });
+      chunksRun++;
+
+      if (lastResult.done || lastResult.aborted) break;
     }
-
-    console.log(`[playwright-process-next] scan=${scanId} offset=${offset}/${total}`);
-
-    const result = await runChunk({ scanId, offset, takeScreenshot });
 
     // Release lock so next cron tick can proceed immediately
     await sql`UPDATE playwright_scans SET locked_until = NULL WHERE id = ${scanId}`.catch(() => {});
 
-    return NextResponse.json({ scanId, offset, total, ...result });
+    return NextResponse.json({ scanId, total, chunksRun, ...lastResult });
 
   } catch (e: any) {
     console.error('[playwright-process-next] fatal', e.message);
