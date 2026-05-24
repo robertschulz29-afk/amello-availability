@@ -7,14 +7,11 @@ import {
 
 const CHUNK_SIZE = 3;
 
-let chromiumPath: string | undefined;
+const CHROMIUM_URL = 'https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar';
 
 async function getChromiumPath(): Promise<string> {
-  if (chromiumPath) return chromiumPath;
   const chromium = (await import('@sparticuz/chromium-min')).default;
-  const CHROMIUM_URL = 'https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar';
-  chromiumPath = await chromium.executablePath(CHROMIUM_URL);
-  return chromiumPath;
+  return chromium.executablePath(CHROMIUM_URL);
 }
 
 function getSupabaseClient() {
