@@ -1170,8 +1170,8 @@ export default function RoomsCrApiPage() {
                           {g.cols.map((c, i) => <td key={i} className="text-center">{c.noImg}</td>)}
                         </tr>
                         <tr>
-                          <td className="ps-3 text-success fw-semibold">Rooms w/ image</td>
-                          {g.cols.map((c, i) => <td key={i} className="text-center">{c.withImg}</td>)}
+                          <td className="ps-3 text-success fw-bold">Rooms w/ image</td>
+                          {g.cols.map((c, i) => <td key={i} className="text-center fw-bold">{c.withImg}</td>)}
                         </tr>
                       </React.Fragment>
                     ))
