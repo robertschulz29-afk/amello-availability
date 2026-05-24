@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, sql } from '@/lib/db';
-
-function resolveAppUrl(req: NextRequest): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? new URL(req.url).host;
-  const proto = req.headers.get('x-forwarded-proto') ?? 'https';
-  return `${proto}://${host}`;
-}
+import { runChunk } from '@/lib/playwright-scan-runner';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 // POST — trigger a new scan
 export async function POST(req: NextRequest) {
@@ -20,8 +15,6 @@ export async function POST(req: NextRequest) {
     if (!checkIn || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn)) {
       return NextResponse.json({ error: 'checkIn must be YYYY-MM-DD' }, { status: 400 });
     }
-
-    const appUrl = resolveAppUrl(req);
 
     // Block concurrent scans
     const running = await sql`SELECT id FROM playwright_scans WHERE status = 'running' LIMIT 1`;
@@ -45,16 +38,10 @@ export async function POST(req: NextRequest) {
     `;
     const scanId = scanRow.rows[0].id;
 
-    // Await the first chunk kick-off — Vercel kills unawaited fetches on response
-    const kickoff = await fetch(`${appUrl}/api/playwright-scan/process`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scanId, offset: 0, takeScreenshot, appUrl }),
-    }).catch((e: any) => { console.error('[playwright-scan] failed to start process', e); return null; });
-
-    if (!kickoff?.ok) {
-      console.error('[playwright-scan] process kickoff returned', kickoff?.status);
-    }
+    // Kick off the first chunk directly — cron handles subsequent chunks
+    runChunk({ scanId, offset: 0, takeScreenshot }).catch((e: any) =>
+      console.error('[playwright-scan] kickoff chunk failed', e.message),
+    );
 
     return NextResponse.json({ scanId, total });
   } catch (e: any) {
