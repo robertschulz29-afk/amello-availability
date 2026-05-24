@@ -23,7 +23,7 @@ function getSupabaseClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-export type RunChunkResult = { processed: number; errors: number; done: boolean; skipped?: boolean; reason?: string; error?: string };
+export type RunChunkResult = { processed: number; errors: number; done: boolean; skipped?: boolean; reason?: string; error?: string; aborted?: boolean };
 
 export async function runChunk({ scanId, offset, takeScreenshot }: {
   scanId: number; offset: number; takeScreenshot: boolean;
@@ -53,6 +53,7 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
 
   let chunkProcessed = 0;
   let chunkErrors    = 0;
+  let aborted        = false;
 
   const executablePath = await getChromiumPath();
   const { chromium } = await import('playwright-core');
@@ -142,8 +143,13 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
           );
           if (!errorMsg) chunkProcessed++;
         } catch (dbErr: any) {
-          console.error('[playwright-runner] db write error', dbErr.message);
-          chunkErrors++;
+          if (dbErr.message?.includes('foreign key constraint')) {
+            console.warn('[playwright-runner] scan deleted mid-run, aborting', scanId);
+            aborted = true;
+          } else {
+            console.error('[playwright-runner] db write error', dbErr.message);
+            chunkErrors++;
+          }
         }
       }
     } catch (e: any) {
@@ -161,6 +167,8 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
       if (page)    await page.close().catch(() => {});
       if (browser) await browser.close().catch(() => {});
     }
+
+    if (aborted) return { processed: chunkProcessed, errors: chunkErrors, done: false, aborted: true };
   }
 
   await sql`
