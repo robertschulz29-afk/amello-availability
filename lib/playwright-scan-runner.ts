@@ -67,13 +67,13 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
     let hotelProcessed = 0;
     let hotelErrors = 0;
     let hotelAborted = false;
-    let browser: any = null;
+    let context: any = null;
     const userDataDir = `/tmp/chrome-${hotel.code}-${Date.now()}`;
 
     try {
-      browser = await chromium.launch({
+      context = await chromium.launchPersistentContext(userDataDir, {
         executablePath,
-        args: [...LAUNCH_ARGS, `--user-data-dir=${userDataDir}`],
+        args: LAUNCH_ARGS,
         headless: true,
       });
 
@@ -86,7 +86,7 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
         let page: any = null;
 
         try {
-          page = await browser.newPage();
+          page = await context.newPage();
           await page.setViewportSize({ width: 1440, height: 900 });
 
           try {
@@ -172,7 +172,7 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
         ).catch(() => {});
       }
     } finally {
-      await browser?.close().catch(() => {});
+      await context?.close().catch(() => {});
       try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
     }
 
