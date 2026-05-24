@@ -3,7 +3,7 @@ import { waitUntil } from '@vercel/functions';
 import { query, sql } from '@/lib/db';
 import { createClient } from '@supabase/supabase-js';
 import {
-  OCCUPANCY_CONFIGS, ROOM_CARD_SELECTOR, ROOM_NAME_SELECTOR, IMAGE_CONTAINER_SELECTOR,
+  OCCUPANCY_CONFIGS, ROOM_ITEM_SELECTOR, ROOM_NAME_SELECTOR, IMAGE_CONTAINER_SELECTOR,
   buildHotelSlug, buildTuiUrl,
 } from '@/lib/playwright-scan-helpers';
 
@@ -38,8 +38,8 @@ function getSupabaseClient() {
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const scanId   = Number(body?.scanId);
-  const offset   = Number.isFinite(body?.offset) ? Number(body.offset) : 0;
+  const scanId         = Number(body?.scanId);
+  const offset         = Number.isFinite(body?.offset) ? Number(body.offset) : 0;
   const takeScreenshot: boolean = body?.takeScreenshot === true;
   const appUrl: string = body?.appUrl ?? resolveAppUrl(req);
 
@@ -60,7 +60,6 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
   scanId: number; offset: number; takeScreenshot: boolean; appUrl: string;
 }): Promise<NextResponse> {
 
-  // Verify scan still active
   const scanQ = await sql`SELECT status, check_in FROM playwright_scans WHERE id = ${scanId}`;
   if (!scanQ.rows.length) return NextResponse.json({ error: 'scan not found' }, { status: 404 });
   const scan = scanQ.rows[0];
@@ -93,6 +92,7 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
   for (const hotel of hotels) {
     const slug = buildHotelSlug(hotel.name, hotel.code);
     let browser: any = null;
+    let page: any = null;
 
     try {
       browser = await puppeteer.launch({
@@ -101,52 +101,44 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
         headless: true,
       });
 
+      // One page reused across all occupancy configs (matches original approach)
+      page = await browser.newPage();
+      await page.setViewport({ width: 1440, height: 900 });
+
       for (const cfg of OCCUPANCY_CONFIGS) {
-        const url = buildTuiUrl(slug, checkIn, cfg.param, hotel.code);
+        const url = buildTuiUrl(slug, checkIn, cfg.param);
         let rooms: Array<{ roomId: string; roomCode: string; roomName: string; imageMissing: boolean }> = [];
         let screenshotUrl: string | null = null;
         let errorMsg: string | null = null;
 
         try {
-          const page = await browser.newPage();
-          await page.setViewport({ width: 1440, height: 900 });
           try {
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+            await page.goto(url, { waitUntil: 'networkidle0', timeout: 45000 });
           } catch {
-            // partial load — still try to extract data
+            // partial load — still attempt extraction
           }
-          // Wait for room cards to appear, then let network settle
-          await (page as any).waitForSelector(ROOM_CARD_SELECTOR, { timeout: 15000 }).catch(() => {});
-          await (page as any).waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+
+          // Wait for room items to appear in the DOM
+          await page.waitForSelector(ROOM_ITEM_SELECTOR, { timeout: 15000 }).catch(() => {});
 
           rooms = await page.evaluate(
-            (cardSelector: string, nameSelector: string, containerSelector: string) => {
-              const cards = Array.from(document.querySelectorAll(cardSelector));
-              if (cards.length > 0) {
-                return cards.map(card => {
-                  const fullId   = card.id ?? '';
-                  const roomCode = fullId.split('_')[0];
-                  const heading  = card.querySelector(nameSelector);
-                  const imgCont  = card.querySelector(containerSelector);
-                  return {
-                    roomId:       fullId,
-                    roomCode,
-                    roomName:     (heading?.textContent ?? '').replace(/^Room Type\s*/i, '').trim(),
-                    imageMissing: imgCont?.textContent?.includes('Image coming soon') ?? false,
-                  };
-                });
-              }
-              // Fallback: no id on cards
-              const headings   = Array.from(document.querySelectorAll(nameSelector));
-              const containers = Array.from(document.querySelectorAll(containerSelector));
-              return headings.map((h, i) => ({
-                roomId:       '',
-                roomCode:     '',
-                roomName:     (h.textContent ?? '').replace(/^Room Type\s*/i, '').trim(),
-                imageMissing: containers[i]?.textContent?.includes('Image coming soon') ?? false,
-              }));
+            (itemSelector: string, nameSelector: string, containerSelector: string) => {
+              const list = document.querySelector('[class*="room-list"]');
+              const items = list ? Array.from(list.querySelectorAll('li[id]')) : [];
+              return items.map((li: Element) => {
+                const fullId   = (li as HTMLElement).id ?? '';
+                const roomCode = fullId.split('_')[0];
+                const heading  = li.querySelector(nameSelector);
+                const imgCont  = li.querySelector(containerSelector);
+                return {
+                  roomId:       fullId,
+                  roomCode,
+                  roomName:     (heading?.textContent ?? '').replace(/^Room Type\s*/i, '').trim(),
+                  imageMissing: imgCont?.textContent?.includes('Image coming soon') ?? false,
+                };
+              });
             },
-            ROOM_CARD_SELECTOR,
+            ROOM_ITEM_SELECTOR,
             ROOM_NAME_SELECTOR,
             IMAGE_CONTAINER_SELECTOR,
           );
@@ -168,8 +160,6 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
               console.error('[process] screenshot error', hotel.code, e.message);
             }
           }
-
-          await page.close();
         } catch (e: any) {
           errorMsg = e.message;
           chunkErrors++;
@@ -192,7 +182,6 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
     } catch (e: any) {
       console.error('[process] browser launch failed for', hotel.code, e.message);
       chunkErrors += 4;
-      // Write error rows for all 4 occupancies
       for (const cfg of OCCUPANCY_CONFIGS) {
         await query(
           `INSERT INTO playwright_scan_results (scan_id, hotel_id, hotel_code, occupancy, rooms, error)
@@ -202,11 +191,11 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
         ).catch(() => {});
       }
     } finally {
+      if (page)    await page.close().catch(() => {});
       if (browser) await browser.close().catch(() => {});
     }
   }
 
-  // Update scan progress
   await sql`
     UPDATE playwright_scans
     SET processed = processed + ${chunkProcessed},
