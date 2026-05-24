@@ -621,9 +621,9 @@ function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]
                 <th>CR-API Name</th>
                 <th>Scan Name</th>
                 <th className="text-center">Match</th>
-                <th className="text-center" style={{ borderLeft: '2px solid #6c757d' }}>Img CR-API</th>
-                <th className="text-center">Img Scan</th>
-                <th className="text-center" style={{ borderRight: '2px solid #6c757d' }}>Img Both</th>
+                <th className="text-center" style={{ borderLeft: '2px solid #6c757d', borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>Img CR-API</th>
+                <th className="text-center" style={{ borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>Img Scan</th>
+                <th className="text-center" style={{ borderRight: '2px solid #6c757d', borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>Img Both</th>
                 {OCCUPANCY_CONFIGS.map(cfg => (
                   <th key={cfg.folder} className="text-center">{cfg.label}</th>
                 ))}
