@@ -711,6 +711,8 @@ export default function RoomsCrApiPage() {
   const [qualityFilter, setQualityFilter] = React.useState<QualityFilter>('all');
   // Per-hotel fix-potential overrides: true = active, false = suppressed (overrides global)
   const [fixPotentialOverrides, setFixPotentialOverrides] = React.useState<Map<number, boolean>>(new Map());
+  const [hotelPage, setHotelPage] = React.useState(0);
+  const PAGE_SIZE = 50;
 
   const allHotels = React.useMemo(
     () => entries.map(e => ({ id: e.hotel.id, name: e.hotel.name, code: e.hotel.code, brand: e.hotel.brand ?? undefined })),
@@ -742,6 +744,23 @@ export default function RoomsCrApiPage() {
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([key, es]) => ({ key, label: key, entries: es.sort((a, b) => a.hotel.name.localeCompare(b.hotel.name)) }));
   }, [filtered, groupBy]);
+
+  // Reset to page 0 when filters/grouping change
+  React.useEffect(() => { setHotelPage(0); }, [filtered, groupBy]);
+
+  const pagedGroups = React.useMemo(() => {
+    const start = hotelPage * PAGE_SIZE;
+    if (groupBy === 'none') {
+      return groups.slice(start, start + PAGE_SIZE);
+    }
+    // For grouped mode: flatten all entries, paginate, then re-group the slice
+    const allEntries = groups.flatMap(g => g.entries);
+    const sliced = allEntries.slice(start, start + PAGE_SIZE);
+    const slicedIds = new Set(sliced.map(e => e.hotel.id));
+    return groups
+      .map(g => ({ ...g, entries: g.entries.filter(e => slicedIds.has(e.hotel.id)) }))
+      .filter(g => g.entries.length > 0);
+  }, [groups, groupBy, hotelPage]);
 
   type SummaryCol = { available: number; withImg: number; noImg: number };
 
@@ -1354,8 +1373,29 @@ export default function RoomsCrApiPage() {
           </div>
         )}
 
+        {/* ── Pagination ── */}
+        {!loadingEntries && filtered.length > PAGE_SIZE && (
+          <div className="d-flex align-items-center justify-content-between mb-3">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              disabled={hotelPage === 0}
+              onClick={() => setHotelPage(p => p - 1)}
+            >← Prev</button>
+            <span className="small text-muted">
+              {hotelPage * PAGE_SIZE + 1}–{Math.min((hotelPage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              disabled={(hotelPage + 1) * PAGE_SIZE >= filtered.length}
+              onClick={() => setHotelPage(p => p + 1)}
+            >Next →</button>
+          </div>
+        )}
+
         {/* ── Hotel cards ── */}
-        {!loadingEntries && groups.map(group => (
+        {!loadingEntries && pagedGroups.map(group => (
           <div key={group.key}>
             {groupBy !== 'none' && (
               <div className="d-flex align-items-center gap-2 mb-2 mt-3">
@@ -1456,6 +1496,27 @@ export default function RoomsCrApiPage() {
             })}
           </div>
         ))}
+
+        {/* ── Pagination (bottom) ── */}
+        {!loadingEntries && filtered.length > PAGE_SIZE && (
+          <div className="d-flex align-items-center justify-content-between mt-2 mb-4">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              disabled={hotelPage === 0}
+              onClick={() => { setHotelPage(p => p - 1); window.scrollTo({ top: 0 }); }}
+            >← Prev</button>
+            <span className="small text-muted">
+              {hotelPage * PAGE_SIZE + 1}–{Math.min((hotelPage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              disabled={(hotelPage + 1) * PAGE_SIZE >= filtered.length}
+              onClick={() => { setHotelPage(p => p + 1); window.scrollTo({ top: 0 }); }}
+            >Next →</button>
+          </div>
+        )}
 
         {!loadingEntries && filtered.length === 0 && !entriesError && (
           <p className="text-muted">{entries.length === 0 ? 'No data loaded yet.' : 'No hotels match the current filters.'}</p>
