@@ -3,7 +3,7 @@ import { waitUntil } from '@vercel/functions';
 import { query, sql } from '@/lib/db';
 import { createClient } from '@supabase/supabase-js';
 import {
-  OCCUPANCY_CONFIGS, ROOM_ITEM_SELECTOR, ROOM_NAME_SELECTOR, IMAGE_CONTAINER_SELECTOR,
+  OCCUPANCY_CONFIGS, ROOM_CARD_SELECTOR, ROOM_NAME_SELECTOR, IMAGE_CONTAINER_SELECTOR,
   buildHotelSlug, buildTuiUrl,
 } from '@/lib/playwright-scan-helpers';
 
@@ -113,23 +113,22 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
 
         try {
           try {
-            await page.goto(url, { waitUntil: 'networkidle0', timeout: 45000 });
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
           } catch {
             // partial load — still attempt extraction
           }
 
-          // Wait for room items to appear in the DOM
-          await page.waitForSelector(ROOM_ITEM_SELECTOR, { timeout: 15000 }).catch(() => {});
+          // Wait for room cards to render (proven selector from original project)
+          await page.waitForSelector(ROOM_CARD_SELECTOR, { timeout: 15000 }).catch(() => {});
 
           rooms = await page.evaluate(
-            (itemSelector: string, nameSelector: string, containerSelector: string) => {
-              const list = document.querySelector('[class*="room-list"]');
-              const items = list ? Array.from(list.querySelectorAll('li[id]')) : [];
-              return items.map((li: Element) => {
-                const fullId   = (li as HTMLElement).id ?? '';
+            (cardSelector: string, nameSelector: string, containerSelector: string) => {
+              const cards = Array.from(document.querySelectorAll(cardSelector));
+              return cards.map((card: Element) => {
+                const fullId   = (card as HTMLElement).id ?? '';
                 const roomCode = fullId.split('_')[0];
-                const heading  = li.querySelector(nameSelector);
-                const imgCont  = li.querySelector(containerSelector);
+                const heading  = card.querySelector(nameSelector);
+                const imgCont  = card.querySelector(containerSelector);
                 return {
                   roomId:       fullId,
                   roomCode,
@@ -138,7 +137,7 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
                 };
               });
             },
-            ROOM_ITEM_SELECTOR,
+            ROOM_CARD_SELECTOR,
             ROOM_NAME_SELECTOR,
             IMAGE_CONTAINER_SELECTOR,
           );

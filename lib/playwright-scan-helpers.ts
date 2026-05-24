@@ -5,8 +5,9 @@ export const OCCUPANCY_CONFIGS = [
   { param: '2%2C+9', folder: 'rooms_2_child9', label: '2 Adults + Child 9' },
 ] as const;
 
-export const ROOM_LIST_SELECTOR       = '[class*="room-list"]';
-export const ROOM_ITEM_SELECTOR       = '[class*="room-list"] li[id]';
+// Stable selector to detect room cards are rendered (class prefix, hash-independent)
+export const ROOM_CARD_SELECTOR       = '[class*="CardRoom_card-room"][id]';
+// Hash-independent selectors for data extraction
 export const ROOM_NAME_SELECTOR       = '[class*="CardRoom_card-room__heading"]';
 export const IMAGE_CONTAINER_SELECTOR = '[class*="CardRoom_card-room__image-container"]';
 
