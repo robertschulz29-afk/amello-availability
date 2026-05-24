@@ -1,0 +1,1 @@
+ALTER TABLE playwright_scans ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;

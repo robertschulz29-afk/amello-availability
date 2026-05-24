@@ -34,6 +34,19 @@ async function processNext(req: NextRequest) {
     const scanId: number = scan.id;
     const takeScreenshot: boolean = scan.take_screenshot ?? false;
 
+    // Acquire lock: only proceed if no active lock (or lock expired)
+    const lockResult = await sql`
+      UPDATE playwright_scans
+      SET locked_until = NOW() + INTERVAL '4 minutes'
+      WHERE id = ${scanId}
+        AND (locked_until IS NULL OR locked_until < NOW())
+      RETURNING id
+    `;
+    if (lockResult.rows.length === 0) {
+      console.log(`[playwright-process-next] scan=${scanId} locked, skipping tick`);
+      return NextResponse.json({ message: 'Locked by another invocation', scanId });
+    }
+
     const offsetQ = await query(
       `SELECT COUNT(DISTINCT hotel_id)::int AS cnt FROM playwright_scan_results WHERE scan_id = $1`,
       [scanId],
@@ -47,13 +60,17 @@ async function processNext(req: NextRequest) {
     const total: number = totalQ.rows[0].cnt;
 
     if (offset >= total) {
-      await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW() WHERE id = ${scanId}`;
+      await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
       return NextResponse.json({ message: 'Scan complete', scanId });
     }
 
     console.log(`[playwright-process-next] scan=${scanId} offset=${offset}/${total}`);
 
     const result = await runChunk({ scanId, offset, takeScreenshot });
+
+    // Release lock so next cron tick can proceed immediately
+    await sql`UPDATE playwright_scans SET locked_until = NULL WHERE id = ${scanId}`.catch(() => {});
+
     return NextResponse.json({ scanId, offset, total, ...result });
 
   } catch (e: any) {
