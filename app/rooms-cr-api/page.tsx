@@ -42,7 +42,7 @@ type HotelEntry = {
   playwrightResults: Record<string, PlaywrightOccResult> | null;
 };
 
-type GroupBy = 'none' | 'brand' | 'region';
+type GroupBy = 'none' | 'brand' | 'region' | 'country';
 type AttentionFilter = 'all' | 'attention' | 'fixable';
 type Quality = 'perfect' | 'verygood' | 'good' | 'mediocre' | 'poor' | 'horrible';
 type QualityFilter = 'all' | Quality;
@@ -711,7 +711,7 @@ export default function RoomsCrApiPage() {
     }
     const map = new Map<string, HotelEntry[]>();
     for (const e of filtered) {
-      const key = groupBy === 'brand' ? (e.hotel.brand ?? '(No Brand)') : (e.hotel.region ?? '(No Region)');
+      const key = groupBy === 'brand' ? (e.hotel.brand ?? '(No Brand)') : groupBy === 'region' ? (e.hotel.region ?? '(No Region)') : (e.hotel.country ?? '(No Country)');
       const arr = map.get(key) ?? [];
       arr.push(e);
       map.set(key, arr);
@@ -1071,7 +1071,7 @@ export default function RoomsCrApiPage() {
               <div>
                 <div className="form-label form-label-sm mb-1 fw-semibold" id="lbl-groupby">Group by</div>
                 <div className="btn-group btn-group-sm" role="group" aria-labelledby="lbl-groupby">
-                  {(['none', 'brand', 'region'] as GroupBy[]).map(g => (
+                  {(['none', 'brand', 'region', 'country'] as GroupBy[]).map(g => (
                     <button key={g} type="button" className={`btn btn-outline-secondary${groupBy === g ? ' active' : ''}`} onClick={() => setGroupBy(g)}>
                       {g === 'none' ? 'Per Hotel' : g.charAt(0).toUpperCase() + g.slice(1)}
                     </button>
