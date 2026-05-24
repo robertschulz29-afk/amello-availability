@@ -696,6 +696,8 @@ export default function RoomsCrApiPage() {
   const [takeScreenshot, setTakeScreenshot] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
   const [startError, setStartError] = React.useState<string | null>(null);
+  const [retryingScanId, setRetryingScanId] = React.useState<number | null>(null);
+  const [retryError, setRetryError] = React.useState<string | null>(null);
 
   const [expandedOcc, setExpandedOcc] = React.useState<Map<number, Set<string>>>(new Map());
 
@@ -944,6 +946,26 @@ export default function RoomsCrApiPage() {
     }
   }
 
+  async function retryScan(scanId: number) {
+    setRetryingScanId(scanId);
+    setRetryError(null);
+    try {
+      const res = await fetch('/api/playwright-scan/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scanId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `Error ${res.status}`);
+      setActiveScanId(scanId);
+      await loadScans();
+    } catch (e: unknown) {
+      setRetryError(e instanceof Error ? e.message : 'Failed to retry');
+    } finally {
+      setRetryingScanId(null);
+    }
+  }
+
   // ── Toggle occupancy accordion ─────────────────────────────────────────────
 
   function toggleOcc(hotelId: number, label: string) {
@@ -1073,6 +1095,23 @@ export default function RoomsCrApiPage() {
                   ))}
                 </select>
               </div>
+              {(() => {
+                const sel = scans.find(s => s.id === selectedScanId);
+                if (!sel || sel.status === 'running' || sel.errors === 0) return null;
+                return (
+                  <div className="align-self-end">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-warning"
+                      disabled={retryingScanId === sel.id}
+                      onClick={() => retryScan(sel.id)}
+                    >
+                      {retryingScanId === sel.id ? 'Re-queuing…' : `⟳ Retry ${sel.errors} error${sel.errors !== 1 ? 's' : ''}`}
+                    </button>
+                    {retryError && <div className="text-danger small mt-1">{retryError}</div>}
+                  </div>
+                );
+              })()}
               <span className="small text-muted align-self-end pb-1">{entries.length} hotel{entries.length !== 1 ? 's' : ''}{filtered.length !== entries.length ? ` (${filtered.length} shown)` : ''}</span>
               {filtered.length > 0 && (
                 <button
