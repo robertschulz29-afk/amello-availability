@@ -69,7 +69,7 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
     try {
       browser = await chromium.launch({
         executablePath,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process'],
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
         headless: true,
       });
 
