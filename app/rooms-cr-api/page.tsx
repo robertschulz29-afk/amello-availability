@@ -519,10 +519,10 @@ function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]
     }
     if (matchFilter === 'match'    && !r.inBoth) return false;
     if (matchFilter === 'mismatch' &&  r.inBoth) return false;
-    if (imgCrFilter   === 'yes' && !r.imgCr)   return false;
-    if (imgCrFilter   === 'no'  &&  r.imgCr)   return false;
-    if (imgScanFilter === 'yes' && !r.imgScan)  return false;
-    if (imgScanFilter === 'no'  &&  r.imgScan)  return false;
+    if (imgCrFilter   === 'yes' && r.inCr  && !r.imgCr)  return false;
+    if (imgCrFilter   === 'no'  && r.inCr  &&  r.imgCr)  return false;
+    if (imgScanFilter === 'yes' && r.inScan && !r.imgScan) return false;
+    if (imgScanFilter === 'no'  && r.inScan &&  r.imgScan) return false;
     return true;
   });
 
