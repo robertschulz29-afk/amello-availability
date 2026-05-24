@@ -422,21 +422,23 @@ function RoomsPanel({
 type MappingRow = {
   key:      string;
   crCode:   string;
-  scanCode: string;
-  crName:   string;
-  scanName: string;
-  inCr:     boolean;
-  inScan:   boolean;
-  inBoth:   boolean;
-  imgCr:    boolean;
-  imgScan:  boolean;
-  imgBoth:  boolean;
+  scanCode:    string;
+  crName:      string;
+  scanName:    string;
+  inCr:        boolean;
+  inScan:      boolean;
+  inBoth:      boolean;
+  imgCr:       boolean;
+  imgScan:     boolean;
+  imgBoth:     boolean;
+  occPresence: Record<string, boolean>;
 };
 
 function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, PlaywrightOccResult> | null): MappingRow[] {
   // Deduplicate scan rooms across all occupancies: a room "has image" if !imageMissing in any occ
   const scanRoomMap = new Map<string, { roomCode: string; roomName: string; hasImage: boolean }>();
-  for (const result of Object.values(playwrightResults ?? {})) {
+  const occPresenceMap = new Map<string, Record<string, boolean>>(); // key → { folder: present }
+  for (const [folder, result] of Object.entries(playwrightResults ?? {})) {
     for (const r of result.rooms ?? []) {
       const key = r.roomCode || r.roomName;
       const existing = scanRoomMap.get(key);
@@ -444,6 +446,8 @@ function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, Playw
       if (!existing || hasImage) {
         scanRoomMap.set(key, { roomCode: r.roomCode, roomName: r.roomName, hasImage: hasImage || (existing?.hasImage ?? false) });
       }
+      if (!occPresenceMap.has(key)) occPresenceMap.set(key, {});
+      occPresenceMap.get(key)![folder] = true;
     }
   }
 
@@ -456,11 +460,11 @@ function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, Playw
     if (r.room_code) crNameToKey.set(r.name.trim().toLowerCase(), r.room_code);
   }
 
-  const allCodes = new Map<string, { crCode: string; scanCode: string; crName: string; scanName: string; inCr: boolean; inScan: boolean; imgCr: boolean; imgScan: boolean }>();
+  const allCodes = new Map<string, { crCode: string; scanCode: string; crName: string; scanName: string; inCr: boolean; inScan: boolean; imgCr: boolean; imgScan: boolean; occPresence: Record<string, boolean> }>();
 
   for (const r of crRooms) {
     const key = r.room_code || r.name;
-    if (!allCodes.has(key)) allCodes.set(key, { crCode: '', scanCode: '', crName: '', scanName: '', inCr: false, inScan: false, imgCr: false, imgScan: false });
+    if (!allCodes.has(key)) allCodes.set(key, { crCode: '', scanCode: '', crName: '', scanName: '', inCr: false, inScan: false, imgCr: false, imgScan: false, occPresence: {} });
     const entry = allCodes.get(key)!;
     entry.crCode = r.room_code ?? '';
     entry.crName = r.name;
@@ -472,12 +476,13 @@ function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, Playw
     const resolvedKey = (!data.roomCode && crNameToKey.has(data.roomName.trim().toLowerCase()))
       ? crNameToKey.get(data.roomName.trim().toLowerCase())!
       : key;
-    if (!allCodes.has(resolvedKey)) allCodes.set(resolvedKey, { crCode: '', scanCode: '', crName: '', scanName: '', inCr: false, inScan: false, imgCr: false, imgScan: false });
+    if (!allCodes.has(resolvedKey)) allCodes.set(resolvedKey, { crCode: '', scanCode: '', crName: '', scanName: '', inCr: false, inScan: false, imgCr: false, imgScan: false, occPresence: {} });
     const entry = allCodes.get(resolvedKey)!;
-    entry.scanCode = data.roomCode;
-    entry.scanName = data.roomName;
-    entry.inScan   = true;
-    entry.imgScan  = data.hasImage;
+    entry.scanCode   = data.roomCode;
+    entry.scanName   = data.roomName;
+    entry.inScan     = true;
+    entry.imgScan    = data.hasImage;
+    entry.occPresence = occPresenceMap.get(key) ?? {};
   }
 
   return [...allCodes.entries()]
@@ -488,12 +493,13 @@ function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, Playw
       scanCode: d.scanCode,
       crName:   d.crName,
       scanName: d.scanName,
-      inCr:     d.inCr,
-      inScan:   d.inScan,
-      inBoth:   d.inCr && d.inScan,
-      imgCr:    d.imgCr,
-      imgScan:  d.imgScan,
-      imgBoth:  d.imgCr && d.imgScan,
+      inCr:        d.inCr,
+      inScan:      d.inScan,
+      inBoth:      d.inCr && d.inScan,
+      imgCr:       d.imgCr,
+      imgScan:     d.imgScan,
+      imgBoth:     d.imgCr && d.imgScan,
+      occPresence: d.occPresence,
     }));
 }
 
@@ -618,6 +624,9 @@ function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]
                 <th className="text-center">Img CR-API</th>
                 <th className="text-center">Img Scan</th>
                 <th className="text-center">Img Both</th>
+                {OCCUPANCY_CONFIGS.map(cfg => (
+                  <th key={cfg.folder} className="text-center">{cfg.label}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -631,6 +640,9 @@ function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]
                   <td className="text-center">{yn(r.imgCr)}</td>
                   <td className="text-center">{yn(r.imgScan)}</td>
                   <td className="text-center">{yn(r.imgBoth)}</td>
+                  {OCCUPANCY_CONFIGS.map(cfg => (
+                    <td key={cfg.folder} className="text-center">{yn(!!r.occPresence[cfg.folder])}</td>
+                  ))}
                 </tr>
               ))}
             </tbody>
