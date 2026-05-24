@@ -90,14 +90,21 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
           page = await context.newPage();
           await page.setViewportSize({ width: 1440, height: 900 });
 
+          let pageCrashed = false;
+          page.on('crash', () => { pageCrashed = true; });
+
           try {
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
           } catch {
             // partial load — still attempt extraction
           }
 
+          if (pageCrashed) throw new Error('Page crashed during navigation');
+
           await page.waitForSelector(ROOM_CARD_SELECTOR, { timeout: 15000 }).catch(() => {});
           await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+
+          if (pageCrashed) throw new Error('Page crashed during load');
 
           rooms = await page.evaluate(
             ({ cardSelector, nameSelector, containerSelector }: { cardSelector: string; nameSelector: string; containerSelector: string }) => {
