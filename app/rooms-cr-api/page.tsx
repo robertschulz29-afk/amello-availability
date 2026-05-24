@@ -506,13 +506,16 @@ function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, Playw
 type MatchFilter  = 'all' | 'match' | 'mismatch';
 type ImgFilter    = 'all' | 'yes' | 'no';
 
-function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]; fixPotentialActive?: boolean }) {
+function MappingTable({ rows, fixPotentialActive = false, onFixPotentialToggle }: {
+  rows: MappingRow[];
+  fixPotentialActive?: boolean;
+  onFixPotentialToggle?: () => void;
+}) {
   const [matchFilter,  setMatchFilter]  = React.useState<MatchFilter>('all');
   const [imgCrFilter,  setImgCrFilter]  = React.useState<ImgFilter>('all');
   const [imgScanFilter, setImgScanFilter] = React.useState<ImgFilter>('all');
-  const [fixableOnly,  setFixableOnly]  = React.useState(false);
 
-  const showFixable = fixPotentialActive || fixableOnly;
+  const showFixable = fixPotentialActive;
 
   const fixableApplicable = rows.some(r => r.inScan && !r.imgScan) && rows.some(r => r.inCr && !r.inScan && r.imgCr);
   const fixableCount = fixableApplicable
@@ -537,7 +540,7 @@ function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]
   const scanOnly  = rows.filter(r => r.inScan && !r.inCr).length;
 
   function reset() {
-    setMatchFilter('all'); setImgCrFilter('all'); setImgScanFilter('all'); setFixableOnly(false);
+    setMatchFilter('all'); setImgCrFilter('all'); setImgScanFilter('all');
   }
 
   function RadioGroup<T extends string>({ name, value, options, onChange }: { name: string; value: T; options: { val: T; label: string }[]; onChange: (v: T) => void }) {
@@ -584,19 +587,19 @@ function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]
       <div className="d-flex flex-wrap align-items-center gap-3 mb-2 small">
         <span className="d-flex align-items-center gap-2">
           <span className="fw-semibold">Match:</span>
-          <RadioGroup name={`match-${rows.length}`} value={matchFilter} options={[{ val: 'all', label: 'All' }, { val: 'match', label: 'Match only' }, { val: 'mismatch', label: 'Missing match' }]} onChange={v => { setMatchFilter(v); setFixableOnly(false); }} />
+          <RadioGroup name={`match-${rows.length}`} value={matchFilter} options={[{ val: 'all', label: 'All' }, { val: 'match', label: 'Match only' }, { val: 'mismatch', label: 'Missing match' }]} onChange={v => setMatchFilter(v)} />
         </span>
         <span className="d-flex align-items-center gap-2">
           <span className="fw-semibold">Img CR-API:</span>
-          <RadioGroup name={`imgcr-${rows.length}`} value={imgCrFilter} options={[{ val: 'all', label: 'All' }, { val: 'yes', label: 'Yes' }, { val: 'no', label: 'No' }]} onChange={v => { setImgCrFilter(v); setFixableOnly(false); }} />
+          <RadioGroup name={`imgcr-${rows.length}`} value={imgCrFilter} options={[{ val: 'all', label: 'All' }, { val: 'yes', label: 'Yes' }, { val: 'no', label: 'No' }]} onChange={v => setImgCrFilter(v)} />
         </span>
         <span className="d-flex align-items-center gap-2">
           <span className="fw-semibold">Img Scan:</span>
-          <RadioGroup name={`imgscan-${rows.length}`} value={imgScanFilter} options={[{ val: 'all', label: 'All' }, { val: 'yes', label: 'Yes' }, { val: 'no', label: 'No' }]} onChange={v => { setImgScanFilter(v); setFixableOnly(false); }} />
+          <RadioGroup name={`imgscan-${rows.length}`} value={imgScanFilter} options={[{ val: 'all', label: 'All' }, { val: 'yes', label: 'Yes' }, { val: 'no', label: 'No' }]} onChange={v => setImgScanFilter(v)} />
         </span>
-        {fixableCount > 0 && (
-          <button type="button" className={`btn btn-sm ${fixableOnly ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={() => setFixableOnly(f => !f)}>
-            ⚡ Fixable only ({fixableCount})
+        {fixableCount > 0 && onFixPotentialToggle && (
+          <button type="button" className={`btn btn-sm ${fixPotentialActive ? 'btn-secondary' : 'btn-outline-secondary'}`} onClick={onFixPotentialToggle}>
+            ⚡ Fix potential ({fixableCount})
           </button>
         )}
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={reset}>Reset</button>
@@ -705,6 +708,8 @@ export default function RoomsCrApiPage() {
   const [groupBy, setGroupBy] = React.useState<GroupBy>('none');
   const [attentionFilter, setAttentionFilter] = React.useState<AttentionFilter>('all');
   const [qualityFilter, setQualityFilter] = React.useState<QualityFilter>('all');
+  // Per-hotel fix-potential overrides: true = active, false = suppressed (overrides global)
+  const [fixPotentialOverrides, setFixPotentialOverrides] = React.useState<Map<number, boolean>>(new Map());
 
   const allHotels = React.useMemo(
     () => entries.map(e => ({ id: e.hotel.id, name: e.hotel.name, code: e.hotel.code, brand: e.hotel.brand ?? undefined })),
@@ -1104,7 +1109,7 @@ export default function RoomsCrApiPage() {
                 <div className="btn-group btn-group-sm" role="group" aria-labelledby="lbl-filter">
                   <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'all' ? ' active' : ''}`} onClick={() => setAttentionFilter('all')}>All</button>
                   <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'attention' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'attention' ? 'all' : 'attention')}>⚠ Attention needed</button>
-                  <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'fixable' ? ' active' : ''}`} onClick={() => setAttentionFilter(attentionFilter === 'fixable' ? 'all' : 'fixable')}>⚡ Fix potential</button>
+                  <button type="button" className={`btn btn-outline-secondary${attentionFilter === 'fixable' ? ' active' : ''}`} onClick={() => { setAttentionFilter(attentionFilter === 'fixable' ? 'all' : 'fixable'); setFixPotentialOverrides(new Map()); }}>⚡ Fix potential</button>
                 </div>
               </div>
               <div>
@@ -1386,7 +1391,24 @@ export default function RoomsCrApiPage() {
                       {(entry.crRooms.length > 0 || entry.playwrightResults !== null) && mappingRows !== null && (
                         <>
                           <hr className="my-2" style={{ opacity: 0.3 }} />
-                          <MappingTable rows={mappingRows} fixPotentialActive={attentionFilter === 'fixable'} />
+                          <MappingTable
+                            rows={mappingRows}
+                            fixPotentialActive={
+                              fixPotentialOverrides.has(entry.hotel.id)
+                                ? fixPotentialOverrides.get(entry.hotel.id)!
+                                : attentionFilter === 'fixable'
+                            }
+                            onFixPotentialToggle={() => {
+                              setFixPotentialOverrides(prev => {
+                                const next = new Map(prev);
+                                const current = prev.has(entry.hotel.id)
+                                  ? prev.get(entry.hotel.id)!
+                                  : attentionFilter === 'fixable';
+                                next.set(entry.hotel.id, !current);
+                                return next;
+                              });
+                            }}
+                          />
                         </>
                       )}
                     </div>
