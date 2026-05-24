@@ -5,7 +5,7 @@ import {
   buildHotelSlug, buildTuiUrl,
 } from '@/lib/playwright-scan-helpers';
 
-const CHUNK_SIZE = 1;
+const CHUNK_SIZE = 3;
 
 let chromiumPath: string | undefined;
 
@@ -59,10 +59,12 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
   const { chromium } = await import('playwright-core');
   const supabase = takeScreenshot ? getSupabaseClient() : null;
 
-  for (const hotel of hotels) {
+  async function scrapeHotel(hotel: { id: number; name: string; code: string }): Promise<{ processed: number; errors: number; aborted: boolean }> {
     const slug = buildHotelSlug(hotel.name, hotel.code);
     let browser: any = null;
-    let page: any = null;
+    let hotelProcessed = 0;
+    let hotelErrors = 0;
+    let hotelAborted = false;
 
     try {
       browser = await chromium.launch({
@@ -71,16 +73,18 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
         headless: true,
       });
 
-      page = await browser.newPage();
-      await page.setViewportSize({ width: 1440, height: 900 });
-
-      for (const cfg of OCCUPANCY_CONFIGS) {
+      // Process all 4 occupancies in parallel, each on its own page
+      await Promise.all(OCCUPANCY_CONFIGS.map(async cfg => {
         const url = buildTuiUrl(slug, checkIn, cfg.param);
         let rooms: Array<{ roomId: string; roomCode: string; roomName: string; imageMissing: boolean }> = [];
         let screenshotUrl: string | null = null;
         let errorMsg: string | null = null;
+        let page: any = null;
 
         try {
+          page = await browser.newPage();
+          await page.setViewportSize({ width: 1440, height: 900 });
+
           try {
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
           } catch {
@@ -128,7 +132,9 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
           }
         } catch (e: any) {
           errorMsg = e.message;
-          chunkErrors++;
+          hotelErrors++;
+        } finally {
+          if (page) await page.close().catch(() => {});
         }
 
         try {
@@ -139,20 +145,20 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
                SET rooms = EXCLUDED.rooms, screenshot_url = EXCLUDED.screenshot_url, error = EXCLUDED.error, scanned_at = NOW()`,
             [scanId, hotel.id, hotel.code, cfg.folder, JSON.stringify(rooms), screenshotUrl, errorMsg],
           );
-          if (!errorMsg) chunkProcessed++;
+          if (!errorMsg) hotelProcessed++;
         } catch (dbErr: any) {
           if (dbErr.message?.includes('foreign key constraint')) {
             console.warn('[playwright-runner] scan deleted mid-run, aborting', scanId);
-            aborted = true;
+            hotelAborted = true;
           } else {
             console.error('[playwright-runner] db write error', dbErr.message);
-            chunkErrors++;
+            hotelErrors++;
           }
         }
-      }
+      }));
     } catch (e: any) {
       console.error('[playwright-runner] browser launch failed for', hotel.code, e.message);
-      chunkErrors += OCCUPANCY_CONFIGS.length;
+      hotelErrors += OCCUPANCY_CONFIGS.length;
       for (const cfg of OCCUPANCY_CONFIGS) {
         await query(
           `INSERT INTO playwright_scan_results (scan_id, hotel_id, hotel_code, occupancy, rooms, error)
@@ -162,11 +168,17 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
         ).catch(() => {});
       }
     } finally {
-      if (page)    await page.close().catch(() => {});
       if (browser) await browser.close().catch(() => {});
     }
 
-    if (aborted) return { processed: chunkProcessed, errors: chunkErrors, done: false, aborted: true };
+    return { processed: hotelProcessed, errors: hotelErrors, aborted: hotelAborted };
+  }
+
+  for (const hotel of hotels) {
+    const result = await scrapeHotel(hotel);
+    chunkProcessed += result.processed;
+    chunkErrors    += result.errors;
+    if (result.aborted) return { processed: chunkProcessed, errors: chunkErrors, done: false, aborted: true };
   }
 
   await sql`
