@@ -91,7 +91,7 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
           await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
 
           rooms = await page.evaluate(
-            (cardSelector: string, nameSelector: string, containerSelector: string) => {
+            ({ cardSelector, nameSelector, containerSelector }: { cardSelector: string; nameSelector: string; containerSelector: string }) => {
               const cards = Array.from(document.querySelectorAll(cardSelector));
               return cards.map((card: Element) => {
                 const fullId   = (card as HTMLElement).id ?? '';
@@ -106,9 +106,7 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
                 };
               });
             },
-            ROOM_CARD_SELECTOR,
-            ROOM_NAME_SELECTOR,
-            IMAGE_CONTAINER_SELECTOR,
+            { cardSelector: ROOM_CARD_SELECTOR, nameSelector: ROOM_NAME_SELECTOR, containerSelector: IMAGE_CONTAINER_SELECTOR },
           );
 
           if (takeScreenshot && supabase) {
