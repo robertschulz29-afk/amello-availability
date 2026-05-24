@@ -765,16 +765,18 @@ export default function RoomsCrApiPage() {
     if (groupBy === 'none') {
       return { type: 'flat' as const, cols: computeHotelStatusCols(filtered) };
     }
+    const totalCols = computeHotelStatusCols(filtered);
     const groupRows = groups.map(g => ({ name: g.label, cols: computeHotelStatusCols(g.entries) }));
-    return { type: 'grouped' as const, groupRows };
+    return { type: 'grouped' as const, totalCols, groupRows };
   }, [groups, groupBy, filtered]);
 
   const scanSummary = React.useMemo(() => {
     if (groupBy === 'none') {
       return { type: 'flat' as const, cols: computeSummaryCols(filtered) };
     }
+    const totalCols = computeSummaryCols(filtered);
     const groupRows = groups.map(g => ({ name: g.label, cols: computeSummaryCols(g.entries) }));
-    return { type: 'grouped' as const, groupRows };
+    return { type: 'grouped' as const, totalCols, groupRows };
   }, [groups, groupBy, filtered]);
 
 
@@ -1156,25 +1158,39 @@ export default function RoomsCrApiPage() {
                       </tr>
                     </>
                   ) : (
-                    scanSummary.groupRows.map(g => (
-                      <React.Fragment key={g.name}>
-                        <tr className="table-secondary">
-                          <td colSpan={OCCUPANCY_CONFIGS.length + 1} className="fw-semibold small py-1">{g.name}</td>
-                        </tr>
-                        <tr>
-                          <td className="ps-3 text-muted">Available rooms</td>
-                          {g.cols.map((c, i) => <td key={i} className="text-center">{c.available}</td>)}
-                        </tr>
-                        <tr>
-                          <td className="ps-3 text-danger">Rooms w/o image</td>
-                          {g.cols.map((c, i) => <td key={i} className="text-center">{c.noImg}</td>)}
-                        </tr>
-                        <tr>
-                          <td className="ps-3 text-success fw-bold">Rooms w/ image</td>
-                          {g.cols.map((c, i) => <td key={i} className="text-center fw-bold">{c.withImg}</td>)}
-                        </tr>
-                      </React.Fragment>
-                    ))
+                    <>
+                      <tr>
+                        <td className="fw-semibold">Available rooms (total)</td>
+                        {scanSummary.totalCols.map((c, i) => <td key={i} className="text-center">{c.available}</td>)}
+                      </tr>
+                      <tr>
+                        <td className="fw-semibold text-danger">Rooms w/o image (total)</td>
+                        {scanSummary.totalCols.map((c, i) => <td key={i} className="text-center">{c.noImg}</td>)}
+                      </tr>
+                      <tr>
+                        <td className="fw-bold text-success">Rooms w/ image (total)</td>
+                        {scanSummary.totalCols.map((c, i) => <td key={i} className="text-center fw-bold">{c.withImg}</td>)}
+                      </tr>
+                      {scanSummary.groupRows.map(g => (
+                        <React.Fragment key={g.name}>
+                          <tr className="table-secondary">
+                            <td colSpan={OCCUPANCY_CONFIGS.length + 1} className="fw-semibold small py-1">{g.name}</td>
+                          </tr>
+                          <tr>
+                            <td className="ps-3 text-muted">Available rooms</td>
+                            {g.cols.map((c, i) => <td key={i} className="text-center">{c.available}</td>)}
+                          </tr>
+                          <tr>
+                            <td className="ps-3 text-danger">Rooms w/o image</td>
+                            {g.cols.map((c, i) => <td key={i} className="text-center">{c.noImg}</td>)}
+                          </tr>
+                          <tr>
+                            <td className="ps-3 text-success fw-bold">Rooms w/ image</td>
+                            {g.cols.map((c, i) => <td key={i} className="text-center fw-bold">{c.withImg}</td>)}
+                          </tr>
+                        </React.Fragment>
+                      ))}
+                    </>
                   )}
                 </tbody>
               </table>
@@ -1211,31 +1227,51 @@ export default function RoomsCrApiPage() {
                       )}
                     </>
                   ) : (
-                    hotelSummary.groupRows.map(g => (
-                      <React.Fragment key={g.name}>
-                        <tr className="table-secondary">
-                          <td colSpan={OCCUPANCY_CONFIGS.length + 1} className="fw-semibold small py-1">{g.name}</td>
-                        </tr>
+                    <>
+                      <tr>
+                        <td className="fw-bold text-success">All images (total)</td>
+                        {hotelSummary.totalCols.map((c, i) => <td key={i} className="text-center fw-bold">{c.all}</td>)}
+                      </tr>
+                      <tr>
+                        <td className="fw-semibold text-warning-emphasis">Partial (total)</td>
+                        {hotelSummary.totalCols.map((c, i) => <td key={i} className="text-center">{c.partial}</td>)}
+                      </tr>
+                      <tr>
+                        <td className="fw-semibold text-danger">No images (total)</td>
+                        {hotelSummary.totalCols.map((c, i) => <td key={i} className="text-center">{c.none}</td>)}
+                      </tr>
+                      {hotelSummary.totalCols.some(c => c.noData > 0) && (
                         <tr>
-                          <td className="ps-3 text-success">All images</td>
-                          {g.cols.map((c, i) => <td key={i} className="text-center">{c.all}</td>)}
+                          <td className="text-muted">No data (total)</td>
+                          {hotelSummary.totalCols.map((c, i) => <td key={i} className="text-center text-muted">{c.noData}</td>)}
                         </tr>
-                        <tr>
-                          <td className="ps-3 text-warning-emphasis">Partial</td>
-                          {g.cols.map((c, i) => <td key={i} className="text-center">{c.partial}</td>)}
-                        </tr>
-                        <tr>
-                          <td className="ps-3 text-danger">No images</td>
-                          {g.cols.map((c, i) => <td key={i} className="text-center">{c.none}</td>)}
-                        </tr>
-                        {g.cols.some(c => c.noData > 0) && (
-                          <tr>
-                            <td className="ps-3 text-muted">No data</td>
-                            {g.cols.map((c, i) => <td key={i} className="text-center text-muted">{c.noData}</td>)}
+                      )}
+                      {hotelSummary.groupRows.map(g => (
+                        <React.Fragment key={g.name}>
+                          <tr className="table-secondary">
+                            <td colSpan={OCCUPANCY_CONFIGS.length + 1} className="fw-semibold small py-1">{g.name}</td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    ))
+                          <tr>
+                            <td className="ps-3 text-success">All images</td>
+                            {g.cols.map((c, i) => <td key={i} className="text-center">{c.all}</td>)}
+                          </tr>
+                          <tr>
+                            <td className="ps-3 text-warning-emphasis">Partial</td>
+                            {g.cols.map((c, i) => <td key={i} className="text-center">{c.partial}</td>)}
+                          </tr>
+                          <tr>
+                            <td className="ps-3 text-danger">No images</td>
+                            {g.cols.map((c, i) => <td key={i} className="text-center">{c.none}</td>)}
+                          </tr>
+                          {g.cols.some(c => c.noData > 0) && (
+                            <tr>
+                              <td className="ps-3 text-muted">No data</td>
+                              {g.cols.map((c, i) => <td key={i} className="text-center text-muted">{c.noData}</td>)}
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </>
                   )}
                 </tbody>
               </table>
