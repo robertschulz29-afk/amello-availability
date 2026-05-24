@@ -10,6 +10,10 @@
     {
       "path": "/api/scans/process-next",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/playwright-scan/process-next",
+      "schedule": "* * * * *"
     }
   ]
 }

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { waitUntil } from '@vercel/functions';
 import { query, sql } from '@/lib/db';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -208,14 +207,6 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
 
   if (done) {
     await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW() WHERE id = ${scanId}`;
-  } else {
-    waitUntil(
-      fetch(`${appUrl}/api/playwright-scan/process`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scanId, offset: nextOffset, takeScreenshot, appUrl }),
-      }).catch((e) => console.error('[process] self-call failed', e)),
-    );
   }
 
   return NextResponse.json({ processed: chunkProcessed, errors: chunkErrors, done });
