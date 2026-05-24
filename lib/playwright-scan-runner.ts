@@ -59,19 +59,20 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
   const { chromium } = await import('playwright-core');
   const supabase = takeScreenshot ? getSupabaseClient() : null;
 
+  // One browser for the entire chunk — avoids /tmp exhaustion from multiple profiles
+  const browser = await chromium.launch({
+    executablePath,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    headless: true,
+  });
+
   async function scrapeHotel(hotel: { id: number; name: string; code: string }): Promise<{ processed: number; errors: number; aborted: boolean }> {
     const slug = buildHotelSlug(hotel.name, hotel.code);
-    let browser: any = null;
     let hotelProcessed = 0;
     let hotelErrors = 0;
     let hotelAborted = false;
 
     try {
-      browser = await chromium.launch({
-        executablePath,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-        headless: true,
-      });
 
       // Process all 4 occupancies in parallel, each on its own page
       await Promise.all(OCCUPANCY_CONFIGS.map(async cfg => {
@@ -157,7 +158,7 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
         }
       }));
     } catch (e: any) {
-      console.error('[playwright-runner] browser launch failed for', hotel.code, e.message);
+      console.error('[playwright-runner] scrape failed for', hotel.code, e.message);
       hotelErrors += OCCUPANCY_CONFIGS.length;
       for (const cfg of OCCUPANCY_CONFIGS) {
         await query(
@@ -167,18 +168,20 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
           [scanId, hotel.id, hotel.code, cfg.folder, JSON.stringify([]), e.message],
         ).catch(() => {});
       }
-    } finally {
-      if (browser) await browser.close().catch(() => {});
     }
 
     return { processed: hotelProcessed, errors: hotelErrors, aborted: hotelAborted };
   }
 
-  for (const hotel of hotels) {
-    const result = await scrapeHotel(hotel);
-    chunkProcessed += result.processed;
-    chunkErrors    += result.errors;
-    if (result.aborted) return { processed: chunkProcessed, errors: chunkErrors, done: false, aborted: true };
+  try {
+    for (const hotel of hotels) {
+      const result = await scrapeHotel(hotel);
+      chunkProcessed += result.processed;
+      chunkErrors    += result.errors;
+      if (result.aborted) return { processed: chunkProcessed, errors: chunkErrors, done: false, aborted: true };
+    }
+  } finally {
+    await browser.close().catch(() => {});
   }
 
   await sql`
