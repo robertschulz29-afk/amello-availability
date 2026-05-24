@@ -58,6 +58,14 @@ async function processNext(req: NextRequest) {
     let chunksRun = 0;
     let lastResult: any = null;
 
+    async function recountErrors() {
+      const q = await query(
+        `SELECT COUNT(*)::int AS cnt FROM playwright_scan_results WHERE scan_id = $1 AND error IS NOT NULL`,
+        [scanId],
+      );
+      await sql`UPDATE playwright_scans SET errors = ${q.rows[0].cnt} WHERE id = ${scanId}`;
+    }
+
     // ── Main pass ──────────────────────────────────────────────────────────────
     while (Date.now() < deadline) {
       const offsetQ = await query(
@@ -91,6 +99,7 @@ async function processNext(req: NextRequest) {
             }
 
             if (retryOffset >= errorHotelIds.length) {
+              await recountErrors();
               await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
               return NextResponse.json({ message: 'Scan complete (with retry)', scanId, chunksRun });
             }
@@ -119,6 +128,7 @@ async function processNext(req: NextRequest) {
       const remaining: number[] = remainingQ.rows.map((r: { hotel_id: number }) => r.hotel_id);
 
       if (remaining.length === 0) {
+        await recountErrors();
         await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
         return NextResponse.json({ message: 'Scan complete (retry finished)', scanId, chunksRun });
       }
@@ -135,6 +145,7 @@ async function processNext(req: NextRequest) {
       }
 
       if (retryOffset >= remaining.length) {
+        await recountErrors();
         await sql`UPDATE playwright_scans SET status = 'done', finished_at = NOW(), locked_until = NULL WHERE id = ${scanId}`;
         return NextResponse.json({ message: 'Scan complete (retry finished)', scanId, chunksRun });
       }
