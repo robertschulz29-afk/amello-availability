@@ -602,7 +602,6 @@ function MappingTable({ rows, fixPotentialActive = false, onFixPotentialToggle }
             ⚡ Fix potential ({fixableCount})
           </button>
         )}
-        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={reset}>Reset</button>
       </div>
 
       {/* Stats bar */}
