@@ -44,7 +44,7 @@ type HotelEntry = {
 
 type GroupBy = 'none' | 'brand' | 'region' | 'country';
 type AttentionFilter = 'all' | 'attention' | 'fixable';
-type Quality = 'perfect' | 'verygood' | 'good' | 'mediocre' | 'poor' | 'horrible';
+type Quality = 'perfect' | 'verygood' | 'good' | 'mediocre' | 'poor' | 'horrible' | 'unavailable';
 type QualityFilter = 'all' | Quality;
 
 function hasAttention(entry: HotelEntry): boolean {
@@ -76,7 +76,7 @@ function computeQuality(entry: HotelEntry): Quality | null {
       }
     }
   }
-  if (scanRooms.size === 0) return null;
+  if (scanRooms.size === 0) return 'unavailable';
 
   const withImg = [...scanRooms.values()].filter(r => r.hasImage).length;
   const ratio = withImg / scanRooms.size;
@@ -110,30 +110,33 @@ function computeQuality(entry: HotelEntry): Quality | null {
 }
 
 const QUALITY_LABELS: Record<Quality, string> = {
-  perfect:  'Perfect',
-  verygood: 'Very good',
-  good:     'Good',
-  mediocre: 'Mediocre',
-  poor:     'Poor',
-  horrible: 'Horrible',
+  perfect:     'Perfect',
+  verygood:    'Very good',
+  good:        'Good',
+  mediocre:    'Mediocre',
+  poor:        'Poor',
+  horrible:    'Horrible',
+  unavailable: 'Unavailable',
 };
 
 const QUALITY_COLORS: Record<Quality, string> = {
-  perfect:  'success',
-  verygood: 'primary',
-  good:     'info',
-  mediocre: 'warning',
-  poor:     'orange',
-  horrible: 'danger',
+  perfect:     'success',
+  verygood:    'primary',
+  good:        'info',
+  mediocre:    'warning',
+  poor:        'orange',
+  horrible:    'danger',
+  unavailable: 'secondary',
 };
 
 const QUALITY_DESCRIPTIONS: Record<Quality, string> = {
-  perfect:  'All scan rooms have images; all matched names equal CR-API names; no unmapped CR-API rooms with images',
-  verygood: 'All scan rooms have images; no unmapped CR-API rooms with images; names may differ',
-  good:     'All scan rooms have images; unmapped CR-API rooms with images exist',
-  mediocre: '≥50% of scan rooms have images; at least 1 missing',
-  poor:     '<50% of scan rooms have images; at least 1 present',
-  horrible: 'No scan room has an image',
+  perfect:     'All scan rooms have images; all matched names equal CR-API names; no unmapped CR-API rooms with images',
+  verygood:    'All scan rooms have images; no unmapped CR-API rooms with images; names may differ',
+  good:        'All scan rooms have images; unmapped CR-API rooms with images exist',
+  mediocre:    '≥50% of scan rooms have images; at least 1 missing',
+  poor:        '<50% of scan rooms have images; at least 1 present',
+  horrible:    'No scan room has an image',
+  unavailable: 'Hotel was scanned but no rooms were found for any occupancy',
 };
 
 // ── Filter help popup ─────────────────────────────────────────────────────────
@@ -248,7 +251,7 @@ function QualityHelpButton() {
             />
           </div>
           <ul className="list-unstyled mb-0 small">
-            {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
+            {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible', 'unavailable'] as Quality[]).map(q => (
               <li key={q} className="mb-1">
                 <span className="fw-semibold">{QUALITY_LABELS[q]}:</span>{' '}
                 <span className="text-muted">{QUALITY_DESCRIPTIONS[q]}</span>
@@ -435,14 +438,17 @@ type MappingRow = {
 };
 
 function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, PlaywrightOccResult> | null): MappingRow[] {
-  // Deduplicate scan rooms across all occupancies: a room "has image" if !imageMissing in any occ
+  // Key = "roomCode||roomName" when a code exists, roomName alone otherwise.
+  // Using the concatenated form (not logical OR) prevents two rooms that share a roomCode
+  // but have different names from being silently merged into one row.
   const scanRoomMap = new Map<string, { roomCode: string; roomName: string; hasImage: boolean }>();
-  const occPresenceMap = new Map<string, Record<string, boolean>>(); // key → { folder: present }
+  const occPresenceMap = new Map<string, Record<string, boolean>>();
+
   for (const [folder, result] of Object.entries(playwrightResults ?? {})) {
     for (const r of result.rooms ?? []) {
-      const key = r.roomCode || r.roomName;
-      const existing = scanRoomMap.get(key);
+      const key = r.roomCode ? `${r.roomCode}||${r.roomName}` : r.roomName;
       const hasImage = !r.imageMissing;
+      const existing = scanRoomMap.get(key);
       if (!existing || hasImage) {
         scanRoomMap.set(key, { roomCode: r.roomCode, roomName: r.roomName, hasImage: hasImage || (existing?.hasImage ?? false) });
       }
@@ -451,56 +457,65 @@ function buildMapping(crRooms: CrRoom[], playwrightResults: Record<string, Playw
     }
   }
 
-  // CR-API: image map and name→code map
-  const crImgMap = new Map<string, boolean>();
-  const crNameToKey = new Map<string, string>();
-  for (const r of crRooms) {
-    const key = r.room_code || r.name;
-    crImgMap.set(key, !!r.image_url);
-    if (r.room_code) crNameToKey.set(r.name.trim().toLowerCase(), r.room_code);
+  // CR-API lookup by code and by lowercase name
+  const crByCode = new Map<string, CrRoom>();
+  const crByName = new Map<string, CrRoom>();
+  for (const cr of crRooms) {
+    if (cr.room_code) crByCode.set(cr.room_code, cr);
+    crByName.set(cr.name.trim().toLowerCase(), cr);
   }
 
-  const allCodes = new Map<string, { crCode: string; scanCode: string; crName: string; scanName: string; inCr: boolean; inScan: boolean; imgCr: boolean; imgScan: boolean; occPresence: Record<string, boolean> }>();
+  const rows: MappingRow[] = [];
+  const crMatchedKeys = new Set<string>();
 
-  for (const r of crRooms) {
-    const key = r.room_code || r.name;
-    if (!allCodes.has(key)) allCodes.set(key, { crCode: '', scanCode: '', crName: '', scanName: '', inCr: false, inScan: false, imgCr: false, imgScan: false, occPresence: {} });
-    const entry = allCodes.get(key)!;
-    entry.crCode = r.room_code ?? '';
-    entry.crName = r.name;
-    entry.inCr   = true;
-    entry.imgCr  = !!r.image_url;
-  }
-
+  // One row per unique scan room instance; CR-API match looked up by code then by name
   for (const [key, data] of scanRoomMap) {
-    const resolvedKey = (!data.roomCode && crNameToKey.has(data.roomName.trim().toLowerCase()))
-      ? crNameToKey.get(data.roomName.trim().toLowerCase())!
-      : key;
-    if (!allCodes.has(resolvedKey)) allCodes.set(resolvedKey, { crCode: '', scanCode: '', crName: '', scanName: '', inCr: false, inScan: false, imgCr: false, imgScan: false, occPresence: {} });
-    const entry = allCodes.get(resolvedKey)!;
-    entry.scanCode   = data.roomCode;
-    entry.scanName   = data.roomName;
-    entry.inScan     = true;
-    entry.imgScan    = data.hasImage;
-    entry.occPresence = occPresenceMap.get(key) ?? {};
+    let matchedCr = data.roomCode ? crByCode.get(data.roomCode) : undefined;
+    if (!matchedCr) matchedCr = crByName.get(data.roomName.trim().toLowerCase());
+    if (matchedCr) crMatchedKeys.add(matchedCr.room_code || matchedCr.name);
+
+    rows.push({
+      key,
+      crCode:      matchedCr?.room_code ?? '',
+      scanCode:    data.roomCode,
+      crName:      matchedCr?.name ?? '',
+      scanName:    data.roomName,
+      inCr:        !!matchedCr,
+      inScan:      true,
+      inBoth:      !!matchedCr,
+      imgCr:       matchedCr ? !!matchedCr.image_url : false,
+      imgScan:     data.hasImage,
+      imgBoth:     (matchedCr ? !!matchedCr.image_url : false) && data.hasImage,
+      occPresence: occPresenceMap.get(key) ?? {},
+    });
   }
 
-  return [...allCodes.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, d]) => ({
-      key,
-      crCode:   d.crCode,
-      scanCode: d.scanCode,
-      crName:   d.crName,
-      scanName: d.scanName,
-      inCr:        d.inCr,
-      inScan:      d.inScan,
-      inBoth:      d.inCr && d.inScan,
-      imgCr:       d.imgCr,
-      imgScan:     d.imgScan,
-      imgBoth:     d.imgCr && d.imgScan,
-      occPresence: d.occPresence,
-    }));
+  // CR-API-only rows for rooms not matched by any scan room
+  for (const cr of crRooms) {
+    const crKey = cr.room_code || cr.name;
+    if (!crMatchedKeys.has(crKey)) {
+      rows.push({
+        key:         `cr::${crKey}`,
+        crCode:      cr.room_code ?? '',
+        scanCode:    '',
+        crName:      cr.name,
+        scanName:    '',
+        inCr:        true,
+        inScan:      false,
+        inBoth:      false,
+        imgCr:       !!cr.image_url,
+        imgScan:     false,
+        imgBoth:     false,
+        occPresence: {},
+      });
+    }
+  }
+
+  return rows.sort((a, b) => {
+    const aKey = a.crCode || a.scanCode || a.crName || a.scanName;
+    const bKey = b.crCode || b.scanCode || b.crName || b.scanName;
+    return aKey.localeCompare(bKey);
+  });
 }
 
 type MatchFilter  = 'all' | 'match' | 'mismatch';
@@ -768,7 +783,9 @@ export default function RoomsCrApiPage() {
     return OCCUPANCY_CONFIGS.map(cfg => {
       let available = 0, withImg = 0, noImg = 0;
       for (const e of entriesForGroup) {
-        for (const r of e.playwrightResults?.[cfg.folder]?.rooms ?? []) {
+        const result = e.playwrightResults?.[cfg.folder];
+        if (!result || result.error) continue;
+        for (const r of result.rooms ?? []) {
           available++;
           if (r.imageMissing) noImg++; else withImg++;
         }
@@ -1176,7 +1193,7 @@ export default function RoomsCrApiPage() {
                 </div>
                 <div className="btn-group btn-group-sm flex-wrap" role="group" aria-labelledby="lbl-quality">
                   <button type="button" className={`btn btn-outline-secondary${qualityFilter === 'all' ? ' active' : ''}`} onClick={() => setQualityFilter('all')}>All</button>
-                  {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible'] as Quality[]).map(q => (
+                  {(['perfect', 'verygood', 'good', 'mediocre', 'poor', 'horrible', 'unavailable'] as Quality[]).map(q => (
                     <button
                       key={q}
                       type="button"
