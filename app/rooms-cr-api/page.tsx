@@ -936,6 +936,8 @@ export default function RoomsCrApiPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const [summaryOpen, setSummaryOpen] = React.useState(true);
+
   const isScanning = activeScanId !== null;
   const scanPct =
     activeScanStatus && activeScanStatus.total > 0
@@ -1109,8 +1111,20 @@ export default function RoomsCrApiPage() {
         {/* ── Summary ── */}
         {!loadingEntries && entries.length > 0 && entries.some(e => e.playwrightResults) && (
           <div className="card mb-4">
-            <div className="card-header fw-semibold">Scan Summary</div>
-            <div className="card-body p-0">
+            <div
+              className="card-header fw-semibold d-flex align-items-center justify-content-between"
+              style={{ cursor: 'pointer' }}
+              onClick={() => setSummaryOpen(o => !o)}
+              role="button"
+              aria-expanded={summaryOpen}
+            >
+              <span>Scan Summary</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"
+                style={{ transition: 'transform 0.15s ease', transform: summaryOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
+              </svg>
+            </div>
+            {summaryOpen && <div className="card-body p-0">
 
               {/* Table 1: Room counts */}
               <div className="px-3 pt-3 pb-1 small text-muted fw-semibold">Room counts</div>
@@ -1133,8 +1147,8 @@ export default function RoomsCrApiPage() {
                         {scanSummary.cols.map((c, i) => <td key={i} className="text-center">{c.noImg}</td>)}
                       </tr>
                       <tr>
-                        <td className="fw-semibold text-success">Rooms w/ image</td>
-                        {scanSummary.cols.map((c, i) => <td key={i} className="text-center">{c.withImg}</td>)}
+                        <td className="fw-bold text-success">Rooms w/ image</td>
+                        {scanSummary.cols.map((c, i) => <td key={i} className="text-center fw-bold">{c.withImg}</td>)}
                       </tr>
                     </>
                   ) : (
@@ -1152,7 +1166,7 @@ export default function RoomsCrApiPage() {
                           {g.cols.map((c, i) => <td key={i} className="text-center">{c.noImg}</td>)}
                         </tr>
                         <tr>
-                          <td className="ps-3 text-success">Rooms w/ image</td>
+                          <td className="ps-3 text-success fw-semibold">Rooms w/ image</td>
                           {g.cols.map((c, i) => <td key={i} className="text-center">{c.withImg}</td>)}
                         </tr>
                       </React.Fragment>
@@ -1222,7 +1236,7 @@ export default function RoomsCrApiPage() {
                 </tbody>
               </table>
               <div style={{ height: 1 }} />
-            </div>
+            </div>}
           </div>
         )}
 
