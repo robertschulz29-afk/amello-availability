@@ -300,11 +300,15 @@ function RoomsPanel({
     <div>
       <button
         type="button"
-        className="btn btn-link btn-sm text-start p-0 fw-semibold text-decoration-none small"
+        className="btn btn-link btn-sm text-start p-0 fw-semibold text-decoration-none small d-flex align-items-center gap-2"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
       >
-        Rooms {open ? '▲' : '▼'}
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"
+          style={{ flexShrink: 0, transition: 'transform 0.15s ease', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+          <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
+        </svg>
+        Rooms
       </button>
 
       {open && (
@@ -1112,17 +1116,17 @@ export default function RoomsCrApiPage() {
         {!loadingEntries && entries.length > 0 && entries.some(e => e.playwrightResults) && (
           <div className="card mb-4">
             <div
-              className="card-header fw-semibold d-flex align-items-center justify-content-between"
+              className="card-header fw-semibold d-flex align-items-center gap-2"
               style={{ cursor: 'pointer' }}
               onClick={() => setSummaryOpen(o => !o)}
               role="button"
               aria-expanded={summaryOpen}
             >
-              <span>Scan Summary</span>
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"
-                style={{ transition: 'transform 0.15s ease', transform: summaryOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                style={{ flexShrink: 0, transition: 'transform 0.15s ease', transform: summaryOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
                 <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
               </svg>
+              Scan Summary
             </div>
             {summaryOpen && <div className="card-body p-0">
 
