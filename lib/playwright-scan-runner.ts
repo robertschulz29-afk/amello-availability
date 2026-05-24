@@ -1,3 +1,4 @@
+import { rmSync } from 'fs';
 import { query, sql } from '@/lib/db';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -67,9 +68,14 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
     let hotelErrors = 0;
     let hotelAborted = false;
     let browser: any = null;
+    const userDataDir = `/tmp/chrome-${hotel.code}-${Date.now()}`;
 
     try {
-      browser = await chromium.launch({ executablePath, args: LAUNCH_ARGS, headless: true });
+      browser = await chromium.launch({
+        executablePath,
+        args: [...LAUNCH_ARGS, `--user-data-dir=${userDataDir}`],
+        headless: true,
+      });
 
       // Process all 4 occupancies in parallel, each on its own page
       await Promise.all(OCCUPANCY_CONFIGS.map(async cfg => {
@@ -167,6 +173,7 @@ export async function runChunk({ scanId, offset, takeScreenshot }: {
       }
     } finally {
       await browser?.close().catch(() => {});
+      try { rmSync(userDataDir, { recursive: true, force: true }); } catch {}
     }
 
     return { processed: hotelProcessed, errors: hotelErrors, aborted: hotelAborted };
