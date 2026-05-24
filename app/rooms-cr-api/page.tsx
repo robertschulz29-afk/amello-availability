@@ -576,7 +576,7 @@ function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]
   return (
     <div>
       <div className="fw-semibold small mb-2">
-        Code Mapping — CR-API ↔ Scan
+        Mapping — CR-API ↔ Scan
         <span className="ms-2 text-muted fw-normal">({rows.length} codes)</span>
       </div>
 
@@ -621,30 +621,34 @@ function MappingTable({ rows, fixPotentialActive = false }: { rows: MappingRow[]
                 <th>CR-API Name</th>
                 <th>Scan Name</th>
                 <th className="text-center">Match</th>
-                <th className="text-center" style={{ borderLeft: '2px solid #6c757d', borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>Img CR-API</th>
-                <th className="text-center" style={{ borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>Img Scan</th>
-                <th className="text-center" style={{ borderRight: '2px solid #6c757d', borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>Img Both</th>
+                <th className="text-center" style={{ borderLeft: '2px solid #6c757d', borderTop: '2px solid #6c757d' }}>Img CR-API</th>
+                <th className="text-center" style={{ borderTop: '2px solid #6c757d' }}>Img Scan</th>
+                <th className="text-center" style={{ borderRight: '2px solid #6c757d', borderTop: '2px solid #6c757d' }}>Img Both</th>
                 {OCCUPANCY_CONFIGS.map(cfg => (
                   <th key={cfg.folder} className="text-center">{cfg.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {visible.map(r => (
+              {visible.map((r, idx) => {
+                const isLast = idx === visible.length - 1;
+                const boldB = isLast ? '2px solid #6c757d' : undefined;
+                return (
                 <tr key={r.key} className={rowClass(r)}>
                   <td className="font-monospace">{r.crCode || '—'}</td>
                   <td className="font-monospace">{r.scanCode || '—'}</td>
                   <td>{r.crName || '—'}</td>
                   <td>{r.scanName || '—'}</td>
                   <td className="text-center">{matchBadge(r)}</td>
-                  <td className="text-center" style={{ borderLeft: '2px solid #6c757d', borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>{yn(r.imgCr)}</td>
-                  <td className="text-center" style={{ borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>{yn(r.imgScan)}</td>
-                  <td className="text-center" style={{ borderRight: '2px solid #6c757d', borderTop: '2px solid #6c757d', borderBottom: '2px solid #6c757d' }}>{yn(r.imgBoth)}</td>
+                  <td className="text-center" style={{ borderLeft: '2px solid #6c757d', borderBottom: boldB }}>{yn(r.imgCr)}</td>
+                  <td className="text-center" style={{ borderBottom: boldB }}>{yn(r.imgScan)}</td>
+                  <td className="text-center" style={{ borderRight: '2px solid #6c757d', borderBottom: boldB }}>{yn(r.imgBoth)}</td>
                   {OCCUPANCY_CONFIGS.map(cfg => (
                     <td key={cfg.folder} className="text-center">{yn(!!r.occPresence[cfg.folder])}</td>
                   ))}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
