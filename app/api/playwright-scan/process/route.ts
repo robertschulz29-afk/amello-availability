@@ -111,10 +111,13 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
           const page = await browser.newPage();
           await page.setViewport({ width: 1440, height: 900 });
           try {
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
           } catch {
             // partial load — still try to extract data
           }
+          // Wait for room cards to appear, then let network settle
+          await (page as any).waitForSelector(ROOM_CARD_SELECTOR, { timeout: 15000 }).catch(() => {});
+          await (page as any).waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
 
           rooms = await page.evaluate(
             (cardSelector: string, nameSelector: string, containerSelector: string) => {
@@ -128,18 +131,18 @@ async function runChunk({ scanId, offset, takeScreenshot, appUrl }: {
                   return {
                     roomId:       fullId,
                     roomCode,
-                    roomName:     heading?.textContent?.trim() ?? '',
+                    roomName:     (heading?.textContent ?? '').replace(/^Room Type\s*/i, '').trim(),
                     imageMissing: imgCont?.textContent?.includes('Image coming soon') ?? false,
                   };
                 });
               }
-              // Fallback: old selectors without id (no roomCode/roomId available)
+              // Fallback: no id on cards
               const headings   = Array.from(document.querySelectorAll(nameSelector));
               const containers = Array.from(document.querySelectorAll(containerSelector));
               return headings.map((h, i) => ({
                 roomId:       '',
                 roomCode:     '',
-                roomName:     h.textContent?.trim() ?? '',
+                roomName:     (h.textContent ?? '').replace(/^Room Type\s*/i, '').trim(),
                 imageMissing: containers[i]?.textContent?.includes('Image coming soon') ?? false,
               }));
             },
