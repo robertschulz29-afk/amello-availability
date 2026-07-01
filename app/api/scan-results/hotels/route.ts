@@ -28,20 +28,21 @@ export async function GET(req: NextRequest) {
     let rows: { hotel_id: number; hotel_name: string }[];
 
     if (snapCheck.rows.length > 0) {
-      // Use snapshot — returns all hotels at scan time
-      const conditions = [`scan_id = $1`];
+      // Use snapshot — returns all hotels at scan time (name/brand/region/country joined live from hotels)
+      const conditions = [`sh.scan_id = $1`];
       const params: (number | string)[] = [scanID];
       if (hotelIDs.length === 1) {
-        conditions.push(`hotel_id = $2`);
+        conditions.push(`sh.hotel_id = $2`);
         params.push(hotelIDs[0]);
       } else if (hotelIDs.length > 1) {
         const ph = hotelIDs.map((_, i) => `$${i + 2}`).join(', ');
-        conditions.push(`hotel_id IN (${ph})`);
+        conditions.push(`sh.hotel_id IN (${ph})`);
         params.push(...hotelIDs);
       }
-      conditions.push(`bookable = true`, `active = true`);
+      conditions.push(`sh.bookable = true`, `sh.active = true`);
       const res = await query(
-        `SELECT hotel_id, name AS hotel_name FROM scan_hotels
+        `SELECT sh.hotel_id, COALESCE(h.name, 'Hotel ' || sh.hotel_id) AS hotel_name
+         FROM scan_hotels sh LEFT JOIN hotels h ON h.id = sh.hotel_id
          WHERE ${conditions.join(' AND ')} ORDER BY hotel_name`,
         params,
       );

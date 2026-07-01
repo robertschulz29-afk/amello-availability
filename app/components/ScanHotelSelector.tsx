@@ -13,7 +13,7 @@ type Props = {
   onChange: (ids: number[]) => void;
 };
 
-export function ScanHotelSelector({ hotels, loading, loadError, selectedIds, onChange }: Props) {
+export const ScanHotelSelector = React.memo(function ScanHotelSelector({ hotels, loading, loadError, selectedIds, onChange }: Props) {
   return (
     <div>
       <label className="form-label">Hotels to Scan</label>
@@ -27,9 +27,6 @@ export function ScanHotelSelector({ hotels, loading, loadError, selectedIds, onC
       ) : (
         <>
           <HotelCombobox hotels={hotels} selectedIds={selectedIds} onChange={onChange} />
-          <div className="form-text">
-            {selectedIds.length} of {hotels.length} active hotels selected
-          </div>
           {selectedIds.length === 0 && (
             <div className="text-danger small">Select at least one hotel to scan.</div>
           )}
@@ -37,4 +34,4 @@ export function ScanHotelSelector({ hotels, loading, loadError, selectedIds, onC
       )}
     </div>
   );
-}
+});

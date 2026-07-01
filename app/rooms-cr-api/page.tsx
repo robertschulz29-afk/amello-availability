@@ -344,7 +344,7 @@ function RoomsPanel({
 
           {/* Amello Rooms (scan results per occupancy) */}
           <div>
-            <div className="small fw-semibold text-muted mb-1">Amello Rooms</div>
+            <div className="small fw-semibold text-muted mb-1">TUI-Hotels Rooms</div>
             {playwrightResults === null ? (
               <p className="text-muted small mb-0">No scan data — run a scan above</p>
             ) : (
@@ -1057,7 +1057,7 @@ export default function RoomsCrApiPage() {
 
         {/* ── Scan trigger card ── */}
         <div className="card mb-4">
-          <div className="card-header fw-semibold">Amello Rooms Scan</div>
+          <div className="card-header fw-semibold">TUI-Hotels Rooms Scan</div>
           <div className="card-body">
             {startError && (
               <div className="alert alert-danger alert-dismissible py-2" role="alert">

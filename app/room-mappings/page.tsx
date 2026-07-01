@@ -299,13 +299,13 @@ function HotelSection({
           )}
 
           {hotel.amelloRooms.length === 0 ? (
-            <p className="text-muted small m-3">No Amello rooms in scan data yet. Run a scan first.</p>
+            <p className="text-muted small m-3">No TUI-Hotels rooms in scan data yet. Run a scan first.</p>
           ) : (
             <div className="table-responsive">
               <table className="table table-sm table-hover mb-0 align-middle">
                 <thead className="table-light">
                   <tr>
-                    <th style={{ width: '45%' }}>Amello Room</th>
+                    <th style={{ width: '45%' }}>TUI-Hotels Room</th>
                     <th>Booking.com Room</th>
                   </tr>
                 </thead>
@@ -484,7 +484,7 @@ export default function Page() {
           <div className="card-body d-flex align-items-center gap-3 flex-wrap py-2">
             <div>
               <span className="fw-semibold">AI Auto-Mapping</span>
-              <span className="text-muted small ms-2">Suggests Booking.com matches for all unmapped Amello rooms across all hotels</span>
+              <span className="text-muted small ms-2">Suggests Booking.com matches for all unmapped TUI-Hotels rooms across all hotels</span>
             </div>
             <div className="ms-auto d-flex align-items-center gap-2">
               {suggestProgress && (

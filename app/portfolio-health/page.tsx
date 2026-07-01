@@ -398,17 +398,20 @@ function PriceTable({ rows }: { rows: PriceRow[] }) {
 }
 
 function PortfolioHealth() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   const [hotels, setHotels] = React.useState<Hotel[]>([]);
   const [scans, setScans] = React.useState<ScanRow[]>([]);
-  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
+  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(
+    () => { const p = searchParams.get('scanId'); return p ? Number(p) : null; }
+  );
   const [scanDetails, setScanDetails] = React.useState<ScanDetails | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [matrix, setMatrix] = React.useState<ResultsMatrix | null>(null);
   const [vizMode, setVizMode] = React.useState<'bar' | 'heatmap'>('heatmap');
 
-  const searchParams = useSearchParams();
-  const router = useRouter();
   const [availFilter, setAvailFilter] = React.useState<AvailFilter>(
     (searchParams.get('filter') as AvailFilter) ?? 'all'
   );
@@ -457,7 +460,9 @@ function PortfolioHealth() {
       const arr: ScanRow[] = Array.isArray(list) ? list : [];
       arr.sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
       setScans(arr);
-      setSelectedScanId(prev => prev ?? (arr.length > 0 ? arr[0].id : null));
+      if (arr.length > 0) {
+        setSelectedScanId(prev => (prev != null && arr.some(s => Number(s.id) === prev)) ? prev : Number(arr[0].id));
+      }
     } catch (e: any) { setError(e.message || 'Failed to load scans'); }
   }, []);
 
@@ -506,6 +511,16 @@ function PortfolioHealth() {
   React.useEffect(() => {
     if (selectedScanId != null) loadScanById(selectedScanId);
   }, [selectedScanId, loadScanById]);
+
+  // Only rewrite the URL when the user actively picks a scan — not when a scan
+  // is auto-defaulted (no scanId / stale scanId in URL), to avoid a redundant reload.
+  function handleScanChange(id: number | null) {
+    setSelectedScanId(id);
+    if (id == null) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('scanId', String(id));
+    router.replace(`/portfolio-health?${params.toString()}`);
+  }
 
   const dates = matrix?.dates ?? [];
 
@@ -584,7 +599,7 @@ function PortfolioHealth() {
         <ScanInfoCard
           scans={scans}
           selectedScanId={selectedScanId}
-          onScanChange={id => setSelectedScanId(id ?? null)}
+          onScanChange={id => handleScanChange(id ?? null)}
           scanDetails={scanDetails}
         />
 

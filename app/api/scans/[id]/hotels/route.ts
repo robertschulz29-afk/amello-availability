@@ -12,9 +12,11 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 
   try {
     const { rows } = await query(
-      `SELECT hotel_id AS id, name, code, brand, region, country, bookable, active
-       FROM scan_hotels
-       WHERE scan_id = $1 AND bookable = true AND active = true
+      `SELECT sh.hotel_id AS id, COALESCE(h.name, 'Hotel ' || sh.hotel_id) AS name,
+              sh.code, h.brand, h.region, h.country, sh.bookable, sh.active
+       FROM scan_hotels sh
+       LEFT JOIN hotels h ON h.id = sh.hotel_id
+       WHERE sh.scan_id = $1 AND sh.bookable = true AND sh.active = true
        ORDER BY name`,
       [scanId],
     );
