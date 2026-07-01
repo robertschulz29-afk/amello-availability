@@ -63,7 +63,11 @@ export async function POST(req: NextRequest) {
     }
 
     const hotels = (await sql`
-      SELECT id, code FROM hotels WHERE active = true AND bookable = true ORDER BY id ASC
+      SELECT sh.hotel_id AS id, h.code
+      FROM scan_hotels sh
+      JOIN hotels h ON h.id = sh.hotel_id
+      WHERE sh.scan_id = ${scanId}
+      ORDER BY sh.hotel_id ASC
     `).rows as Array<{ id: number; code: string }>;
 
     if (!hotels.length) {

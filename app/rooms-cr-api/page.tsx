@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
 import { HotelCombobox } from '@/app/components/HotelCombobox';
+import { ScanHotelSelector } from '@/app/components/ScanHotelSelector';
 import { OCCUPANCY_CONFIGS } from '@/lib/playwright-scan-helpers';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -711,6 +712,12 @@ export default function RoomsCrApiPage() {
   const [takeScreenshot, setTakeScreenshot] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
   const [startError, setStartError] = React.useState<string | null>(null);
+
+  // Hotels to scan (distinct from the results-filter "Hotels" combobox below)
+  const [scanHotels, setScanHotels] = React.useState<{ id: number; name: string; code: string; brand?: string }[]>([]);
+  const [scanHotelsLoading, setScanHotelsLoading] = React.useState(true);
+  const [scanHotelsLoadError, setScanHotelsLoadError] = React.useState<string | null>(null);
+  const [scanHotelIds, setScanHotelIds] = React.useState<number[]>([]);
   const [retryingScanId, setRetryingScanId] = React.useState<number | null>(null);
   const [retryError, setRetryError] = React.useState<string | null>(null);
 
@@ -880,6 +887,19 @@ export default function RoomsCrApiPage() {
     loadScans();
   }, [loadScans]);
 
+  // ── Load active+bookable hotels for the scan-start selector ────────────────
+  React.useEffect(() => {
+    setScanHotelsLoading(true);
+    fetchJSON('/api/hotels?active=1&bookable=1', { cache: 'no-store' })
+      .then(d => {
+        const list = Array.isArray(d) ? d : [];
+        setScanHotels(list);
+        setScanHotelIds(list.map((h: { id: number }) => h.id));
+      })
+      .catch(() => setScanHotelsLoadError('Failed to load hotels.'))
+      .finally(() => setScanHotelsLoading(false));
+  }, []);
+
   // Auto-select most recent done scan on first load
   React.useEffect(() => {
     if (scans.length > 0 && selectedScanId === null) {
@@ -954,7 +974,7 @@ export default function RoomsCrApiPage() {
       const res = await fetch('/api/playwright-scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ checkIn, takeScreenshot }),
+        body: JSON.stringify({ checkIn, takeScreenshot, hotelIds: scanHotelIds }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -1048,6 +1068,15 @@ export default function RoomsCrApiPage() {
 
             {!isScanning && (
               <div className="row g-3 align-items-end">
+                <div className="col-12">
+                  <ScanHotelSelector
+                    hotels={scanHotels}
+                    loading={scanHotelsLoading}
+                    loadError={scanHotelsLoadError}
+                    selectedIds={scanHotelIds}
+                    onChange={setScanHotelIds}
+                  />
+                </div>
                 <div className="col-sm-auto">
                   <label className="form-label fw-semibold">Check-In Date</label>
                   <input
@@ -1076,7 +1105,7 @@ export default function RoomsCrApiPage() {
                     type="button"
                     className="btn btn-sm btn-primary"
                     onClick={startScan}
-                    disabled={starting || !checkIn}
+                    disabled={starting || !checkIn || scanHotelIds.length === 0}
                   >
                     {starting ? (
                       <>
@@ -1084,7 +1113,7 @@ export default function RoomsCrApiPage() {
                         Starting…
                       </>
                     ) : (
-                      'Start Scan'
+                      `Start Scan (${scanHotelIds.length} of ${scanHotels.length})`
                     )}
                   </button>
                 </div>

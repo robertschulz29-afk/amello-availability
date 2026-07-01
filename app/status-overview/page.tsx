@@ -3,8 +3,9 @@
 
 import * as React from 'react';
 import { fetchJSON } from '@/lib/api-client';
+import { ScanHotelSelector } from '@/app/components/ScanHotelSelector';
 
-type Hotel = { id: number; name: string; code: string };
+type Hotel = { id: number; name: string; code: string; brand?: string };
 
 type SourceJob = {
   id: number;
@@ -55,6 +56,9 @@ type ScanSource = { id: number; name: string; enabled: boolean };
 
 export default function Page() {
   const [hotels, setHotels] = React.useState<Hotel[]>([]);
+  const [hotelsLoading, setHotelsLoading] = React.useState(true);
+  const [hotelsLoadError, setHotelsLoadError] = React.useState<string | null>(null);
+  const [scanHotelIds, setScanHotelIds] = React.useState<number[]>([]);
   const [scans, setScans] = React.useState<ScanRow[]>([]);
   const [sources, setSources] = React.useState<ScanSource[]>([]);
   const [busy, setBusy] = React.useState(false);
@@ -97,9 +101,15 @@ export default function Page() {
   }
 
   React.useEffect(() => {
-    fetchJSON('/api/hotels', { cache: 'no-store' })
-      .then(d => setHotels(Array.isArray(d) ? d : []))
-      .catch(() => {});
+    setHotelsLoading(true);
+    fetchJSON('/api/hotels?active=1&bookable=1', { cache: 'no-store' })
+      .then(d => {
+        const list: Hotel[] = Array.isArray(d) ? d : [];
+        setHotels(list);
+        setScanHotelIds(list.map(h => h.id));
+      })
+      .catch(() => setHotelsLoadError('Failed to load hotels.'))
+      .finally(() => setHotelsLoading(false));
     loadScans();
     loadSources();
   }, [loadScans, loadSources]);
@@ -135,7 +145,7 @@ export default function Page() {
       const res = await fetchJSON('/api/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseCheckIn, days, stayNights, adultCount, sources: enabledSources }),
+        body: JSON.stringify({ baseCheckIn, days, stayNights, adultCount, sources: enabledSources, hotelIds: scanHotelIds }),
       });
       const scanId = Number(res?.scanId);
       if (!Number.isFinite(scanId) || scanId <= 0) throw new Error('Invalid scanId from server');
@@ -235,14 +245,23 @@ export default function Page() {
               </div>
             )}
             <div className="col-12">
+              <ScanHotelSelector
+                hotels={hotels}
+                loading={hotelsLoading}
+                loadError={hotelsLoadError}
+                selectedIds={scanHotelIds}
+                onChange={setScanHotelIds}
+              />
+            </div>
+            <div className="col-12">
               <button
                 className="btn btn-success"
                 onClick={startScan}
-                disabled={busy || hotels.length === 0 || sources.every(s => s.enabled !== true)}
+                disabled={busy || hotels.length === 0 || scanHotelIds.length === 0 || sources.every(s => s.enabled !== true)}
               >
-                {busy ? 'Starting…' : 'Start Scan'}
+                {busy ? 'Starting…' : `Start Scan (${scanHotelIds.length} of ${hotels.length})`}
               </button>
-              {hotels.length === 0 && <span className="ms-3 text-muted small">No hotels loaded yet.</span>}
+              {hotels.length === 0 && !hotelsLoading && <span className="ms-3 text-muted small">No hotels loaded yet.</span>}
               {sources.length > 0 && sources.every(s => s.enabled !== true) && (
                 <span className="ms-3 text-warning small">Enable at least one source to start a scan.</span>
               )}

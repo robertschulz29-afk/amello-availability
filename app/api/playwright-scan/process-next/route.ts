@@ -19,7 +19,7 @@ async function processNext(req: NextRequest) {
 
   try {
     const scanQ = await sql`
-      SELECT id, check_in, take_screenshot, retry_attempted
+      SELECT id, check_in, take_screenshot, retry_attempted, hotel_ids
       FROM playwright_scans
       WHERE status = 'running'
       ORDER BY id ASC
@@ -34,6 +34,8 @@ async function processNext(req: NextRequest) {
     const scanId: number = scan.id;
     const takeScreenshot: boolean = scan.take_screenshot ?? false;
     const retryAttempted: boolean = scan.retry_attempted ?? false;
+    const scanHotelIds: number[] | undefined =
+      Array.isArray(scan.hotel_ids) && scan.hotel_ids.length > 0 ? scan.hotel_ids : undefined;
 
     // Acquire lock: only proceed if no active lock (or lock expired)
     const lockResult = await sql`
@@ -48,11 +50,16 @@ async function processNext(req: NextRequest) {
       return NextResponse.json({ message: 'Locked by another invocation', scanId });
     }
 
-    const totalQ = await query(
-      `SELECT COUNT(*)::int AS cnt FROM hotels WHERE active = true AND bookable = true`,
-      [],
-    );
-    const total: number = totalQ.rows[0].cnt;
+    let total: number;
+    if (scanHotelIds) {
+      total = scanHotelIds.length;
+    } else {
+      const totalQ = await query(
+        `SELECT COUNT(*)::int AS cnt FROM hotels WHERE active = true AND bookable = true`,
+        [],
+      );
+      total = totalQ.rows[0].cnt;
+    }
 
     const deadline = Date.now() + 240_000; // stop looping with 60s to spare before maxDuration
     let chunksRun = 0;
@@ -113,7 +120,7 @@ async function processNext(req: NextRequest) {
       }
 
       console.log(`[playwright-process-next] scan=${scanId} offset=${offset}/${total}`);
-      lastResult = await runChunk({ scanId, offset, takeScreenshot });
+      lastResult = await runChunk({ scanId, offset, takeScreenshot, hotelIds: scanHotelIds });
       chunksRun++;
 
       if (lastResult.done || lastResult.aborted) break;

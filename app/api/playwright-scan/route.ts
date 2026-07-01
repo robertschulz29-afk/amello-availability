@@ -14,6 +14,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'checkIn must be YYYY-MM-DD' }, { status: 400 });
     }
 
+    // ── Resolve hotel selection ────────────────────────────────────────────────
+    let hotelIds: number[] | null = null;
+    if (Array.isArray(body?.hotelIds)) {
+      const parsed = (body.hotelIds as any[])
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n) && n > 0 && Number.isInteger(n));
+      if (parsed.length === 0) {
+        return NextResponse.json({ error: 'Select at least one hotel to scan.' }, { status: 400 });
+      }
+      hotelIds = parsed;
+    }
+
     // Block concurrent scans
     const running = await sql`SELECT id FROM playwright_scans WHERE status = 'running' LIMIT 1`;
     if (running.rows.length > 0) {
@@ -23,17 +35,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const hotels = await query(
-      `SELECT id FROM hotels WHERE active = true AND bookable = true`,
-      [],
-    );
-    const total = hotels.rows.length * 4;
+    let total: number;
+    if (hotelIds) {
+      total = hotelIds.length * 4;
+    } else {
+      const hotels = await query(
+        `SELECT id FROM hotels WHERE active = true AND bookable = true`,
+        [],
+      );
+      total = hotels.rows.length * 4;
+    }
 
-    const scanRow = await sql`
-      INSERT INTO playwright_scans (check_in, take_screenshot, total)
-      VALUES (${checkIn}, ${takeScreenshot}, ${total})
-      RETURNING id
-    `;
+    const scanRow = await query(
+      `INSERT INTO playwright_scans (check_in, take_screenshot, total, hotel_ids)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [checkIn, takeScreenshot, total, hotelIds],
+    );
     const scanId = scanRow.rows[0].id;
 
     return NextResponse.json({ scanId, total });

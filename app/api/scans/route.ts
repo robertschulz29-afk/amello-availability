@@ -96,6 +96,18 @@ export async function POST(req: NextRequest) {
 
     console.log('[scans] Creating scan with sources:', enabledSources);
 
+    // ── Resolve hotel selection ────────────────────────────────────────────────
+    let hotelIds: number[] | null = null;
+    if (Array.isArray(body?.hotelIds)) {
+      const parsed = (body.hotelIds as any[])
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n) && n > 0 && Number.isInteger(n));
+      if (parsed.length === 0) {
+        return NextResponse.json({ error: 'Select at least one hotel to scan.' }, { status: 400 });
+      }
+      hotelIds = parsed;
+    }
+
     // ── Dates ─────────────────────────────────────────────────────────────────
     let baseCheckIn: string | null =
       typeof body?.baseCheckIn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.baseCheckIn)
@@ -135,8 +147,18 @@ export async function POST(req: NextRequest) {
 
     // ── Count hotels per source ───────────────────────────────────────────────
     const [allHotelsQ, bookingHotelsQ] = await Promise.all([
-      sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true`,
-      sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND booking_url IS NOT NULL AND booking_url != ''`,
+      hotelIds
+        ? query<{ c: number }>(
+            `SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND id = ANY($1::int[])`,
+            [hotelIds],
+          )
+        : sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true`,
+      hotelIds
+        ? query<{ c: number }>(
+            `SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND booking_url IS NOT NULL AND booking_url != '' AND id = ANY($1::int[])`,
+            [hotelIds],
+          )
+        : sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND booking_url IS NOT NULL AND booking_url != ''`,
     ]);
     const allHotelsCount    = allHotelsQ.rows[0]?.c ?? 0;
     const bookingHotelCount = bookingHotelsQ.rows[0]?.c ?? 0;
@@ -165,13 +187,23 @@ export async function POST(req: NextRequest) {
     const scanId = ins.rows[0].id as number;
 
     // ── Snapshot hotels at scan creation time ─────────────────────────────────
-    await query(
-      `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
-       SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
-       WHERE bookable = true AND active = true
-       ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
-      [scanId],
-    );
+    if (hotelIds) {
+      await query(
+        `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
+         SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
+         WHERE bookable = true AND active = true AND id = ANY($2::int[])
+         ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
+        [scanId, hotelIds],
+      );
+    } else {
+      await query(
+        `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
+         SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
+         WHERE bookable = true AND active = true
+         ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
+        [scanId],
+      );
+    }
 
     // ── Create one source job per enabled source ──────────────────────────────
     const jobs: Array<{ jobId: number; source: string }> = [];
