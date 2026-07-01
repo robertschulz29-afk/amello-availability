@@ -21,6 +21,7 @@ type Hotel = {
   booking_url?: string | null;
   tuiamello_url?: string | null;
   expedia_url?: string | null;
+  check24_url?: string | null;
   bookable?: boolean | null;
   active?: boolean | null;
   base_image?: string | null;
@@ -68,6 +69,7 @@ export default function Page() {
   const [editBookingUrl, setEditBookingUrl] = React.useState('');
   const [editTuiamelloUrl, setEditTuiamelloUrl] = React.useState('');
   const [editExpediaUrl, setEditExpediaUrl] = React.useState('');
+  const [editCheck24Url, setEditCheck24Url] = React.useState('');
   const [editBookable, setEditBookable] = React.useState(true);
   const [editActive, setEditActive] = React.useState(true);
   const [editBusy, setEditBusy] = React.useState(false);
@@ -169,7 +171,7 @@ export default function Page() {
       setHotels(Array.isArray(result.hotels) ? result.hotels : []);
       setSyncWarnings(result.errors ?? []);
       setSuccessMsg(
-        `Amello sync complete: ${result.synced} hotel${result.synced !== 1 ? 's' : ''} synced` +
+        `TUI-Hotels sync complete: ${result.synced} hotel${result.synced !== 1 ? 's' : ''} synced` +
         (result.skipped > 0 ? `, ${result.skipped} skipped` : '') + '.',
       );
     } catch (e: any) {
@@ -221,6 +223,7 @@ export default function Page() {
     setEditBookingUrl(hotel.booking_url ?? '');
     setEditTuiamelloUrl(hotel.tuiamello_url ?? '');
     setEditExpediaUrl(hotel.expedia_url ?? '');
+    setEditCheck24Url(hotel.check24_url ?? '');
     setEditBookable(hotel.bookable ?? true);
     setEditActive(hotel.active ?? true);
     setEditError(null);
@@ -236,8 +239,9 @@ export default function Page() {
     if (!editingHotel) return;
     setEditError(null);
     if (!isValidUrl(editBookingUrl))   { setEditError('Invalid Booking.com URL'); return; }
-    if (!isValidUrl(editTuiamelloUrl)) { setEditError('Invalid TUIAmello URL');   return; }
+    if (!isValidUrl(editTuiamelloUrl)) { setEditError('Invalid TUI-Hotels URL');  return; }
     if (!isValidUrl(editExpediaUrl))   { setEditError('Invalid Expedia URL');     return; }
+    if (!isValidUrl(editCheck24Url))   { setEditError('Invalid Check24 URL');    return; }
     setEditBusy(true);
     try {
       const updated: Hotel = await fetchJSON(`/api/hotels/${editingHotel.id}`, {
@@ -250,6 +254,7 @@ export default function Page() {
           booking_url:   editBookingUrl.trim()   || null,
           tuiamello_url: editTuiamelloUrl.trim() || null,
           expedia_url:   editExpediaUrl.trim()   || null,
+          check24_url:   editCheck24Url.trim()   || null,
           bookable:      editBookable,
           active:        editActive,
         }),
@@ -548,12 +553,16 @@ export default function Page() {
                         <td>{h.booking_url ? <a href={h.booking_url} target="_blank" rel="noopener noreferrer">{h.booking_url}</a> : 'N/A'}</td>
                       </tr>
                       <tr>
-                        <td><strong>TUIAmello URL:</strong></td>
+                        <td><strong>TUI-Hotels URL:</strong></td>
                         <td>{h.tuiamello_url ? <a href={h.tuiamello_url} target="_blank" rel="noopener noreferrer">{h.tuiamello_url}</a> : 'N/A'}</td>
                       </tr>
                       <tr>
                         <td><strong>Expedia URL:</strong></td>
                         <td>{h.expedia_url ? <a href={h.expedia_url} target="_blank" rel="noopener noreferrer">{h.expedia_url}</a> : 'N/A'}</td>
+                      </tr>
+                      <tr>
+                        <td><strong>Check24 URL:</strong></td>
+                        <td>{h.check24_url ? <a href={h.check24_url} target="_blank" rel="noopener noreferrer">{h.check24_url}</a> : 'N/A'}</td>
                       </tr>
                       <tr><td><strong>Bookable:</strong></td><td>{h.bookable == null ? 'N/A' : h.bookable ? 'Yes' : 'No'}</td></tr>
                       <tr><td><strong>Active:</strong></td><td>{h.active == null ? 'N/A' : h.active ? 'Yes' : 'No'}</td></tr>
@@ -608,12 +617,16 @@ export default function Page() {
                       <input type="url" className="form-control" value={editBookingUrl} onChange={e => setEditBookingUrl(e.target.value)} disabled={editBusy} placeholder="https://www.booking.com/…" />
                     </div>
                     <div className="col-12">
-                      <label className="form-label fw-semibold">TUIAmello URL</label>
+                      <label className="form-label fw-semibold">TUI-Hotels URL</label>
                       <input type="url" className="form-control" value={editTuiamelloUrl} onChange={e => setEditTuiamelloUrl(e.target.value)} disabled={editBusy} placeholder="https://www.tuiamello.com/…" />
                     </div>
                     <div className="col-12">
                       <label className="form-label fw-semibold">Expedia URL</label>
                       <input type="url" className="form-control" value={editExpediaUrl} onChange={e => setEditExpediaUrl(e.target.value)} disabled={editBusy} placeholder="https://www.expedia.com/…" />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label fw-semibold">Check24 URL</label>
+                      <input type="url" className="form-control" value={editCheck24Url} onChange={e => setEditCheck24Url(e.target.value)} disabled={editBusy} placeholder="https://hotel.check24.de/…" />
                     </div>
                     <div className="col-md-6">
                       <div className="form-check">

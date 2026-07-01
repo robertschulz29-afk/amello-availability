@@ -2,8 +2,9 @@
 'use client';
 
 import * as React from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { fetchJSON } from '@/lib/api-client';
-import { extractLowestPrice, formatPrice } from '@/lib/price-utils';
+import { formatPrice } from '@/lib/price-utils';
 import { HotelCombobox } from '@/app/components/HotelCombobox';
 import { PaginationBar } from '@/app/components/PaginationBar';
 import { ScanInfoCard, ScanDetails } from '@/app/components/ScanInfoCard';
@@ -54,39 +55,37 @@ function toYMD(val: any): string {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
 }
 
-function buildSourceUrl(result: ScanResult, stayNights: number): string | null {
-  if (result.source === 'booking' || result.source === 'booking_member') {
-    const raw = result.booking_url;
-    if (!raw) return null;
-    const checkIn = toYMD(result.check_in_date);
-    if (!checkIn) return null;
-    try {
-      const base = raw.startsWith('http') ? raw : `https://www.booking.com${raw}`;
-      const u = new URL(base);
-      u.searchParams.set('checkin', checkIn);
-      u.searchParams.set('checkout', addDaysUTC(checkIn, stayNights));
-      u.searchParams.set('group_adults', '2');
-      u.searchParams.set('group_children', '0');
-      return u.toString();
-    } catch { return null; }
-  }
-  if (result.source === 'amello') {
-    const checkIn = toYMD(result.check_in_date);
-    if (!checkIn) return null;
-    const base = result.tuiamello_url
-      ? (result.tuiamello_url.startsWith('http') ? result.tuiamello_url : `https://www.tuiamello.com${result.tuiamello_url}`)
-      : result.hotel_code
-        ? `https://www.tuiamello.com/en-DE/hotel/${result.hotel_code}/`
-        : null;
-    if (!base) return null;
-    try {
-      const u = new URL(base);
-      u.searchParams.set('departure-date', checkIn);
-      u.searchParams.set('return-date', addDaysUTC(checkIn, stayNights));
-      return u.toString();
-    } catch { return null; }
-  }
-  return null;
+function buildBookingUrl(result: ScanResult, stayNights: number): string | null {
+  const raw = result.booking_url;
+  if (!raw) return null;
+  const checkIn = toYMD(result.check_in_date);
+  if (!checkIn) return null;
+  try {
+    const base = raw.startsWith('http') ? raw : `https://www.booking.com${raw}`;
+    const u = new URL(base);
+    u.searchParams.set('checkin', checkIn);
+    u.searchParams.set('checkout', addDaysUTC(checkIn, stayNights));
+    u.searchParams.set('group_adults', '2');
+    u.searchParams.set('group_children', '0');
+    return u.toString();
+  } catch { return null; }
+}
+
+function buildTuiHotelsUrl(result: ScanResult, stayNights: number): string | null {
+  const checkIn = toYMD(result.check_in_date);
+  if (!checkIn) return null;
+  const base = result.tuiamello_url
+    ? (result.tuiamello_url.startsWith('http') ? result.tuiamello_url : `https://www.tuiamello.com${result.tuiamello_url}`)
+    : result.hotel_code
+      ? `https://www.tuiamello.com/en-DE/hotel/${result.hotel_code}/`
+      : null;
+  if (!base) return null;
+  try {
+    const u = new URL(base);
+    u.searchParams.set('departure-date', checkIn);
+    u.searchParams.set('return-date', addDaysUTC(checkIn, stayNights));
+    return u.toString();
+  } catch { return null; }
 }
 
 function RateNameCell({ name, description }: { name: string | null; description: string | null }) {
@@ -113,11 +112,14 @@ function RateNameCell({ name, description }: { name: string | null; description:
 function getSourceDisplay(source?: string) {
   if (source === 'booking')        return { label: 'Booking (Standard)', badgeClass: 'bg-info' };
   if (source === 'booking_member') return { label: 'Booking (Member)',   badgeClass: 'bg-primary' };
-  if (source === 'amello')         return { label: 'Amello',             badgeClass: 'bg-secondary' };
+  if (source === 'amello')         return { label: 'TUI-Hotels',         badgeClass: 'bg-secondary' };
+  if (source === 'check24')        return { label: 'Check24',            badgeClass: 'bg-warning' };
   return { label: source || '—', badgeClass: 'bg-secondary' };
 }
 
-export default function Page() {
+function ScanResultsPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [scans, setScans]                   = React.useState<ScanRow[]>([]);
   const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
   const [scanDetails, setScanDetails]       = React.useState<ScanDetails | null>(null);
@@ -164,7 +166,10 @@ export default function Page() {
         setHotels(hotelsArr);
 
         if (scansArr.length > 0) {
-          const firstId = scansArr[0].id;
+          const requestedId = Number(searchParams.get('scanId'));
+          const firstId = Number.isFinite(requestedId) && scansArr.some(s => Number(s.id) === requestedId)
+            ? requestedId
+            : Number(scansArr[0].id);
           setSelectedScanId(firstId);
           const [details, resultsData] = await Promise.all([
             fetchJSON(`/api/scans/${firstId}?meta=1`, { cache: 'no-store' }).catch(() => null),
@@ -198,6 +203,11 @@ export default function Page() {
     setSelectedCheckInDate('');
     setSelectedSource('');
     setPage(1);
+    if (scanId != null) {
+      const params = new URLSearchParams(window.location.search);
+      params.set('scanId', String(scanId));
+      router.replace(`/scan-results?${params.toString()}`);
+    }
     if (!scanId) { setScanDetails(null); setResults([]); setTotal(0); setTotalPages(0); return; }
     setReloading(true);
     setError(null);
@@ -221,7 +231,7 @@ export default function Page() {
       setTotalPages(resultsData?.totalPages || 0);
     } catch (e: any) { setError(e.message || 'Failed to load results'); }
     finally { setReloading(false); }
-  }, [limit, fetchResults]);
+  }, [limit, fetchResults, router]);
 
   // Reload when filters/page change
   React.useEffect(() => {
@@ -233,6 +243,7 @@ export default function Page() {
       .catch(e => setError(e.message || 'Failed to load results'))
       .finally(() => setReloading(false));
   }, [page, limit, selectedHotelIds, selectedCheckInDate, selectedSource]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   if (initialLoading) return (
     <main><div className="text-center py-5"><div className="spinner-border" role="status" /></div></main>
@@ -266,9 +277,10 @@ export default function Page() {
             onChange={e => { setSelectedSource(e.target.value); setPage(1); }}
           >
             <option value="">All sources</option>
-            <option value="amello">Amello</option>
+            <option value="amello">TUI-Hotels</option>
             <option value="booking">Booking (Standard)</option>
             <option value="booking_member">Booking (Member)</option>
+            <option value="check24">Check24</option>
           </select>
 
           <div className="d-flex align-items-center gap-2">
@@ -327,20 +339,42 @@ export default function Page() {
                     <th>Rate</th>
                     <th className="text-end">Actual Price</th>
                     <th className="text-end">Base Price</th>
-                    <th>Link</th>
-                    <th>JSON</th>
+                    <th>Links</th>
                   </tr>
                 </thead>
                 <tbody>
                   {results.map(result => {
-                    const { roomName, rateName, rateDescription, price: actualPrice, currency, memberPrice: basePrice } =
-                      result.status === 'green'
-                        ? extractLowestPrice(result.response_json)
-                        : { roomName: null, rateName: null, rateDescription: null, price: null, currency: null, memberPrice: null };
-                    const stayNights = scans.find(s => s.id === result.scan_id)?.stay_nights ?? 7;
+                    const stayNights = scans.find(s => Number(s.id) === Number(result.scan_id))?.stay_nights ?? 7;
                     const { label, badgeClass } = getSourceDisplay(result.source);
-                    return (
-                      <tr key={`${result.scan_id}-${result.hotel_id}-${result.check_in_date}-${result.source}`}>
+                    const tuiUrl = buildTuiHotelsUrl(result, stayNights);
+                    const bookingUrl = buildBookingUrl(result, stayNights);
+                    const rooms: any[] = result.status === 'green' && Array.isArray(result.response_json?.rooms)
+                      ? result.response_json.rooms
+                      : [];
+
+                    // Flatten every room/rate combination for this scan cell — never a reduced/lowest-only set.
+                    const lines: Array<{ roomName: string | null; rateName: string | null; rateDescription: string | null; price: number | null; currency: string | null; basePrice: number | null }> = [];
+                    for (const room of rooms) {
+                      if (!room || !Array.isArray(room.rates)) continue;
+                      for (const rate of room.rates) {
+                        lines.push({
+                          roomName: room.name ?? null,
+                          rateName: rate?.name ?? null,
+                          rateDescription: rate?.description ?? null,
+                          price: typeof rate?.actualPrice === 'number' ? rate.actualPrice : null,
+                          currency: rate?.currency ?? null,
+                          basePrice: typeof rate?.basePrice === 'number' ? rate.basePrice : null,
+                        });
+                      }
+                    }
+                    if (lines.length === 0) {
+                      lines.push({ roomName: null, rateName: null, rateDescription: null, price: null, currency: null, basePrice: null });
+                    }
+
+                    const rowKeyBase = `${result.scan_id}-${result.hotel_id}-${result.check_in_date}-${result.source}`;
+
+                    return lines.map((line, i) => (
+                      <tr key={`${rowKeyBase}-${i}`}>
                         <td>{result.scan_id}</td>
                         <td>{result.hotel_name ?? `Hotel ${result.hotel_id}`}</td>
                         <td className="text-nowrap">{result.check_in_date}</td>
@@ -350,32 +384,26 @@ export default function Page() {
                           </span>
                         </td>
                         <td><span className={`badge ${badgeClass}`}>{label}</span></td>
-                        <td className="small">{roomName ?? '—'}</td>
-                        <td className="small"><RateNameCell name={rateName} description={result.source === 'amello' ? rateDescription : null} /></td>
-                        <td className="text-end text-nowrap">{formatPrice(actualPrice, currency)}</td>
+                        <td className="small">{line.roomName ?? '—'}</td>
+                        <td className="small"><RateNameCell name={line.rateName} description={result.source === 'amello' ? line.rateDescription : null} /></td>
+                        <td className="text-end text-nowrap">{formatPrice(line.price, line.currency)}</td>
                         <td className="text-end text-nowrap">
-                          {basePrice != null
-                            ? <span className="text-muted text-decoration-line-through">{formatPrice(basePrice, currency)}</span>
+                          {line.basePrice != null
+                            ? <span className="text-muted text-decoration-line-through">{formatPrice(line.basePrice, line.currency)}</span>
                             : <span className="text-muted">—</span>}
                         </td>
                         <td>
-                          {(() => {
-                            const url = buildSourceUrl(result, stayNights);
-                            return url
-                              ? <a href={url} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-secondary">Open</a>
-                              : <span className="text-muted">—</span>;
-                          })()}
-                        </td>
-                        <td>
-                          <details>
-                            <summary className="btn btn-sm btn-outline-secondary">View</summary>
-                            <pre className="small mt-2" style={{ maxHeight: 200, overflow: 'auto' }}>
-                              {JSON.stringify(result.response_json, null, 2)}
-                            </pre>
-                          </details>
+                          <div className="d-flex gap-1">
+                            {tuiUrl
+                              ? <a href={tuiUrl} target="_blank" rel="noreferrer" className="btn btn-outline-secondary" style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem' }}>TUI-Hotels <i className="fas fa-arrow-up-right-from-square ms-1" style={{ fontSize: '0.65rem' }} /></a>
+                              : <span className="text-muted" style={{ fontSize: '0.75rem' }}>No TUI-Hotels link</span>}
+                            {bookingUrl
+                              ? <a href={bookingUrl} target="_blank" rel="noreferrer" className="btn btn-outline-secondary" style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem' }}>Booking <i className="fas fa-arrow-up-right-from-square ms-1" style={{ fontSize: '0.65rem' }} /></a>
+                              : <span className="text-muted" style={{ fontSize: '0.75rem' }}>No Booking link</span>}
+                          </div>
                         </td>
                       </tr>
-                    );
+                    ));
                   })}
                 </tbody>
               </table>
@@ -395,5 +423,13 @@ export default function Page() {
         ) : null}
       </div>
     </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <React.Suspense fallback={null}>
+      <ScanResultsPage />
+    </React.Suspense>
   );
 }

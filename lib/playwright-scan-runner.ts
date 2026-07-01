@@ -5,15 +5,9 @@ import {
   OCCUPANCY_CONFIGS, ROOM_CARD_SELECTOR, ROOM_NAME_SELECTOR, IMAGE_CONTAINER_SELECTOR,
   buildHotelSlug, buildTuiUrl,
 } from '@/lib/playwright-scan-helpers';
+import { getChromiumExecutablePath, LAUNCH_ARGS } from '@/lib/scrapers/browser-launch';
 
 const CHUNK_SIZE = 3;
-
-const CHROMIUM_URL = 'https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar';
-
-async function getChromiumPath(): Promise<string> {
-  const chromium = (await import('@sparticuz/chromium-min')).default;
-  return chromium.executablePath(CHROMIUM_URL);
-}
 
 function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -66,15 +60,9 @@ export async function runChunk({ scanId, offset, takeScreenshot, hotelIds }: {
   let chunkErrors    = 0;
   let aborted        = false;
 
-  const executablePath = await getChromiumPath();
+  const executablePath = await getChromiumExecutablePath();
   const { chromium } = await import('playwright-core');
   const supabase = takeScreenshot ? getSupabaseClient() : null;
-
-  const LAUNCH_ARGS = [
-    '--no-sandbox', '--disable-setuid-sandbox', '--no-zygote',
-    '--disable-dev-shm-usage', '--disable-gpu',
-    '--disk-cache-size=0', '--media-cache-size=0', '--disable-application-cache',
-  ];
 
   async function scrapeHotel(hotel: { id: number; name: string; code: string }): Promise<{ processed: number; errors: number; aborted: boolean }> {
     const slug = buildHotelSlug(hotel.name, hotel.code);

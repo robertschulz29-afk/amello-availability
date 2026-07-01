@@ -45,6 +45,14 @@ const STATUS_COLOR: Record<string, string> = {
   running: 'info', done: 'success', error: 'danger', cancelled: 'warning', queued: 'secondary',
 };
 
+function sourceDisplayLabel(source: string) {
+  if (source === 'amello') return 'TUI-Hotels';
+  if (source === 'booking') return 'Booking';
+  if (source === 'booking_member') return 'Booking Member';
+  if (source === 'check24') return 'Check24';
+  return source;
+}
+
 function pct(done: number, total: number) {
   return total === 0 ? 0 : Math.floor((done / total) * 100);
 }
@@ -80,10 +88,24 @@ export default function Page() {
     } catch { /* silent */ }
   }, []);
 
+  // Booking/Booking Member should appear off on first load of this page, regardless of
+  // the stored DB value — this is a display-only default, not a persisted change.
+  const appliedDefaultSourcesRef = React.useRef(false);
+
   const loadSources = React.useCallback(async () => {
     try {
-      const list = await fetchJSON('/api/scan-sources', { cache: 'no-store' });
-      setSources(Array.isArray(list) ? list : []);
+      const list: ScanSource[] = await fetchJSON('/api/scan-sources', { cache: 'no-store' });
+      const rows = Array.isArray(list) ? list : [];
+      if (!appliedDefaultSourcesRef.current) {
+        appliedDefaultSourcesRef.current = true;
+        setSources(rows.map(s =>
+          s.name === 'booking' || s.name === 'booking_member' ? { ...s, enabled: false }
+          : s.name === 'amello' ? { ...s, enabled: true }
+          : s
+        ));
+      } else {
+        setSources(rows);
+      }
     } catch { /* silent */ }
   }, []);
 
@@ -205,29 +227,38 @@ export default function Page() {
         {/* ── Create new scan ── */}
         <div className="card mb-4">
           <div className="card-header fw-semibold">Create New Scan</div>
-          <div className="card-body row g-3">
-            <div className="col-sm-3">
-              <label className="form-label">Check-in date</label>
+          <div className="card-body d-flex flex-wrap align-items-start gap-3">
+            <div style={{ width: 200 }}>
+              <ScanHotelSelector
+                hotels={hotels}
+                loading={hotelsLoading}
+                loadError={hotelsLoadError}
+                selectedIds={scanHotelIds}
+                onChange={setScanHotelIds}
+              />
+            </div>
+            <div style={{ width: 150 }}>
+              <label className="form-label text-nowrap">Check-in date</label>
               <input type="date" className="form-control" value={baseCheckIn} onChange={e => setBaseCheckIn(e.target.value)} />
             </div>
-            <div className="col-sm-3">
-              <label className="form-label">Stay (nights)</label>
+            <div style={{ width: 110 }}>
+              <label className="form-label text-nowrap">Stay (nights)</label>
               <input type="number" min={1} max={30} className="form-control" value={stayNights} onChange={e => setStayNights(Number(e.target.value || 1))} />
             </div>
-            <div className="col-sm-3">
-              <label className="form-label">Days to scan</label>
+            <div style={{ width: 110 }}>
+              <label className="form-label text-nowrap">Days to scan</label>
               <input type="number" min={1} max={365} className="form-control" value={days} onChange={e => setDays(Number(e.target.value || 1))} />
             </div>
-            <div className="col-sm-3">
-              <label className="form-label">Adults</label>
+            <div style={{ width: 80 }}>
+              <label className="form-label text-nowrap">Adults</label>
               <input type="number" min={1} max={6} className="form-control" value={adultCount} onChange={e => setAdultCount(Number(e.target.value || 1))} />
             </div>
             {sources.length > 0 && (
-              <div className="col-12">
-                <label className="form-label">Sources</label>
-                <div className="d-flex flex-wrap gap-3">
+              <div style={{ flexShrink: 0 }}>
+                <label className="form-label text-nowrap">Sources</label>
+                <div className="d-flex gap-3 align-items-center" style={{ whiteSpace: 'nowrap', height: 38 }}>
                   {sources.map(src => (
-                    <div key={src.id} className="form-check form-switch mb-0">
+                    <div key={src.id} className="form-check form-switch mb-0 text-nowrap">
                       <input
                         className="form-check-input"
                         type="checkbox"
@@ -237,23 +268,14 @@ export default function Page() {
                         onChange={() => toggleSource(src)}
                       />
                       <label className="form-check-label" htmlFor={`src-${src.id}`}>
-                        <span className="fw-semibold text-capitalize">{src.name}</span>
+                        <span className="fw-semibold">{sourceDisplayLabel(src.name)}</span>
                       </label>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-            <div className="col-12">
-              <ScanHotelSelector
-                hotels={hotels}
-                loading={hotelsLoading}
-                loadError={hotelsLoadError}
-                selectedIds={scanHotelIds}
-                onChange={setScanHotelIds}
-              />
-            </div>
-            <div className="col-12">
+            <div style={{ flexBasis: '100%' }}>
               <button
                 className="btn btn-success"
                 onClick={startScan}
@@ -317,7 +339,7 @@ export default function Page() {
                                   className={`badge text-bg-${STATUS_COLOR[j.status] ?? 'secondary'}`}
                                   style={{ fontSize: '0.65rem', minWidth: 56 }}
                                 >
-                                  {j.source}
+                                  {sourceDisplayLabel(j.source)}
                                 </span>
                                 <div className="progress flex-grow-1" style={{ height: 8 }}>
                                   <div
@@ -336,7 +358,7 @@ export default function Page() {
                           <div className="d-flex flex-column gap-1">
                             {legacySources.map(src => (
                               <div key={src} className="d-flex align-items-center gap-2">
-                                <span className="badge text-bg-secondary" style={{ fontSize: '0.65rem', minWidth: 56 }}>{src}</span>
+                                <span className="badge text-bg-secondary" style={{ fontSize: '0.65rem', minWidth: 56 }}>{sourceDisplayLabel(src)}</span>
                                 <div className="progress flex-grow-1" style={{ height: 8 }}>
                                   <div className="progress-bar" style={{ width: `${pct(s.done_cells, s.total_cells)}%` }} />
                                 </div>

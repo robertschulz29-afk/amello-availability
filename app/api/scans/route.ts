@@ -129,6 +129,10 @@ export async function POST(req: NextRequest) {
       Number.isFinite(body?.stayNights) && body.stayNights >= 1 && body.stayNights <= 30
         ? Number(body.stayNights) : 7;
 
+    const adultCount: number =
+      Number.isInteger(body?.adultCount) && body.adultCount >= 1 && body.adultCount <= 10
+        ? Number(body.adultCount) : 2;
+
     const checkoutDt = ymdToUTC(baseCheckIn);
     checkoutDt.setUTCDate(checkoutDt.getUTCDate() + stayNights);
     const fixedCheckout = toYMDUTC(checkoutDt);
@@ -146,7 +150,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Count hotels per source ───────────────────────────────────────────────
-    const [allHotelsQ, bookingHotelsQ] = await Promise.all([
+    const [allHotelsQ, bookingHotelsQ, check24HotelsQ] = await Promise.all([
       hotelIds
         ? query<{ c: number }>(
             `SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND id = ANY($1::int[])`,
@@ -159,12 +163,20 @@ export async function POST(req: NextRequest) {
             [hotelIds],
           )
         : sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND booking_url IS NOT NULL AND booking_url != ''`,
+      hotelIds
+        ? query<{ c: number }>(
+            `SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND check24_url IS NOT NULL AND check24_url != '' AND id = ANY($1::int[])`,
+            [hotelIds],
+          )
+        : sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND check24_url IS NOT NULL AND check24_url != ''`,
     ]);
     const allHotelsCount    = allHotelsQ.rows[0]?.c ?? 0;
     const bookingHotelCount = bookingHotelsQ.rows[0]?.c ?? 0;
+    const check24HotelCount = check24HotelsQ.rows[0]?.c ?? 0;
 
     function totalForSource(source: string): number {
       if (source === 'booking' || source === 'booking_member') return bookingHotelCount * days;
+      if (source === 'check24') return check24HotelCount * days;
       return allHotelsCount * days; // amello and any future sources
     }
 
@@ -176,11 +188,11 @@ export async function POST(req: NextRequest) {
     const ins = await sql`
       INSERT INTO scans (
         fixed_checkout, start_offset, end_offset, stay_nights, timezone,
-        total_cells, done_cells, status, base_checkin, days, sources, store_screenshot
+        total_cells, done_cells, status, base_checkin, days, sources, store_screenshot, adult_count
       )
       VALUES (
         ${fixedCheckout}, 0, ${days - 1}, ${stayNights}, 'Europe/Berlin',
-        ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}, ${sourcesJson}::jsonb, ${storeScreenshot}
+        ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}, ${sourcesJson}::jsonb, ${storeScreenshot}, ${adultCount}
       )
       RETURNING id
     `;
@@ -189,16 +201,16 @@ export async function POST(req: NextRequest) {
     // ── Snapshot hotels at scan creation time ─────────────────────────────────
     if (hotelIds) {
       await query(
-        `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
-         SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
+        `INSERT INTO scan_hotels (scan_id, hotel_id, code, bookable, active)
+         SELECT $1, id, code, bookable, active FROM hotels
          WHERE bookable = true AND active = true AND id = ANY($2::int[])
          ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
         [scanId, hotelIds],
       );
     } else {
       await query(
-        `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
-         SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
+        `INSERT INTO scan_hotels (scan_id, hotel_id, code, bookable, active)
+         SELECT $1, id, code, bookable, active FROM hotels
          WHERE bookable = true AND active = true
          ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
         [scanId],

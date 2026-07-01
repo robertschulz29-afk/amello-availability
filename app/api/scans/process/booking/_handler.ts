@@ -219,7 +219,8 @@ export async function handleBookingJob(
 
     const jobQ = await sql`
       SELECT j.id, j.scan_id, j.status AS job_status, j.total_cells,
-             s.base_checkin::text AS base_checkin, s.days, s.stay_nights, s.status AS scan_status
+             s.base_checkin::text AS base_checkin, s.days, s.stay_nights, s.status AS scan_status,
+             s.adult_count
       FROM scan_source_jobs j
       JOIN scans s ON s.id = j.scan_id
       WHERE j.id = ${jobId} AND j.source = ${source}
@@ -256,6 +257,7 @@ export async function handleBookingJob(
     `).rows as Array<{ id: number; booking_url: string }>;
 
     if (!hotels.length) {
+      await sql`UPDATE scan_source_jobs SET done_cells = 0, updated_at = NOW() WHERE id = ${jobId}`;
       await markJobDone(jobId, scanId);
       return NextResponse.json({ processed: 0, done: true, total: 0, message: 'No hotels with booking_url' });
     }
@@ -265,11 +267,13 @@ export async function handleBookingJob(
     const endIndex = Math.min(total, clampedStart + size);
 
     if (clampedStart >= endIndex) {
+      await sql`UPDATE scan_source_jobs SET done_cells = ${total}, updated_at = NOW() WHERE id = ${jobId}`;
       await markJobDone(jobId, scanId);
       return NextResponse.json({ processed: 0, nextIndex: total, done: true, total });
     }
 
     const stayNights = Number(job.stay_nights) || 7;
+    const adultCount = Math.max(1, Number(job.adult_count) || 2);
     const slice: Array<{ hotelId: number; bookingUrl: string; checkIn: string; checkOut: string }> = [];
 
     for (let idx = clampedStart; idx < endIndex; idx++) {
@@ -294,7 +298,7 @@ export async function handleBookingJob(
           const u = new URL(cell.bookingUrl);
           u.searchParams.set('checkin', cell.checkIn);
           u.searchParams.set('checkout', cell.checkOut);
-          u.searchParams.set('group_adults', '2');
+          u.searchParams.set('group_adults', String(adultCount));
           u.searchParams.set('group_children', '0');
           return u.toString();
         })();
@@ -336,6 +340,7 @@ export async function handleBookingJob(
     const nextIndex = endIndex;
     const done = nextIndex >= total;
 
+    await sql`UPDATE scan_source_jobs SET done_cells = ${nextIndex}, updated_at = NOW() WHERE id = ${jobId}`;
     if (done) await markJobDone(jobId, scanId);
 
     console.log(`[${source}] done — ${processed} processed, ${failures} failures, ${Date.now() - tStart}ms`);
