@@ -1,10 +1,19 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Only accessible with DIAG_SECRET or in development
+  const diagSecret = process.env.DIAG_SECRET;
+  if (diagSecret && req.headers.get('authorization') !== `Bearer ${diagSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!diagSecret && process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not available in production' }, { status: 403 });
+  }
+
   try {
     const hasUrl = !!process.env.POSTGRES_URL;
 
@@ -27,6 +36,6 @@ export async function GET() {
     });
   } catch (err: any) {
     console.error('[GET /api/diag] error:', err);
-    return NextResponse.json({ error: String(err?.message || err) }, { status: 500 });
+    return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
   }
 }

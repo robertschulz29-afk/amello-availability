@@ -201,16 +201,16 @@ export async function POST(req: NextRequest) {
     // ── Snapshot hotels at scan creation time ─────────────────────────────────
     if (hotelIds) {
       await query(
-        `INSERT INTO scan_hotels (scan_id, hotel_id, code, bookable, active)
-         SELECT $1, id, code, bookable, active FROM hotels
+        `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
+         SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
          WHERE bookable = true AND active = true AND id = ANY($2::int[])
          ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
         [scanId, hotelIds],
       );
     } else {
       await query(
-        `INSERT INTO scan_hotels (scan_id, hotel_id, code, bookable, active)
-         SELECT $1, id, code, bookable, active FROM hotels
+        `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
+         SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
          WHERE bookable = true AND active = true
          ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
         [scanId],

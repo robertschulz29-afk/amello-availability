@@ -10,12 +10,22 @@ if (!connectionString) {
   );
 }
 
+// SSL configuration: validate certificates by default.
+// Set PGSSLMODE=no-verify to disable (NOT recommended for production).
+const sslConfig = process.env.PGSSLMODE === 'no-verify'
+  ? { rejectUnauthorized: false }
+  : { rejectUnauthorized: true };
+
 const pool = new Pool({
   connectionString,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslConfig,
   // Vercel serverless: each function instance should hold at most 1 connection.
   // Transaction-mode pgBouncer (port 6543) does not support prepared statements.
   max: 1,
+});
+
+pool.on('error', (err) => {
+  console.error('[db] Unexpected pool error:', err.message);
 });
 
 type Primitive = string | number | boolean | null | Date;
