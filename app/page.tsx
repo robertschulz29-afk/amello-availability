@@ -340,7 +340,7 @@ export default function Page() {
                 </div>
                 <div className="card-footer d-flex justify-content-center">
                   <a
-                    href={`/price-comparison?scanId=${selectedScanId}&filter=booking_cheaper`}
+                    href={`/rate-comparison?scanId=${selectedScanId}&filter=booking_cheaper`}
                     className="btn btn-sm btn-outline-secondary"
                   >
                     View conflicts

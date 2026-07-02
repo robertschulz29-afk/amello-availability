@@ -1,8 +1,8 @@
 // app/api/scans/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { sql, query } from '@/lib/db';
-import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
-import { ymdToUTC, toYMDUTC } from '@/lib/scrapers/process-helpers';
+import { DEFAULT_BELLO_MANDATOR, SCAN_BATCH_SIZE } from '@/lib/constants';
+import { ymdToUTC, toYMDUTC, getBaseUrl } from '@/lib/scrapers/process-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,11 +14,6 @@ function berlinTodayYMD(): string {
   }).format(new Date());
 }
 
-function getBaseUrl(): string {
-  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
-}
 
 // Fire-and-forget: kick off processing for a specific source job
 function triggerSourceJob(jobId: number, belloMandator: string, source: string): void {
@@ -26,7 +21,7 @@ function triggerSourceJob(jobId: number, belloMandator: string, source: string):
   fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Bello-Mandator': belloMandator },
-    body: JSON.stringify({ jobId, startIndex: 0, size: 50 }),
+    body: JSON.stringify({ jobId, startIndex: 0, size: SCAN_BATCH_SIZE }),
   })
     .then(async (res) => {
       if (!res.ok) {
@@ -48,7 +43,7 @@ export async function GET() {
         s.id, s.scanned_at, s.base_checkin::text AS base_checkin,
         s.fixed_checkout::text AS fixed_checkout,
         s.days, s.stay_nights, s.timezone,
-        s.total_cells, s.done_cells, s.status, s.sources,
+        s.total_cells, s.done_cells, s.status, s.sources, s.store_screenshot,
         COALESCE(
           json_agg(
             json_build_object(
@@ -101,6 +96,18 @@ export async function POST(req: NextRequest) {
 
     console.log('[scans] Creating scan with sources:', enabledSources);
 
+    // ── Resolve hotel selection ────────────────────────────────────────────────
+    let hotelIds: number[] | null = null;
+    if (Array.isArray(body?.hotelIds)) {
+      const parsed = (body.hotelIds as any[])
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n) && n > 0 && Number.isInteger(n));
+      if (parsed.length === 0) {
+        return NextResponse.json({ error: 'Select at least one hotel to scan.' }, { status: 400 });
+      }
+      hotelIds = parsed;
+    }
+
     // ── Dates ─────────────────────────────────────────────────────────────────
     let baseCheckIn: string | null =
       typeof body?.baseCheckIn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.baseCheckIn)
@@ -113,12 +120,18 @@ export async function POST(req: NextRequest) {
       baseCheckIn = toYMDUTC(dt);
     }
 
+    const storeScreenshot: boolean = body?.storeScreenshot === true;
+
     const days: number =
       Number.isFinite(body?.days) && body.days >= 1 && body.days <= 365 ? Number(body.days) : 86;
 
     const stayNights: number =
       Number.isFinite(body?.stayNights) && body.stayNights >= 1 && body.stayNights <= 30
         ? Number(body.stayNights) : 7;
+
+    const adultCount: number =
+      Number.isInteger(body?.adultCount) && body.adultCount >= 1 && body.adultCount <= 10
+        ? Number(body.adultCount) : 2;
 
     const checkoutDt = ymdToUTC(baseCheckIn);
     checkoutDt.setUTCDate(checkoutDt.getUTCDate() + stayNights);
@@ -137,15 +150,33 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Count hotels per source ───────────────────────────────────────────────
-    const [allHotelsQ, bookingHotelsQ] = await Promise.all([
-      sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true`,
-      sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND booking_url IS NOT NULL AND booking_url != ''`,
+    const [allHotelsQ, bookingHotelsQ, check24HotelsQ] = await Promise.all([
+      hotelIds
+        ? query<{ c: number }>(
+            `SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND id = ANY($1::int[])`,
+            [hotelIds],
+          )
+        : sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true`,
+      hotelIds
+        ? query<{ c: number }>(
+            `SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND booking_url IS NOT NULL AND booking_url != '' AND id = ANY($1::int[])`,
+            [hotelIds],
+          )
+        : sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND booking_url IS NOT NULL AND booking_url != ''`,
+      hotelIds
+        ? query<{ c: number }>(
+            `SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND check24_url IS NOT NULL AND check24_url != '' AND id = ANY($1::int[])`,
+            [hotelIds],
+          )
+        : sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM hotels WHERE bookable = true AND active = true AND check24_url IS NOT NULL AND check24_url != ''`,
     ]);
     const allHotelsCount    = allHotelsQ.rows[0]?.c ?? 0;
     const bookingHotelCount = bookingHotelsQ.rows[0]?.c ?? 0;
+    const check24HotelCount = check24HotelsQ.rows[0]?.c ?? 0;
 
     function totalForSource(source: string): number {
-      if (source === 'booking') return bookingHotelCount * days;
+      if (source === 'booking' || source === 'booking_member') return bookingHotelCount * days;
+      if (source === 'check24') return check24HotelCount * days;
       return allHotelsCount * days; // amello and any future sources
     }
 
@@ -157,24 +188,34 @@ export async function POST(req: NextRequest) {
     const ins = await sql`
       INSERT INTO scans (
         fixed_checkout, start_offset, end_offset, stay_nights, timezone,
-        total_cells, done_cells, status, base_checkin, days, sources
+        total_cells, done_cells, status, base_checkin, days, sources, store_screenshot, adult_count
       )
       VALUES (
         ${fixedCheckout}, 0, ${days - 1}, ${stayNights}, 'Europe/Berlin',
-        ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}, ${sourcesJson}::jsonb
+        ${totalCells}, 0, 'running', ${baseCheckIn}, ${days}, ${sourcesJson}::jsonb, ${storeScreenshot}, ${adultCount}
       )
       RETURNING id
     `;
     const scanId = ins.rows[0].id as number;
 
     // ── Snapshot hotels at scan creation time ─────────────────────────────────
-    await query(
-      `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
-       SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
-       WHERE bookable = true AND active = true
-       ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
-      [scanId],
-    );
+    if (hotelIds) {
+      await query(
+        `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
+         SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
+         WHERE bookable = true AND active = true AND id = ANY($2::int[])
+         ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
+        [scanId, hotelIds],
+      );
+    } else {
+      await query(
+        `INSERT INTO scan_hotels (scan_id, hotel_id, name, code, brand, region, country, bookable, active)
+         SELECT $1, id, name, code, brand, region, country, bookable, active FROM hotels
+         WHERE bookable = true AND active = true
+         ON CONFLICT (scan_id, hotel_id) DO NOTHING`,
+        [scanId],
+      );
+    }
 
     // ── Create one source job per enabled source ──────────────────────────────
     const jobs: Array<{ jobId: number; source: string }> = [];

@@ -5,10 +5,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import {
-  toYMDUTC, normalizeYMD, ymdToUTC, datesFromBase,
+  toYMDUTC, normalizeYMD, ymdToUTC, datesFromBase, markJobDone,
 } from '@/lib/scrapers/process-helpers';
 import { parseHTML } from '@/lib/scrapers/utils/html-parser';
 import { getBookingCookies } from '@/app/api/settings/booking-cookies/get';
+import { SCAN_BATCH_SIZE } from '@/lib/constants';
 
 const SCRAPINGANT_API_KEY = process.env.SCRAPINGANT_API_KEY || '';
 const SCRAPINGANT_URL = 'https://api.scrapingant.com/v2/general';
@@ -90,7 +91,7 @@ function parsePriceText(priceText: string): { amount: number; currency: string }
       : n.replace(/\./g, '').replace(',', '');
   } else if (n.includes(',')) {
     const parts = n.split(',');
-    n = parts.length === 2 && parts[1].length <= 2 ? n.replace(',', '') : n.replace(/,/g, '');
+    n = parts.length === 2 && parts[1].length <= 2 ? n.replace(/,/g, '') : n.replace(/,/g, '');
   } else if (n.includes('.')) {
     const parts = n.split('.');
     n = parts.length === 2 && parts[1].length <= 2 ? n.replace('.', '') : n.replace(/\./g, '');
@@ -181,11 +182,13 @@ function parseBookingHTML(html: string): BookingRoom[] {
       rates.push(entry);
     }
 
-    // Deduplicate by actualPrice to avoid collecting the same price from nested elements
-    const seen = new Set<number>();
+    // Deduplicate by actualPrice+rateName to avoid re-collecting the same row
+    // from nested elements, while keeping genuinely distinct rates at the same price.
+    const seen = new Set<string>();
     const deduped = rates.filter(r => {
-      if (seen.has(r.actualPrice)) return false;
-      seen.add(r.actualPrice);
+      const key = `${r.actualPrice}|${r.name ?? ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
 
@@ -195,17 +198,20 @@ function parseBookingHTML(html: string): BookingRoom[] {
   return rooms;
 }
 
-// For booking_member: keep all rates; include basePrice only when a Genius strikethrough was found.
-function asMemberRooms(rooms: BookingRoom[]): BookingRoom[] {
-  return rooms;
-}
-
 // ─── Shared handler ───────────────────────────────────────────────────────────
 
 export async function handleBookingJob(
   req: NextRequest,
   source: 'booking' | 'booking_member',
 ): Promise<NextResponse> {
+  // Fail early if scraping infrastructure is not configured
+  if (!SCRAPINGANT_API_KEY) {
+    return NextResponse.json(
+      { error: 'Booking scraping not configured: SCRAPINGANT_API_KEY is missing' },
+      { status: 503 },
+    );
+  }
+
   const useCredentials = source === 'booking_member';
   const tStart = Date.now();
 
@@ -221,7 +227,8 @@ export async function handleBookingJob(
 
     const jobQ = await sql`
       SELECT j.id, j.scan_id, j.status AS job_status, j.total_cells,
-             s.base_checkin::text AS base_checkin, s.days, s.stay_nights, s.status AS scan_status
+             s.base_checkin::text AS base_checkin, s.days, s.stay_nights, s.status AS scan_status,
+             s.adult_count
       FROM scan_source_jobs j
       JOIN scans s ON s.id = j.scan_id
       WHERE j.id = ${jobId} AND j.source = ${source}
@@ -258,6 +265,7 @@ export async function handleBookingJob(
     `).rows as Array<{ id: number; booking_url: string }>;
 
     if (!hotels.length) {
+      await sql`UPDATE scan_source_jobs SET done_cells = 0, updated_at = NOW() WHERE id = ${jobId}`;
       await markJobDone(jobId, scanId);
       return NextResponse.json({ processed: 0, done: true, total: 0, message: 'No hotels with booking_url' });
     }
@@ -267,11 +275,13 @@ export async function handleBookingJob(
     const endIndex = Math.min(total, clampedStart + size);
 
     if (clampedStart >= endIndex) {
+      await sql`UPDATE scan_source_jobs SET done_cells = ${total}, updated_at = NOW() WHERE id = ${jobId}`;
       await markJobDone(jobId, scanId);
       return NextResponse.json({ processed: 0, nextIndex: total, done: true, total });
     }
 
     const stayNights = Number(job.stay_nights) || 7;
+    const adultCount = Math.max(1, Number(job.adult_count) || 2);
     const slice: Array<{ hotelId: number; bookingUrl: string; checkIn: string; checkOut: string }> = [];
 
     for (let idx = clampedStart; idx < endIndex; idx++) {
@@ -296,7 +306,7 @@ export async function handleBookingJob(
           const u = new URL(cell.bookingUrl);
           u.searchParams.set('checkin', cell.checkIn);
           u.searchParams.set('checkout', cell.checkOut);
-          u.searchParams.set('group_adults', '2');
+          u.searchParams.set('group_adults', String(adultCount));
           u.searchParams.set('group_children', '0');
           return u.toString();
         })();
@@ -308,8 +318,7 @@ export async function handleBookingJob(
 
         try {
           const html = await fetchWithScrapingAnt(url, useCredentials);
-          const rawRooms = parseBookingHTML(html);
-          const rooms = useCredentials ? asMemberRooms(rawRooms) : rawRooms;
+          const rooms = parseBookingHTML(html);
           status = rooms.length > 0 ? 'green' : 'red';
           responseJson = { rooms, source };
           console.log(`[${source}] Hotel ${cell.hotelId} | ${cell.checkIn}: ${status} (${rooms.length} rooms)`);
@@ -339,6 +348,7 @@ export async function handleBookingJob(
     const nextIndex = endIndex;
     const done = nextIndex >= total;
 
+    await sql`UPDATE scan_source_jobs SET done_cells = ${nextIndex}, updated_at = NOW() WHERE id = ${jobId}`;
     if (done) await markJobDone(jobId, scanId);
 
     console.log(`[${source}] done — ${processed} processed, ${failures} failures, ${Date.now() - tStart}ms`);
@@ -351,30 +361,3 @@ export async function handleBookingJob(
   }
 }
 
-async function markJobDone(jobId: number, scanId: number) {
-  await sql`UPDATE scan_source_jobs SET status = 'done', updated_at = NOW() WHERE id = ${jobId}`;
-  await checkAndFinalizeScan(scanId);
-}
-
-async function checkAndFinalizeScan(scanId: number) {
-  const pending = await sql`
-    SELECT COUNT(*)::int AS c FROM scan_source_jobs
-    WHERE scan_id = ${scanId} AND status IN ('running','queued')
-  `;
-  if ((pending.rows[0]?.c ?? 1) === 0) {
-    await sql`UPDATE scans SET status = 'done' WHERE id = ${scanId} AND status != 'cancelled'`;
-    console.log(`[booking] Scan #${scanId} finalized — all source jobs complete`);
-
-    await sql`
-      INSERT INTO hotel_room_names (hotel_id, source, room_name, last_seen_at)
-      SELECT DISTINCT sr.hotel_id, sr.source, elem->>'name', NOW()
-      FROM scan_results sr,
-           jsonb_array_elements(sr.response_json->'rooms') AS elem
-      WHERE sr.scan_id = ${scanId}
-        AND sr.status  = 'green'
-        AND elem->>'name' IS NOT NULL
-      ON CONFLICT (hotel_id, source, room_name)
-        DO UPDATE SET last_seen_at = NOW()
-    `;
-  }
-}

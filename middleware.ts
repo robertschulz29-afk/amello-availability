@@ -3,35 +3,53 @@ import type { NextRequest } from 'next/server';
 import { DEFAULT_BELLO_MANDATOR } from '@/lib/constants';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/auth-edge';
 
+// Only these paths are accessible without authentication.
+// Everything else requires a valid session token.
 const PUBLIC_PATHS = [
   '/login',
   '/api/auth/login',
-  '/api/scans',          // scan creation, listing, stop, delete
-  '/api/scan-sources',   // source toggle
-  '/api/hotels',         // hotel data
-  '/api/settings',       // app settings (cookies etc.)
-  '/api/global_types',   // global types and filter group management
+];
+
+// Cron-triggered paths are protected by CRON_SECRET bearer token (checked in route handlers).
+// They bypass session auth so Vercel Cron can invoke them.
+const CRON_PATHS = [
+  '/api/scans/process-next',
+  '/api/playwright-scan/process-next',
 ];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Auth check — skip public paths and static assets
-  if (!PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
-    const token = request.cookies.get(COOKIE_NAME)?.value;
-    if (!token || !await verifySessionToken(token)) {
-      const loginUrl = request.nextUrl.clone();
-      loginUrl.pathname = '/login';
-      return NextResponse.redirect(loginUrl);
-    }
+  // Allow public paths (login page + login API)
+  if (PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))) {
+    return addBelloHeader(request);
   }
 
-  // Add Bello-Mandator header to API requests
+  // Allow cron paths — they authenticate via CRON_SECRET in the route handler
+  if (CRON_PATHS.some(p => pathname === p)) {
+    return addBelloHeader(request);
+  }
+
+  // All other routes require a valid session
+  const token = request.cookies.get(COOKIE_NAME)?.value;
+  if (!token || !await verifySessionToken(token)) {
+    // API routes get a 401 JSON response; pages get redirected to login
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = '/login';
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return addBelloHeader(request);
+}
+
+function addBelloHeader(request: NextRequest): NextResponse {
   const requestHeaders = new Headers(request.headers);
   if (!requestHeaders.has('Bello-Mandator')) {
     requestHeaders.set('Bello-Mandator', DEFAULT_BELLO_MANDATOR);
   }
-
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 

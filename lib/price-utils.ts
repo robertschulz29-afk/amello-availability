@@ -5,6 +5,7 @@
 export interface LowestPriceInfo {
   roomName: string | null;
   rateName: string | null;
+  rateDescription: string | null;
   price: number | null;
   currency: string | null;
   memberPrice?: number | null; // Genius / member price for the same rate, if available
@@ -12,6 +13,7 @@ export interface LowestPriceInfo {
 
 export interface RateInfo {
   name: string | null;
+  description: string | null;
   actualPrice: number;    // price you pay (always present)
   currency: string;
   basePrice?: number | null; // strikethrough price (only when a discount is shown)
@@ -19,6 +21,7 @@ export interface RateInfo {
 
 export interface RoomInfo {
   name: string | null;
+  contentId: string | null;
   rates: RateInfo[];
 }
 
@@ -82,6 +85,9 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
     // Get room name
     const roomName = room.name || room.roomName || room.title || room.type || null;
 
+    const contentId: string | null = typeof room.contentId === 'string' ? room.contentId
+      : room.contentId != null ? String(room.contentId) : null;
+
     // Try to get currency from room if not found at root level
     const roomCurrency = extractCurrency(room) || globalCurrency;
 
@@ -110,18 +116,20 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
         const price = extractPriceValue(rate, isAmelloFormat);
         
         if (price !== null && isFinite(price)) {
-          // For Amello API, rate name is in rate.rate.name, otherwise try common fields
-          const rateName = rate.rate?.name || 
-                          rate.name || 
-                          rate.rateName || 
-                          rate.planName || 
-                          rate.title || 
-                          rate.type || 
+          // For Amello API, rate name/description is in rate.rate.name / rate.rate.description
+          const rateName = rate.rate?.name ||
+                          rate.name ||
+                          rate.rateName ||
+                          rate.planName ||
+                          rate.title ||
+                          rate.type ||
                           null;
-          
+
+          const rateDescription = rate.rate?.description || rate.description || null;
+
           const rateCurrency = extractCurrency(rate) || roomCurrency;
 
-          extractedRates.push({ name: rateName, actualPrice: price, currency: rateCurrency });
+          extractedRates.push({ name: rateName, description: rateDescription, actualPrice: price, currency: rateCurrency });
         }
       }
     } else {
@@ -131,6 +139,7 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
         const rateName = room.rateName || room.planName || null;
         extractedRates.push({
           name: rateName,
+          description: null,
           actualPrice: directPrice,
           currency: roomCurrency,
         });
@@ -141,6 +150,7 @@ export function extractRoomRateData(responseJson: any): CompactRoomData {
     if (extractedRates.length > 0) {
       result.rooms.push({
         name: roomName,
+        contentId,
         rates: extractedRates,
       });
     }
@@ -158,6 +168,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
   const result: LowestPriceInfo = {
     roomName: null,
     rateName: null,
+    rateDescription: null,
     price: null,
     currency: null,
   };
@@ -189,6 +200,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
           lowestPrice = actualPrice;
           result.roomName = room.name || null;
           result.rateName = rate.name || null;
+          result.rateDescription = rate.description || null;
           result.price = actualPrice;
           result.currency = rate.currency || 'EUR';
           result.memberPrice = typeof rate.basePrice === 'number' ? rate.basePrice : null;
@@ -203,6 +215,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
     return {
       roomName: null,
       rateName: null,
+      rateDescription: null,
       price: null,
       currency: null,
     };
@@ -290,6 +303,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
         lowestPrice = directPrice;
         result.roomName = roomName;
         result.rateName = room.rateName || room.planName || null;
+        result.rateDescription = null;
         result.price = directPrice;
         if (!currency) {
           currency = extractCurrency(room);
@@ -307,8 +321,9 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
       if (price !== null && price < lowestPrice) {
         lowestPrice = price;
         result.roomName = roomName;
-        // For Amello API, rate name is in rate.rate.name, otherwise try common fields
+        // For Amello API, name/description are under rate.rate; other formats only have name
         result.rateName = rate.rate?.name || rate.name || rate.rateName || rate.planName || rate.title || rate.type || null;
+        result.rateDescription = rate.rate?.description || rate.description || null;
         result.price = price;
         if (!currency) {
           currency = extractCurrency(rate);
@@ -327,6 +342,7 @@ export function extractLowestPrice(responseJson: any): LowestPriceInfo {
   return {
     roomName: null,
     rateName: null,
+    rateDescription: null,
     price: null,
     currency: null,
   };

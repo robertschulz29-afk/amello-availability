@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     // Parse query parameters - use scanID instead of scanId for consistency
     const scanIDParam = searchParams.get('scanID');
     const statusParam = searchParams.get('status');
-    const hotelIDParam = searchParams.get('hotelID');
+    const hotelIDParam = searchParams.get('hotelID') ?? searchParams.get('hotelId');
     const checkInDateParam = searchParams.get('checkInDate');
     const sourceParam = searchParams.get('source');
     const formatParam = searchParams.get('format'); // 'comparison' for price comparison format

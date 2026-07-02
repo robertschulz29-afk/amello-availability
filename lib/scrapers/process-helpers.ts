@@ -1,6 +1,14 @@
 // lib/scrapers/process-helpers.ts
 // Shared date utilities and types for scan processing sub-routes
 
+import { sql } from '@/lib/db';
+
+export function getBaseUrl(): string {
+  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return 'http://localhost:3000';
+}
+
 export function toYMDUTC(d: Date): string {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
@@ -42,3 +50,40 @@ export type ScanCell = {
   checkIn: string;
   checkOut: string;
 };
+
+export async function markJobDone(jobId: number, scanId: number) {
+  await sql`UPDATE scan_source_jobs SET status = 'done', updated_at = NOW() WHERE id = ${jobId}`;
+  await checkAndFinalizeScan(scanId);
+}
+
+export async function checkAndFinalizeScan(scanId: number) {
+  const pending = await sql`
+    SELECT COUNT(*)::int AS c FROM scan_source_jobs
+    WHERE scan_id = ${scanId} AND status IN ('running','queued')
+  `;
+  if ((pending.rows[0]?.c ?? 1) === 0) {
+    await sql`UPDATE scans SET status = 'done' WHERE id = ${scanId} AND status != 'cancelled'`;
+    console.log(`[scan] Scan #${scanId} finalized — all source jobs complete`);
+
+    await sql`
+      INSERT INTO hotel_room_names (hotel_id, source, room_name, last_seen_at)
+      SELECT DISTINCT sr.hotel_id, sr.source, elem->>'name', NOW()
+      FROM scan_results sr,
+           jsonb_array_elements(sr.response_json->'rooms') AS elem
+      WHERE sr.scan_id = ${scanId}
+        AND sr.status  = 'green'
+        AND elem->>'name' IS NOT NULL
+      ON CONFLICT (hotel_id, source, room_name)
+        DO UPDATE SET last_seen_at = NOW()
+    `;
+
+    // Trigger screenshot batch if requested — only after all sources are done
+    const scanQ = await sql`SELECT store_screenshot FROM scans WHERE id = ${scanId}`;
+    if (scanQ.rows[0]?.store_screenshot === true) {
+      const batchUrl = `${getBaseUrl()}/api/scans/${scanId}/screenshot-batch`;
+      fetch(batchUrl, { method: 'POST' })
+        .catch((e: Error) => console.error(`[scan] screenshot-batch trigger error scan=${scanId}:`, e.message));
+      console.log(`[scan] Screenshot batch triggered for scan #${scanId}`);
+    }
+  }
+}

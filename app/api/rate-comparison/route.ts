@@ -13,6 +13,7 @@ interface RateComparisonRow {
   amello_currency: string | null;
   amello_room_name: string | null;
   amello_rate_name: string | null;
+  amello_rate_description: string | null;
   booking_min_price: number | null;
   booking_member_min_price: number | null;
   booking_currency: string | null;
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
 
     const scanIDParam = searchParams.get('scanID');
-    const hotelIDParam = searchParams.get('hotelID');
+    const hotelIDParam = searchParams.get('hotelId');
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
     const offset = (page - 1) * limit;
@@ -86,6 +87,7 @@ export async function GET(req: NextRequest) {
                 jsonb_build_object(
                   'room_name', COALESCE(room->>'name', room->>'roomName', room->>'room_name', room->>'title', room->>'type'),
                   'rate_name', rate->>'name',
+                  'rate_description', rate->>'description',
                   'price', (rate->>'actualPrice')::numeric,
                   'member_price', (rate->>'basePrice')::numeric,
                   'currency', rate->>'currency'
@@ -110,6 +112,7 @@ export async function GET(req: NextRequest) {
             SELECT jsonb_build_object(
               'room_name', rr2->>'room_name',
               'rate_name', rr2->>'rate_name',
+              'rate_description', rr2->>'rate_description',
               'member_price', rr2->>'member_price',
               'currency', rr2->>'currency'
             )
@@ -131,6 +134,7 @@ export async function GET(req: NextRequest) {
         MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'currency' END) AS amello_currency,
         MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'room_name' END) AS amello_room_name,
         MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'rate_name' END) AS amello_rate_name,
+        MAX(CASE WHEN mp.source = 'amello' THEN mp.min_rate_details->>'rate_description' END) AS amello_rate_description,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_price END) AS booking_min_price,
         MAX(CASE WHEN mp.source = 'booking_member' THEN mp.min_price END) AS booking_member_min_price,
         MAX(CASE WHEN mp.source = 'booking' THEN mp.min_rate_details->>'currency' END) AS booking_currency,

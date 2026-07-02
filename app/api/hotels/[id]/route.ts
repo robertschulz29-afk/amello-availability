@@ -11,6 +11,7 @@ type UpdateHotelPayload = {
   booking_url?: string | null;
   tuiamello_url?: string | null;
   expedia_url?: string | null;
+  check24_url?: string | null;
 };
 
 // Basic URL validation
@@ -37,7 +38,7 @@ export async function PATCH(
     const body: UpdateHotelPayload = await req.json();
 
     // Validate URLs if provided
-    const urlFields = ['booking_url', 'tuiamello_url', 'expedia_url'] as const;
+    const urlFields = ['booking_url', 'tuiamello_url', 'expedia_url', 'check24_url'] as const;
     for (const field of urlFields) {
       const value = body[field];
       if (value && typeof value === 'string' && value.trim()) {
@@ -62,6 +63,7 @@ export async function PATCH(
       'booking_url',
       'tuiamello_url',
       'expedia_url',
+      'check24_url',
     ];
 
     for (const field of fields) {
@@ -88,7 +90,7 @@ export async function PATCH(
       UPDATE hotels
       SET ${updates.join(', ')}
       WHERE id = $${paramIndex}
-      RETURNING id, name, code, brand, region, country, booking_url, tuiamello_url, expedia_url
+      RETURNING id, name, code, brand, region, country, booking_url, tuiamello_url, expedia_url, check24_url
     `;
 
     const result = await query(queryText, values);
