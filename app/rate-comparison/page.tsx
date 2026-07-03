@@ -2,7 +2,7 @@
 'use client';
 
 import * as React from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { fetchJSON } from '@/lib/api-client';
 import { formatPrice } from '@/lib/price-utils';
 import { HotelCombobox } from '@/app/components/HotelCombobox';
@@ -136,13 +136,13 @@ function pctDiff(a: number | null, b: number | null): number | null {
 function ratePillProps(row: RateRow): { label: string; className: string; style?: React.CSSProperties } {
   const a = row.amello_min_price;
   const b = row.booking_min_price ?? row.booking_member_min_price;
-  if (a != null && b == null) return { label: 'Amello only',   className: 'badge bg-primary' };
+  if (a != null && b == null) return { label: 'TUI-Hotels only', className: 'badge bg-primary' };
   if (a == null && b != null) return { label: 'Booking only',  className: 'badge text-white', style: { background: '#d63384' } };
   if (a != null && b != null) {
     const pct = b !== 0 ? ((a - b) / b) * 100 : 0;
     if (pct > 5)  return { label: 'Booking cheaper', className: 'badge bg-danger' };
     if (pct > 0)  return { label: 'Booking cheaper', className: 'badge bg-warning text-dark' };
-    return               { label: 'Amello cheaper',  className: 'badge bg-success' };
+    return               { label: 'TUI-Hotels cheaper', className: 'badge bg-success' };
   }
   return { label: 'No price', className: 'badge bg-secondary' };
 }
@@ -189,13 +189,13 @@ function sortRateRows(rows: RateRow[], key: BestRateSortKey, dir: SortDir): Rate
 // ─── pill & row coloring (all-rates) ─────────────────────────────────────────
 
 function allRatesPillProps(a: number | null, b: number | null): { label: string; className: string; style?: React.CSSProperties } {
-  if (a != null && b == null) return { label: 'Amello only',   className: 'badge bg-primary' };
+  if (a != null && b == null) return { label: 'TUI-Hotels only', className: 'badge bg-primary' };
   if (a == null && b != null) return { label: 'Booking only',  className: 'badge text-white', style: { background: '#d63384' } };
   if (a != null && b != null) {
     const pct = pctDiff(a, b)!;
     if (pct > 5)  return { label: 'Booking cheaper', className: 'badge bg-danger' };
     if (pct > 0)  return { label: 'Booking cheaper', className: 'badge bg-warning text-dark' };
-    return               { label: 'Amello cheaper',  className: 'badge bg-success' };
+    return               { label: 'TUI-Hotels cheaper', className: 'badge bg-success' };
   }
   return { label: 'No price', className: 'badge bg-secondary' };
 }
@@ -364,6 +364,7 @@ function DiffCell({ a, b, currency }: { a: number | null; b: number | null; curr
 
 function RateComparisonPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [viewMode, setViewMode] = React.useState<ViewMode>('best_rate');
 
   const [scans, setScans] = React.useState<ScanRow[]>([]);
@@ -417,7 +418,9 @@ function RateComparisonPage() {
     const arr: ScanRow[] = Array.isArray(list) ? list : [];
     arr.sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
     setScans(arr);
-    if (arr.length > 0) setSelectedScanId(prev => prev ?? arr[0].id);
+    if (arr.length > 0) {
+      setSelectedScanId(prev => (prev != null && arr.some(s => Number(s.id) === prev)) ? prev : Number(arr[0].id));
+    }
   }, []);
 
   const loadHotels = React.useCallback(async () => {
@@ -508,6 +511,16 @@ function RateComparisonPage() {
   }, [selectedScanId, scanHotels, displayPage, hotelsPerPage, viewMode]);
 
   React.useEffect(() => { loadScans(); loadHotels(); }, []);
+
+  // Only rewrite the URL when the user actively picks a scan — not when a scan
+  // is auto-defaulted (no scanId / stale scanId in URL), to avoid a redundant reload.
+  function handleScanChange(id: number | null) {
+    setSelectedScanId(id);
+    if (id == null) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('scanId', String(id));
+    router.replace(`/rate-comparison?${params.toString()}`);
+  }
 
   // ── derived ────────────────────────────────────────────────────────────────
 
@@ -628,11 +641,11 @@ function RateComparisonPage() {
         <thead className="table-light">
           <tr>
             <SortTh label="Check-In"      col="check_in_date"         sortKey={rateSort.key} sortDir={rateSort.dir} onSort={handleRateSort} />
-            <th>Amello Room</th>
-            <th>Amello Rate</th>
+            <th>TUI-Hotels Room</th>
+            <th>TUI-Hotels Rate</th>
             <th>Booking Room</th>
             <th>Booking Rate</th>
-            <SortTh label="Amello Price"  col="amello_min_price"      sortKey={rateSort.key} sortDir={rateSort.dir} onSort={handleRateSort} className="text-end" />
+            <SortTh label="TUI-Hotels Price" col="amello_min_price"   sortKey={rateSort.key} sortDir={rateSort.dir} onSort={handleRateSort} className="text-end" />
             <SortTh label="Booking Price" col="booking_min_price"     sortKey={rateSort.key} sortDir={rateSort.dir} onSort={handleRateSort} className="text-end" />
             <th className="text-end text-nowrap">Member Price</th>
             <SortTh label="Diff (A−B)"    col="price_difference"      sortKey={rateSort.key} sortDir={rateSort.dir} onSort={handleRateSort} className="text-end" />
@@ -684,11 +697,11 @@ function RateComparisonPage() {
         <thead className="table-light">
           <tr>
             <SortTh label="Check-In"      col="check_in_date"  sortKey={allRatesSort.key} sortDir={allRatesSort.dir} onSort={handleAllRatesSort} />
-            <th>Amello Room</th>
-            <th>Amello Rate</th>
+            <th>TUI-Hotels Room</th>
+            <th>TUI-Hotels Rate</th>
             <th>Booking Room</th>
             <th>Booking Rate</th>
-            <SortTh label="Amello Price"  col="price_amello"   sortKey={allRatesSort.key} sortDir={allRatesSort.dir} onSort={handleAllRatesSort} className="text-end" />
+            <SortTh label="TUI-Hotels Price" col="price_amello" sortKey={allRatesSort.key} sortDir={allRatesSort.dir} onSort={handleAllRatesSort} className="text-end" />
             <SortTh label="Booking Price" col="price_booking"  sortKey={allRatesSort.key} sortDir={allRatesSort.dir} onSort={handleAllRatesSort} className="text-end" />
             <th className="text-end text-nowrap">Member Price</th>
             <SortTh label="Diff (A−B)"    col="diff"           sortKey={allRatesSort.key} sortDir={allRatesSort.dir} onSort={handleAllRatesSort} className="text-end" />
@@ -793,12 +806,12 @@ function RateComparisonPage() {
             onChange={e => setStatusFilter(e.target.value as StatusFilter)}
           >
             <option value="all">All statuses</option>
-            <option value="amello_only">Amello only</option>
+            <option value="amello_only">TUI-Hotels only</option>
             <option value="booking_only">Booking only</option>
             <option value="booking_cheaper">Booking cheaper (all)</option>
             <option value="booking_cheaper_gt5">Booking cheaper &gt;5%</option>
             <option value="booking_cheaper_lte5">Booking cheaper ≤5%</option>
-            <option value="amello_cheaper">Amello cheaper</option>
+            <option value="amello_cheaper">TUI-Hotels cheaper</option>
           </select>
 
           <select
@@ -817,7 +830,7 @@ function RateComparisonPage() {
         <ScanInfoCard
           scans={scans}
           selectedScanId={selectedScanId}
-          onScanChange={setSelectedScanId}
+          onScanChange={handleScanChange}
           scanDetails={scanDetails}
         />
 
@@ -829,15 +842,15 @@ function RateComparisonPage() {
               <div className="row g-2">
                 <div className="col-md-3"><strong>Total rows:</strong> {summary.total}</div>
                 <div className="col-md-3"><strong>Both available:</strong> {summary.both}</div>
-                <div className="col-md-3"><strong>Amello only:</strong> {scanSummary != null && statusFilter === 'all' ? scanSummary.amello_only : summary.amelloOnly}</div>
+                <div className="col-md-3"><strong>TUI-Hotels only:</strong> {scanSummary != null && statusFilter === 'all' ? scanSummary.amello_only : summary.amelloOnly}</div>
                 <div className="col-md-3"><strong>Booking only:</strong> {scanSummary != null && statusFilter === 'all' ? scanSummary.booking_only : summary.bookingOnly}</div>
               </div>
               <div className="row g-2 mt-1">
-                <div className="col-md-3 text-success"><strong>Amello cheaper:</strong> {scanSummary != null && statusFilter === 'all' ? scanSummary.amello_cheaper : summary.amelloCheaper}</div>
+                <div className="col-md-3 text-success"><strong>TUI-Hotels cheaper:</strong> {scanSummary != null && statusFilter === 'all' ? scanSummary.amello_cheaper : summary.amelloCheaper}</div>
                 <div className="col-md-3 text-danger"><strong>Booking cheaper:</strong> {scanSummary != null && statusFilter === 'all' ? scanSummary.booking_cheaper : summary.bookingCheaper}</div>
                 <div className="col-md-3"><strong>Same price:</strong> {scanSummary != null && statusFilter === 'all' ? scanSummary.same_price : summary.same}</div>
                 <div className="col-md-3">
-                  {summary.avgAmello  && <span><strong>Avg Amello:</strong>  {summary.avgAmello}</span>}
+                  {summary.avgAmello  && <span><strong>Avg TUI-Hotels:</strong>  {summary.avgAmello}</span>}
                   {summary.avgBooking && <span className="ms-2"><strong>Avg Booking:</strong> {summary.avgBooking}</span>}
                 </div>
               </div>

@@ -327,7 +327,7 @@ export default function RoomsCrApiPage() {
 
         {/* ── Scan trigger card ── */}
         <div className="card mb-4">
-          <div className="card-header fw-semibold">Amello Rooms Scan</div>
+          <div className="card-header fw-semibold">TUI-Hotels Rooms Scan</div>
           <div className="card-body">
             {startError && (
               <div className="alert alert-danger alert-dismissible py-2" role="alert">

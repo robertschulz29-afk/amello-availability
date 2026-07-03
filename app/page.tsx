@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { fetchJSON } from '@/lib/api-client';
 import { ScanInfoCard, ScanDetails } from '@/app/components/ScanInfoCard';
 
@@ -187,9 +188,13 @@ function computeGroupedAvailability(
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
-export default function Page() {
+function DashboardPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [scans, setScans] = React.useState<ScanRow[]>([]);
-  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(null);
+  const [selectedScanId, setSelectedScanId] = React.useState<number | null>(
+    () => { const p = searchParams.get('scanId'); return p ? Number(p) : null; }
+  );
   const [scanDetails, setScanDetails] = React.useState<ScanDetails | null>(null);
   const [fullSet, setFullSet] = React.useState<FullSetEntry[]>([]);
   const [hotelMap, setHotelMap] = React.useState<Map<number, Hotel>>(new Map());
@@ -209,10 +214,22 @@ export default function Page() {
         const arr = Array.isArray(list) ? list : [];
         arr.sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
         setScans(arr);
-        if (arr.length > 0) setSelectedScanId(arr[0].id);
+        if (arr.length > 0) {
+          setSelectedScanId(prev => (prev != null && arr.some(s => Number(s.id) === prev)) ? prev : Number(arr[0].id));
+        }
       })
       .catch(() => {});
   }, []);
+
+  // Only rewrite the URL when the user actively picks a scan — not when a scan
+  // is auto-defaulted (no scanId / stale scanId in URL), to avoid a redundant reload.
+  function handleScanChange(id: number | null) {
+    setSelectedScanId(id);
+    if (id == null) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('scanId', String(id));
+    router.replace(`/?${params.toString()}`);
+  }
 
   React.useEffect(() => {
     if (selectedScanId == null) return;
@@ -269,7 +286,7 @@ export default function Page() {
               <ScanInfoCard
                 scans={scans}
                 selectedScanId={selectedScanId}
-                onScanChange={id => setSelectedScanId(id)}
+                onScanChange={handleScanChange}
                 scanDetails={scanDetails}
                 className="h-100 mb-0"
               />
@@ -284,7 +301,7 @@ export default function Page() {
                     value={src.amelloGreen}
                     total={src.amelloTotal}
                     color="#0d6efd"
-                    label="Amello"
+                    label="TUI-Hotels"
                   />
                   <DonutChart
                     value={src.bookingGreen}
@@ -294,7 +311,7 @@ export default function Page() {
                   />
                 </div>
                 <div className="card-footer small text-muted text-center">
-                  {src.amelloTotal} amello · {src.bookingTotal} booking.com scans
+                  {src.amelloTotal} TUI-Hotels · {src.bookingTotal} booking.com scans
                 </div>
               </div>
             </div>
@@ -315,7 +332,7 @@ export default function Page() {
                 </div>
                 <div className="card-footer d-flex justify-content-center">
                   <a
-                    href="/portfolio-health?filter=below50"
+                    href={`/portfolio-health?filter=below50${selectedScanId != null ? `&scanId=${selectedScanId}` : ''}`}
                     className="btn btn-sm btn-outline-secondary"
                   >
                     View problems (&lt; 50%)
@@ -426,5 +443,13 @@ export default function Page() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <React.Suspense fallback={null}>
+      <DashboardPage />
+    </React.Suspense>
   );
 }
