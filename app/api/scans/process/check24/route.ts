@@ -26,6 +26,13 @@ const HOTEL_PAGE_CONCURRENCY = 2;
 type Check24Cell = { hotelId: number; check24Url: string; checkIn: string; checkOut: string };
 
 export async function POST(req: NextRequest) {
+  // Authenticate server-to-server cron calls via CRON_SECRET bearer token
+  // (this route is bypassed by middleware's session check — see middleware.ts).
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const tStart = Date.now();
 
   try {

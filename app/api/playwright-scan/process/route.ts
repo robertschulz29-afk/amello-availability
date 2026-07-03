@@ -7,6 +7,13 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  // Authenticate server-to-server cron calls via CRON_SECRET bearer token
+  // (this route is bypassed by middleware's session check — see middleware.ts).
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await req.json().catch(() => ({}));
   const scanId         = Number(body?.scanId);
   const offset         = Number.isFinite(body?.offset) ? Number(body.offset) : 0;

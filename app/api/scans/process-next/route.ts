@@ -58,9 +58,12 @@ async function processNext(req: NextRequest) {
     const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
     const url = `${getBaseUrl()}/api/scans/process/${source}`;
 
+    const forwardHeaders: Record<string, string> = { 'Content-Type': 'application/json', 'Bello-Mandator': belloMandator };
+    if (cronSecret) forwardHeaders['authorization'] = `Bearer ${cronSecret}`;
+
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Bello-Mandator': belloMandator },
+      headers: forwardHeaders,
       body: JSON.stringify({ jobId, startIndex, size: batchSize }),
     });
 

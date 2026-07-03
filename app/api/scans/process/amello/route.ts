@@ -18,6 +18,13 @@ const BASE_URL = process.env.AMELLO_BASE_URL || 'https://prod-api.amello.pluslin
 const CONCURRENCY = 4;
 
 export async function POST(req: NextRequest) {
+  // Authenticate server-to-server cron calls via CRON_SECRET bearer token
+  // (this route is bypassed by middleware's session check — see middleware.ts).
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const tStart = Date.now();
   const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;
 

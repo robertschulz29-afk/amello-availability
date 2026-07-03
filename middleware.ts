@@ -11,10 +11,18 @@ const PUBLIC_PATHS = [
 ];
 
 // Cron-triggered paths are protected by CRON_SECRET bearer token (checked in route handlers).
-// They bypass session auth so Vercel Cron can invoke them.
+// They bypass session auth so Vercel Cron — and our own server-to-server fan-out
+// calls between these routes — can invoke them without a browser session cookie.
 const CRON_PATHS = [
   '/api/scans/process-next',
   '/api/playwright-scan/process-next',
+];
+
+// Prefix-matched cron paths: per-source batch processors invoked server-to-server
+// by the paths above (and by /api/scans/route.ts's first-batch trigger).
+const CRON_PATH_PREFIXES = [
+  '/api/scans/process/',
+  '/api/playwright-scan/process',
 ];
 
 export async function middleware(request: NextRequest) {
@@ -26,7 +34,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allow cron paths — they authenticate via CRON_SECRET in the route handler
-  if (CRON_PATHS.some(p => pathname === p)) {
+  if (CRON_PATHS.some(p => pathname === p) || CRON_PATH_PREFIXES.some(p => pathname.startsWith(p))) {
     return addBelloHeader(request);
   }
 

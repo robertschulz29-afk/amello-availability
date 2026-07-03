@@ -204,6 +204,13 @@ export async function handleBookingJob(
   req: NextRequest,
   source: 'booking' | 'booking_member',
 ): Promise<NextResponse> {
+  // Authenticate server-to-server cron calls via CRON_SECRET bearer token
+  // (this route is bypassed by middleware's session check — see middleware.ts).
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   // Fail early if scraping infrastructure is not configured
   if (!SCRAPINGANT_API_KEY) {
     return NextResponse.json(
