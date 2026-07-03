@@ -87,9 +87,12 @@ export async function POST(req: NextRequest) {
 
     async function runLegacySource(source: string) {
       try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Bello-Mandator': belloMandator };
+        const cronSecret = process.env.CRON_SECRET;
+        if (cronSecret) headers['authorization'] = `Bearer ${cronSecret}`;
         const res = await fetch(`${baseUrl}/api/scans/process/${source}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Bello-Mandator': belloMandator },
+          headers,
           body: JSON.stringify({ scanId, startIndex, size }),
         });
         if (!res.ok) throw new Error(`${res.status}`);
