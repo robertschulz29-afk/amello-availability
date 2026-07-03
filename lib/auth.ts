@@ -3,7 +3,13 @@ import crypto from 'crypto';
 
 export { COOKIE_NAME, MAX_AGE } from './auth-edge';
 
-const SESSION_SECRET = process.env.SESSION_SECRET ?? 'changeme-set-SESSION_SECRET-in-env';
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (!SESSION_SECRET) {
+  throw new Error(
+    'SESSION_SECRET environment variable is required. ' +
+    'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+  );
+}
 const MAX_AGE = 60 * 60 * 8;
 
 export function hashPassword(password: string): string {

@@ -14,6 +14,12 @@ export async function GET(req: NextRequest) { return processNext(req); }
 export async function POST(req: NextRequest) { return processNext(req); }
 
 async function processNext(req: NextRequest) {
+  // Authenticate cron requests via CRON_SECRET bearer token
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   console.log('[process-next] CRON tick', new Date().toISOString());
 
   try {

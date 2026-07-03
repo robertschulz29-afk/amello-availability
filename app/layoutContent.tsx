@@ -13,7 +13,6 @@ const NAV = [
       { href: '/portfolio-health', icon: 'fa-heart-pulse',            label: 'Portfolio Health' },
       { href: '/rate-comparison',  icon: 'fa-arrow-right-arrow-left', label: 'Rate Report' },
       { href: '/scan-results',     icon: 'fa-table-list',             label: 'Scan Results' },
-      // { href: '/room-imagery', icon: 'fa-images', label: 'Room Imagery' }, // hidden
       { href: '/rooms-cr-api',    icon: 'fa-camera',                 label: 'Rooms/CR-API' },
     ],
   },

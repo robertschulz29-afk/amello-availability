@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { QueryBuilder } from '@/lib/query-builder';
+import { apiError } from '@/lib/api-error';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,21 +31,9 @@ export async function GET(req: NextRequest) {
       ? hotelIDParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => isFinite(n))
       : [];
 
-    const conditions: string[] = ['sr.scan_id = $1'];
-    const params: (number | string)[] = [scanID];
-    let paramCount = 1;
-
-    if (hotelIDs.length === 1) {
-      paramCount++;
-      conditions.push(`sr.hotel_id = $${paramCount}`);
-      params.push(hotelIDs[0]);
-    } else if (hotelIDs.length > 1) {
-      const placeholders = hotelIDs.map(() => `$${++paramCount}`).join(', ');
-      conditions.push(`sr.hotel_id IN (${placeholders})`);
-      params.push(...hotelIDs);
-    }
-
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const qb = new QueryBuilder();
+    qb.add('sr.scan_id = ?', scanID).addIn('sr.hotel_id', hotelIDs);
+    const { where: whereClause, params } = qb.build();
 
     const summaryQuery = `
       WITH extracted_data AS (
@@ -108,11 +98,7 @@ export async function GET(req: NextRequest) {
     };
 
     return NextResponse.json(result);
-  } catch (e: any) {
-    console.error('[GET /api/scan-results/summary] error', e);
-    return NextResponse.json(
-      { error: e.message || 'Failed to fetch scan summary' },
-      { status: 500 }
-    );
+  } catch (e) {
+    return apiError('[GET /api/scan-results/summary]', e);
   }
 }
