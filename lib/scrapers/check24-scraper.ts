@@ -76,7 +76,15 @@ function evaluateRooms(): Check24Room[] {
         rooms.push({ name: roomName, rates: [] });
       }
       const target = rooms.find((r) => r.name === roomName)!;
-      target.rates.push({ name: rateName, actualPrice: price, currency: 'EUR' });
+
+      // Check24 shows the same room/rate/price combination from multiple resellers
+      // (Expedia, TUI, AllyRoam, etc.) as separate DOM rows — we don't track the
+      // reseller, so dedupe on rate name + price (same convention already used by
+      // the booking.com scraper for its own near-identical-row situation).
+      const alreadyHave = target.rates.some((r) => r.name === rateName && r.actualPrice === price);
+      if (!alreadyHave) {
+        target.rates.push({ name: rateName, actualPrice: price, currency: 'EUR' });
+      }
     }
   }
 

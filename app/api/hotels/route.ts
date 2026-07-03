@@ -26,8 +26,8 @@ export async function GET(req: NextRequest) {
     : [];
 
   const selectCols = slim
-    ? `id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country, booking_url, tuiamello_url, expedia_url, bookable, active`
-    : `id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country, booking_url, tuiamello_url, expedia_url, bookable, active, base_image, "globalTypes"`;
+    ? `id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country, booking_url, tuiamello_url, expedia_url, check24_url, bookable, active`
+    : `id, name, code, COALESCE(brand,'') AS brand, COALESCE(region,'') AS region, COALESCE(country,'') AS country, booking_url, tuiamello_url, expedia_url, check24_url, bookable, active, base_image, "globalTypes"`;
 
   const baseWhere: string[] = [];
   if (onlyActive)   baseWhere.push('active = true');
