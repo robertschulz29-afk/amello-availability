@@ -1,238 +1,36 @@
 # amello-availability
 
-## Configuration
+## Purpose
 
-### Database Setup
+A hotel availability tracker for the amello platform. It scans hotel inventory across a rolling date range and renders the result as a date × hotel matrix, with support for pulling data from the Amello API and from external booking sources (Booking.com, Expedia, …) via a pluggable scraping layer.
+Built with Next.js (App Router), PostgreSQL (Supabase), and deployed on Vercel.
+What it does
 
-Before running the application, ensure the database schema is up to date by running migrations:
+* Runs availability scans over a configurable time window for a configurable hotel set using the Amello public API and Booking.com.
+* Provides reports on portfolio healthon Amello.com and  price comparison between Amello and Booking.com
+* Provides list of hot3els with filterable global types for website managemen team 
+* Persists every scan so historical availability can be loaded and compared from a dropdown in the UI.
+* Processes scans in batches via a Vercel cron job — 30 cells per minute, with progress tracked on the scans row.
 
-```bash
-node scripts/migrate.mjs
-```
+## How it works
+### Scan lifecycle
 
-This will apply all database migrations in order, including:
-- Initial schema (hotels, scans, scan_results)
-- Extended scan results tables
-- Source tracking for multi-source scans
+User clicks New scan → POST /api/scans inserts a row in scans with status='running' and seeds scan_results cells.
+The route immediately triggers the first batch by calling /api/scans/process over HTTP (URL built from NEXTAUTH_URL → VERCEL_URL → localhost).
+A Vercel cron hits /api/scans/process-next every minute and processes 30 cells per invocation.
+done_cells on the scans row increments after each batch; status flips to done when done_cells >= total_cells.
 
-### Environment Variables
+For a typical 86-day × 100-hotel run (~8 600 cells), end-to-end completion takes roughly 4.8 hours at 30 cells/minute.
+Multi-source scraping
+External booking sources are described as rows in scan_sources:
 
-Create a `.env` file in the project root (see `.env.example` for reference):
+base_url — URL pattern for the source
+css_selectors — JSONB map of selectors (price, availability, …) used by the parser
+rate_limit_ms — minimum delay between requests (default 2000)
+user_agent_rotation — toggles UA rotation (default true)
 
-- **DATABASE_URL** (required): PostgreSQL connection string (pooled connection URL from Supabase or your provider)
-- **NEXT_PUBLIC_API_URL** (optional): Full URL of the backend API server (e.g., `https://api.example.com`)
-  - If not set, API requests will use relative paths (calls to the same Next.js server)
-  - Set this when deploying frontend and backend separately
-- **API_BASE_URL** (optional): Server-side only API URL (alternative to NEXT_PUBLIC_API_URL)
-- **AMELLO_BASE_URL** (optional): Base URL for the Amello API (defaults to `https://prod-api.amello.plusline.net/api/v1`)
+Scraped results land in scan_results_extended, keyed on (scan_id, hotel_id, source_id) with the full payload kept in scraped_data (JSONB) and the headline fields (price, currency, availability_text, status, error_message) projected out for querying.
+The scraping framework lives in lib/scrapers/:
 
-### Vercel/Lambda Deployment
-
-When deploying to Vercel or AWS Lambda, additional configuration is required for the web scraping functionality:
-
-1. **Set Environment Variable in Vercel Dashboard**:
-   - Go to your project settings in Vercel
-   - Navigate to "Environment Variables"
-   - Add: `AWS_LAMBDA_JS_RUNTIME` = `nodejs20.x`
-   - This environment variable must be set in the Vercel dashboard, NOT in your `.env` file
-   - It ensures `@sparticuz/chromium` uses the correct binaries for the Lambda runtime
-
-2. **Chromium Binary Handling**:
-   - The `@sparticuz/chromium` package provides pre-built Chromium binaries for serverless environments
-   - These are automatically extracted to `/tmp` in Lambda (the only writable directory)
-   - The `next.config.mjs` is configured to mark chromium as external to prevent webpack bundling issues
-
-3. **Function Size Limits**:
-   - Vercel has a 50MB limit on uncompressed Lambda function size
-   - The full `@sparticuz/chromium` package fits within this limit
-   - If you encounter size issues, consider using `@sparticuz/chromium-min` with a remote binary URL
-
-### API Client
-
-All frontend API requests use the `fetchJSON` utility from `lib/api-client.ts`, which:
-- Automatically adds the `Bello-Mandator: amello.en` header to all requests
-- Constructs full API URLs using `NEXT_PUBLIC_API_URL` if configured
-- Falls back to relative paths for backward compatibility
-
-## Core Features
-
-### Scan history
-- **Create new scan**: POST `/api/scans` (button "New scan"). Persists a row in `scans` and all cells in `scan_results`.
-- **List scans**: GET `/api/scans`.
-- **Load a past scan**: GET `/api/scans/{id}`. The UI dropdown loads any historical scan and renders the saved matrix.
-- **Process scan**: POST `/api/scans/process` - Process Amello API data for a scan.
-
-All scans use Europe/Berlin; dates are fixed at startOffset=5, endOffset=90 and fixed checkout = today+12 (relative to the scan time).
-
-## Multi-Source Booking Scraper
-
-The application now supports scanning multiple booking sources (Booking.com, Expedia, etc.) via web scraping.
-
-### Database Schema
-
-#### `scan_sources` table
-Stores configuration for different booking sources:
-- `name` - Source name (e.g., "Booking.com", "Expedia")
-- `enabled` - Whether the source is active
-- `base_url` - Base URL pattern for the booking site
-- `css_selectors` - JSON object with CSS selectors for data extraction
-- `rate_limit_ms` - Minimum delay between requests (default: 2000ms)
-- `user_agent_rotation` - Enable User-Agent rotation (default: true)
-
-#### `scan_results_extended` table
-Stores scraped data from multiple sources:
-- Links to `scan_id`, `hotel_id`, and `source_id`
-- `status` - 'green', 'red', 'pending', or 'error'
-- `scraped_data` - Full scraped data as JSONB
-- `price`, `currency`, `availability_text` - Extracted fields
-- `error_message` - Error details if scraping failed
-
-### Web Scraping Infrastructure
-
-Located in `lib/scrapers/`:
-
-- **BaseScraper** - Abstract base class with bot detection prevention:
-  - User-Agent rotation
-  - Request rate limiting with configurable delays
-  - Retry logic with exponential backoff
-  - CSS selector-based HTML parsing
-  - Cookie/session management support
-
-- **Utilities**:
-  - `utils/user-agents.ts` - User-Agent rotation (10+ real browser UAs)
-  - `utils/delays.ts` - Request throttling and rate limiting
-  - `utils/html-parser.ts` - HTML parsing with cheerio
-  - `utils/retry.ts` - Retry logic with exponential backoff
-
-### API Endpoints
-
-#### Scan Sources
-- `GET /api/scan-sources` - List all configured booking sources
-- `POST /api/scan-sources` - Create or update a booking source
-- `PATCH /api/scan-sources` - Bulk update sources (enable/disable)
-
-#### Scraping
-- `POST /api/scans/scrape` - Trigger scraping for selected sources
-
-Request body:
-```json
-{
-  "scanId": 123,
-  "sourceIds": [1, 2],
-  "hotelIds": [10, 20],
-  "startIndex": 0,
-  "size": 10
-}
-```
-
-### Usage Example
-
-1. Create a scan source:
-```bash
-curl -X POST http://localhost:3000/api/scan-sources \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Booking.com",
-    "enabled": true,
-    "base_url": "https://www.booking.com/...",
-    "css_selectors": {
-      "price": ".price",
-      "availability": ".availability"
-    },
-    "rate_limit_ms": 3000
-  }'
-```
-
-2. Trigger scraping:
-```bash
-curl -X POST http://localhost:3000/api/scans/scrape \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scanId": 1,
-    "sourceIds": [1],
-    "size": 10
-  }'
-```
-
-### Extending with Custom Scrapers
-
-To add a new booking source scraper:
-
-1. Create a new class extending `BaseScraper`:
-```typescript
-import { BaseScraper } from '@/lib/scrapers/BaseScraper';
-
-class BookingComScraper extends BaseScraper {
-  protected buildURL(request: ScrapeRequest): string {
-    // Build the URL for Booking.com
-  }
-
-  protected processData(data: Record<string, string | null>, html: string): ScrapeResult {
-    // Extract and process availability data
-  }
-}
-```
-
-2. Use the scraper in `/api/scans/scrape`:
-```typescript
-const scraper = new BookingComScraper(source);
-const result = await scraper.scrape({ hotelCode, checkInDate, checkOutDate });
-```
-
-### Notes
-- CSS selectors and URL patterns are stored per source and can be updated via API
-- Bot detection prevention is built-in (User-Agent rotation, rate limiting, random delays)
-- Framework is ready for production use - specific scraper implementations to be added per source
-
-## Troubleshooting Scan Processing
-
-### Scans not processing after creation
-
-If scans are created but don't process any data, follow these debugging steps:
-
-1. **Check Vercel logs** for scan creation:
-   - Look for `[POST /api/scans] === TRIGGERING FIRST BATCH ===`
-   - Verify the Target URL is correct (should be your production URL)
-   - Example: `[POST /api/scans] Target URL: https://your-app.vercel.app/api/scans/process`
-   
-2. **Check Vercel logs** for processing endpoint:
-   - Look for `[POST /api/scans/process] === REQUEST RECEIVED ===`
-   - If missing, the initial trigger failed - check the Target URL
-   
-3. **Verify cron is running**:
-   - Check Vercel dashboard → Project → Cron Jobs
-   - Should show `/api/scans/process-next` running every minute
-   - Look for logs: `[POST /api/scans/process-next] Processing scan X`
-   
-4. **Manual trigger** (if needed):
-   ```bash
-   curl -X POST https://your-app.vercel.app/api/scans/process-next \
-     -H "Content-Type: application/json"
-   ```
-
-### Environment Variables
-
-Ensure `NEXTAUTH_URL` is set in Vercel for scan auto-processing:
-```
-NEXTAUTH_URL=https://your-app.vercel.app
-```
-
-This variable is used to construct the callback URL for triggering the first batch of scan processing. If not set, the system falls back to `VERCEL_URL` (automatically set by Vercel) or `http://localhost:3000` for local development.
-
-### Expected Behavior
-
-When a scan is created:
-1. The scan is inserted into the database with `status='running'`
-2. The first batch of processing is triggered via an HTTP call to `/api/scans/process`
-3. The processing endpoint processes 30 cells (hotel-date combinations)
-4. Database `done_cells` column increases after each batch
-5. The cron job continues processing every minute until `done_cells >= total_cells`
-6. Scan status updates to `done` when complete
-
-### Performance Notes
-
-- The cron runs every minute, processing 30 cells per invocation
-- For 8600 cells (86 days × 100 hotels), expect approximately 287 minutes (~4.8 hours) total processing time
-- Formula: `cells / batch_size / batches_per_hour` = `8600 / 30 / 60` ≈ 4.8 hours
-- Comprehensive diagnostic logs are available in Vercel logs for debugging
-- Test on Vercel staging environment first if possible
+BaseScraper — abstract class handling UA rotation, throttling, retries with exponential backoff, cookie/session state, and selector-based parsing.
+utils/ — user-agents.ts, delays.ts, html-parser.ts, retry.ts.

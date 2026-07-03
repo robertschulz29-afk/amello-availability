@@ -204,6 +204,14 @@ export async function handleBookingJob(
   req: NextRequest,
   source: 'booking' | 'booking_member',
 ): Promise<NextResponse> {
+  // Fail early if scraping infrastructure is not configured
+  if (!SCRAPINGANT_API_KEY) {
+    return NextResponse.json(
+      { error: 'Booking scraping not configured: SCRAPINGANT_API_KEY is missing' },
+      { status: 503 },
+    );
+  }
+
   const useCredentials = source === 'booking_member';
   const tStart = Date.now();
 
