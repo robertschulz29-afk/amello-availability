@@ -65,6 +65,13 @@ export async function checkAndFinalizeScan(scanId: number) {
     await sql`UPDATE scans SET status = 'done' WHERE id = ${scanId} AND status != 'cancelled'`;
     console.log(`[scan] Scan #${scanId} finalized — all source jobs complete`);
 
+    // booking_member scrapes the same hotel page/room inventory as booking —
+    // the only difference is member-discounted pricing, not different rooms.
+    // Skip it here so it doesn't create a redundant mapping dimension in
+    // room_names; booking's own scan already captures these room names under
+    // source='booking'. This is scoped only to the room_names write path —
+    // booking_member's scan_results rows (used for price scraping/reporting)
+    // are untouched.
     await sql`
       INSERT INTO room_names (hotel_id, source, room_name, last_seen_at)
       SELECT DISTINCT sr.hotel_id, sr.source, elem->>'name', NOW()
@@ -72,6 +79,7 @@ export async function checkAndFinalizeScan(scanId: number) {
            jsonb_array_elements(sr.response_json->'rooms') AS elem
       WHERE sr.scan_id = ${scanId}
         AND sr.status  = 'green'
+        AND sr.source  != 'booking_member'
         AND elem->>'name' IS NOT NULL
       ON CONFLICT (hotel_id, source, room_name)
         DO UPDATE SET last_seen_at = NOW()

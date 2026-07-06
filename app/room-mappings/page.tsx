@@ -50,13 +50,18 @@ type Suggestion = {
 // hotelId -> suggestion[]
 type AllSuggestions = Map<number, Suggestion[]>;
 
-const SOURCE_ORDER = ['amello', 'booking', 'booking_member', 'check24'];
+const SOURCE_ORDER = ['amello', 'booking', 'check24', 'brand'];
+
+// Sources that should always show a column in the mapping grid even before
+// any scan_sources row or room_names data exists for them (e.g. a future
+// source that's been announced but has no scraper wired up yet).
+const ALWAYS_SHOW_SOURCES = ['brand'];
 
 function sourceDisplayLabel(source: string) {
   if (source === 'amello') return 'TUI-Hotels';
   if (source === 'booking') return 'Booking';
-  if (source === 'booking_member') return 'Booking Member';
   if (source === 'check24') return 'Check24';
+  if (source === 'brand') return 'Brand.com';
   return source;
 }
 
@@ -548,7 +553,7 @@ export default function Page() {
       for (const g of h.groups) for (const m of g.members) historical.add(m.source);
       for (const r of h.unmapped) historical.add(r.source);
     }
-    const all = new Set([...enabled, ...historical]);
+    const all = new Set([...enabled, ...historical, ...ALWAYS_SHOW_SOURCES]);
     return sortSources(Array.from(all));
   }, [scanSources, hotels]);
 

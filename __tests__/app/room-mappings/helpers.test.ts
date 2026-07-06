@@ -21,7 +21,7 @@ type Group = {
   members: Member[];
 };
 
-const SOURCE_ORDER = ['amello', 'booking', 'booking_member', 'check24'];
+const SOURCE_ORDER = ['amello', 'booking', 'check24', 'brand'];
 
 function sortSources(sources: string[]): string[] {
   return [...sources].sort((a, b) => {
@@ -35,9 +35,9 @@ function sortSources(sources: string[]): string[] {
 }
 
 describe('Room Mappings — column source ordering', () => {
-  it('orders known sources amello, booking, booking_member, check24 first', () => {
-    expect(sortSources(['check24', 'amello', 'booking_member', 'booking']))
-      .toEqual(['amello', 'booking', 'booking_member', 'check24']);
+  it('orders known sources amello, booking, check24, brand first', () => {
+    expect(sortSources(['check24', 'amello', 'brand', 'booking']))
+      .toEqual(['amello', 'booking', 'check24', 'brand']);
   });
 
   it('appends unknown sources alphabetically after known ones', () => {
