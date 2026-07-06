@@ -66,8 +66,8 @@ The Scan Infrastructure module provides the foundational configuration and track
 
 #### Acceptance Criteria
 
-1. THE Platform SHALL store distinct room names in the hotel_room_names table keyed by (hotel_id, source, room_name) with a last_seen_at timestamp
-2. THE Platform SHALL use the hotel_room_names cache as the primary data source for room mapping interfaces
+1. THE Platform SHALL store distinct room names in the room_names table keyed by (hotel_id, source, room_name) with a last_seen_at timestamp
+2. THE Platform SHALL use the room_names cache as the primary data source for room mapping interfaces
 3. THE Platform SHALL provide an index on (hotel_id, source) for efficient querying
 
 ### Requirement 6: Scan Screenshots

@@ -24,7 +24,7 @@ The Room Mappings module manages the association between room names from differe
 
 1. WHEN room mappings are queried without a hotel ID, THE Room_Mapper SHALL return all active hotels with their existing mappings, Amello room names, and Booking room names
 2. WHEN room mappings are queried with a specific hotel ID, THE Room_Mapper SHALL return mappings, amelloRooms, and bookingRooms for that hotel only
-3. THE Room_Mapper SHALL source available room names from the hotel_room_names cache table filtered by source (amello or booking)
+3. THE Room_Mapper SHALL source available room names from the room_names cache table filtered by source (amello or booking)
 4. THE Room_Mapper SHALL return mapping records with id, hotel_id, amello_room, booking_room, source, confidence, created_at, and updated_at
 
 ### Requirement 2: Room Mapping Creation

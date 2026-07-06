@@ -33,11 +33,11 @@ export async function GET(req: NextRequest) {
       [hotelIds]
     );
 
-    // Room names are maintained in hotel_room_names (updated on scan completion).
+    // Room names are maintained in room_names (updated on scan completion).
     // One indexed lookup instead of a full scan_results JSONB expansion.
     const roomNamesQ = await query(
       `SELECT hotel_id, source, room_name
-       FROM hotel_room_names
+       FROM room_names
        WHERE hotel_id = ANY($1::int[])
        ORDER BY hotel_id, source, room_name`,
       [hotelIds]

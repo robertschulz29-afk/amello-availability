@@ -66,7 +66,7 @@ export async function checkAndFinalizeScan(scanId: number) {
     console.log(`[scan] Scan #${scanId} finalized — all source jobs complete`);
 
     await sql`
-      INSERT INTO hotel_room_names (hotel_id, source, room_name, last_seen_at)
+      INSERT INTO room_names (hotel_id, source, room_name, last_seen_at)
       SELECT DISTINCT sr.hotel_id, sr.source, elem->>'name', NOW()
       FROM scan_results sr,
            jsonb_array_elements(sr.response_json->'rooms') AS elem

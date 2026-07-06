@@ -18,6 +18,7 @@ CREATE TABLE hotels (
   tuiamello_url VARCHAR(500) DEFAULT NULL,
   expedia_url   VARCHAR(500) DEFAULT NULL,
   check24_url   VARCHAR(500) DEFAULT NULL,
+  brand_url     VARCHAR(500) DEFAULT NULL,
   "globalTypes" TEXT
 );
 
@@ -111,16 +112,17 @@ CREATE INDEX idx_scan_results_extended_status ON scan_results_extended(status);
 CREATE INDEX idx_scan_results_extended_check_in ON scan_results_extended(check_in_date);
 CREATE INDEX idx_scan_results_extended_scan_hotel_source ON scan_results_extended(scan_id, hotel_id, source_id);
 
--- ─── hotel_room_names ───────────────────────────────────────
-CREATE TABLE hotel_room_names (
+-- ─── room_names ─────────────────────────────────────────────
+CREATE TABLE room_names (
+  id           SERIAL       PRIMARY KEY,
   hotel_id     INT          NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
   source       VARCHAR(20)  NOT NULL,
   room_name    TEXT         NOT NULL,
   last_seen_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  CONSTRAINT hotel_room_names_pkey PRIMARY KEY (hotel_id, source, room_name)
+  CONSTRAINT room_names_hotel_source_name_unique UNIQUE (hotel_id, source, room_name)
 );
 
-CREATE INDEX idx_hotel_room_names_hotel_source ON hotel_room_names(hotel_id, source);
+CREATE INDEX idx_room_names_hotel_source ON room_names(hotel_id, source);
 
 -- ─── global_types_categories ────────────────────────────────
 CREATE TABLE global_types_categories (
@@ -149,6 +151,9 @@ CREATE TABLE users (
   id            SERIAL PRIMARY KEY,
   username      VARCHAR(100) NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  email         VARCHAR(255) UNIQUE,
+  role          VARCHAR(20) NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin','analyst','viewer')),
+  status        VARCHAR(20) NOT NULL DEFAULT 'registered' CHECK (status IN ('registered','active','inactive')),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -202,21 +207,6 @@ CREATE TABLE cr_api_rooms (
 );
 
 CREATE INDEX idx_cr_api_rooms_hotel ON cr_api_rooms(hotel_id);
-
--- ─── imagery_mappings ───────────────────────────────────────
-CREATE TABLE imagery_mappings (
-  id                SERIAL PRIMARY KEY,
-  hotel_id          INT    NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
-  imagery_room_name TEXT   NOT NULL,
-  scan_room_name    TEXT   NOT NULL,
-  source            TEXT   NOT NULL DEFAULT 'manual',
-  confidence        NUMERIC,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT imagery_mappings_unique UNIQUE (hotel_id, scan_room_name)
-);
-
-CREATE INDEX idx_imagery_mappings_hotel ON imagery_mappings(hotel_id);
 
 -- ─── scan_screenshots ───────────────────────────────────────
 CREATE TABLE scan_screenshots (
@@ -274,9 +264,11 @@ INSERT INTO scan_sources (name, enabled) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 -- Default admin user (password: see original seed)
-INSERT INTO users (username, password_hash)
+INSERT INTO users (username, password_hash, role, status)
 VALUES (
   'admin',
-  '36c3fb7cf0514f3ed68d5156a5e271f6:68e8d79a5ee8ced10c32eade48df079b05012f9927b39498cc2dcedb544566c088963118019bf381fd7321f722b78e4dd286d3b2e43bc5bb8090a6db78ec6ceb'
+  '36c3fb7cf0514f3ed68d5156a5e271f6:68e8d79a5ee8ced10c32eade48df079b05012f9927b39498cc2dcedb544566c088963118019bf381fd7321f722b78e4dd286d3b2e43bc5bb8090a6db78ec6ceb',
+  'admin',
+  'active'
 )
 ON CONFLICT (username) DO NOTHING;
