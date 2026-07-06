@@ -124,6 +124,48 @@ CREATE TABLE room_names (
 
 CREATE INDEX idx_room_names_hotel_source ON room_names(hotel_id, source);
 
+-- ─── room_mapping_groups / room_mapping_members ─────────────
+-- N-way room mapping: a group is a set of at most one room_name per source
+-- ("anchor + attach" pattern). Replaces the old 2-column room_mappings table
+-- (kept below, renamed to room_mappings_legacy, as a rollback snapshot only —
+-- not read/written by application code).
+CREATE TABLE room_mapping_groups (
+  id SERIAL PRIMARY KEY,
+  hotel_id INT NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
+  source VARCHAR(20) NOT NULL DEFAULT 'manual',  -- 'manual' or 'ai' — group-level provenance
+  confidence NUMERIC,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE room_mapping_members (
+  id SERIAL PRIMARY KEY,
+  group_id INT NOT NULL REFERENCES room_mapping_groups(id) ON DELETE CASCADE,
+  room_name_id INT NOT NULL REFERENCES room_names(id) ON DELETE CASCADE,
+  source VARCHAR(20) NOT NULL,       -- denormalized copy of room_names.source
+  member_status VARCHAR(10) NOT NULL DEFAULT 'manual',  -- 'manual' | 'ai' — per-cell provenance
+  confidence NUMERIC,                 -- per-member confidence for AI-sourced members
+  UNIQUE(group_id, source),           -- at most one member per source per group
+  UNIQUE(room_name_id)                -- a room_name can only belong to one group at a time
+);
+
+CREATE INDEX idx_room_mapping_members_group ON room_mapping_members(group_id);
+
+-- ─── room_mappings_legacy (rollback snapshot only, Phase C) ──
+-- Old 2-column (amello_room / booking_room) mapping table. Not used by the
+-- app going forward; retained for one release as a rollback safety net.
+CREATE TABLE room_mappings_legacy (
+  id            SERIAL PRIMARY KEY,
+  hotel_id      INTEGER NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
+  amello_room   TEXT NOT NULL,
+  booking_room  TEXT NOT NULL,
+  source        TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'ai')),
+  confidence    DOUBLE PRECISION,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (hotel_id, amello_room, booking_room)
+);
+
 -- ─── global_types_categories ────────────────────────────────
 CREATE TABLE global_types_categories (
   id                   BIGSERIAL PRIMARY KEY,

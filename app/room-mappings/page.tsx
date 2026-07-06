@@ -6,177 +6,287 @@ import { fetchJSON } from '@/lib/api-client';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Mapping = {
-  id: number;
-  hotel_id: number;
-  amello_room: string;
-  booking_room: string;
+type ScanSource = { id: number; name: string; enabled: boolean };
+
+type Member = {
+  memberId: number;
+  groupId: number;
+  source: string;
+  roomNameId: number;
+  roomName: string;
+  memberStatus: 'manual' | 'ai';
+  confidence: number | null;
+};
+
+type Group = {
+  groupId: number;
+  hotelId: number;
   source: 'manual' | 'ai';
   confidence: number | null;
-  updated_at: string;
+  members: Member[];
 };
+
+type RoomNameRef = { id: number; source: string; roomName: string };
 
 type HotelData = {
   id: number;
   name: string;
   code: string;
-  mappings: Mapping[];
-  amelloRooms: string[];
-  bookingRooms: string[];
+  groups: Group[];
+  unmapped: RoomNameRef[];
 };
 
 type Suggestion = {
-  amello_room: string;
-  booking_room: string;
+  sourceA: string;
+  sourceB: string;
+  roomNameIdA: number;
+  roomNameA: string;
+  roomNameIdB: number;
+  roomNameB: string;
   confidence: number;
   reasoning: string;
 };
 
-// hotelId → (amelloRoom → Suggestion)
-type AllSuggestions = Map<number, Map<string, Suggestion>>;
+// hotelId -> suggestion[]
+type AllSuggestions = Map<number, Suggestion[]>;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+const SOURCE_ORDER = ['amello', 'booking', 'booking_member', 'check24'];
+
+function sourceDisplayLabel(source: string) {
+  if (source === 'amello') return 'TUI-Hotels';
+  if (source === 'booking') return 'Booking';
+  if (source === 'booking_member') return 'Booking Member';
+  if (source === 'check24') return 'Check24';
+  return source;
+}
+
+function sortSources(sources: string[]): string[] {
+  return [...sources].sort((a, b) => {
+    const ai = SOURCE_ORDER.indexOf(a);
+    const bi = SOURCE_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
 
 function ConfidenceBadge({ confidence }: { confidence: number | null }) {
   if (confidence == null) return null;
   const pct = Math.round(confidence * 100);
   const cls = pct >= 90 ? 'text-bg-success' : pct >= 75 ? 'text-bg-warning' : 'text-bg-danger';
-  return <span className={`badge ${cls} ms-1`} style={{ fontSize: '0.65rem' }}>{pct}%</span>;
+  return <span className={`badge ${cls} ms-1`} style={{ fontSize: '0.6rem' }}>{pct}%</span>;
 }
 
-// ── Right-column cell per Amello room ─────────────────────────────────────────
+// ── Inline unlink confirm popover ───────────────────────────────────────────────
 
-type RoomRowProps = {
-  amelloRoom: string;
-  mapping: Mapping | undefined;
-  suggestion: Suggestion | undefined;
-  bookingRooms: string[];
-  onSave: (amelloRoom: string, bookingRoom: string, source: 'manual' | 'ai', confidence?: number) => Promise<void>;
-  onDelete: (id: number) => Promise<void>;
-  onSuggestionUsed: (amelloRoom: string) => void;
-};
-
-function RoomRow({ amelloRoom, mapping, suggestion, bookingRooms, onSave, onDelete, onSuggestionUsed }: RoomRowProps) {
-  const [editing, setEditing] = React.useState(false);
-  const [selected, setSelected] = React.useState('');
-  const [busy, setBusy] = React.useState(false);
-
-  const openEdit = () => {
-    setSelected(mapping?.booking_room ?? suggestion?.booking_room ?? '');
-    setEditing(true);
-  };
-
-  const save = async () => {
-    if (!selected) return;
-    setBusy(true);
-    await onSave(amelloRoom, selected, 'manual');
-    setEditing(false);
-    setBusy(false);
-  };
-
-  const acceptAi = async () => {
-    if (!mapping) return;
-    setBusy(true);
-    await onSave(amelloRoom, mapping.booking_room, 'manual');
-    setBusy(false);
-  };
-
-  const confirmSuggestion = async () => {
-    if (!suggestion) return;
-    setBusy(true);
-    await onSave(amelloRoom, suggestion.booking_room, 'ai', suggestion.confidence);
-    onSuggestionUsed(amelloRoom);
-    setBusy(false);
-  };
-
-  const editDropdown = (
-    <div className="d-flex gap-1 align-items-center mt-1">
-      <select
-        className="form-select form-select-sm"
-        value={selected}
-        onChange={e => setSelected(e.target.value)}
-        disabled={busy}
-        style={{ maxWidth: 280 }}
-      >
-        <option value="">— select room —</option>
-        {bookingRooms.map(r => <option key={r} value={r}>{r}</option>)}
-      </select>
-      <button className="btn btn-sm btn-success" onClick={save} disabled={busy || !selected}>
-        {busy ? <span className="spinner-border spinner-border-sm"></span> : '✓'}
-      </button>
-      <button className="btn btn-sm btn-outline-secondary" onClick={() => setEditing(false)} disabled={busy}>✕</button>
+function UnlinkPopover({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div
+      className="card shadow-sm p-2"
+      style={{ position: 'absolute', zIndex: 20, minWidth: 180 }}
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="small mb-2">Remove this mapping?</div>
+      <div className="d-flex gap-1">
+        <button className="btn btn-sm btn-danger" onClick={onConfirm}>Remove</button>
+        <button className="btn btn-sm btn-outline-secondary" onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   );
+}
 
-  // Mapped manually
-  if (mapping && mapping.source === 'manual') {
-    return (
-      <td className="align-top py-2">
-        {!editing ? (
-          <div className="d-flex align-items-center gap-2 flex-wrap">
-            <span className="small">{mapping.booking_room}</span>
-            <span className="badge bg-secondary" style={{ fontSize: '0.6rem' }}>manual</span>
-            <button className="btn btn-outline-secondary ms-auto" style={{ padding: '1px 6px', fontSize: '0.7rem' }} onClick={openEdit}>
-              <i className="fa fa-pencil"></i>
-            </button>
-            <button className="btn btn-outline-danger" style={{ padding: '1px 6px', fontSize: '0.7rem' }} onClick={() => onDelete(mapping.id)}>
-              <i className="fa fa-times"></i>
-            </button>
-          </div>
-        ) : editDropdown}
-      </td>
-    );
+// ── One cell within a group row for a given source column ───────────────────────
+
+function GroupCell({
+  hotel,
+  group,
+  source,
+  hasSourceData,
+  onChanged,
+}: {
+  hotel: HotelData;
+  group: Group;
+  source: string;
+  hasSourceData: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [adding, setAdding] = React.useState(false);
+  const [selected, setSelected] = React.useState('');
+  const [confirmingUnlink, setConfirmingUnlink] = React.useState(false);
+  const [changeError, setChangeError] = React.useState<string | null>(null);
+
+  const member = group.members.find(m => m.source === source);
+
+  const unmappedForSource = hotel.unmapped.filter(r => r.source === source);
+
+  const addMember = async (memberStatus: 'manual' | 'ai' = 'manual') => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await fetchJSON(`/api/room-mappings/${group.groupId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, roomNameId: Number(selected), memberStatus }),
+      });
+      setAdding(false);
+      setSelected('');
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeMember = async () => {
+    if (!member) return;
+    setBusy(true);
+    try {
+      await fetchJSON(`/api/room-mappings/${group.groupId}/members?memberId=${member.memberId}`, { method: 'DELETE' });
+      setConfirmingUnlink(false);
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmAi = async () => {
+    if (!member) return;
+    setBusy(true);
+    try {
+      await fetchJSON(`/api/room-mappings/${group.groupId}/members`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId: member.memberId }),
+      });
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Replace an AI-pending member with a different room. If this member is the
+  // last one in its group, removing it deletes the group (per the API's
+  // documented last-member behavior), so we must create a fresh group instead
+  // of re-attaching to the now-gone groupId. Any failure surfaces inline
+  // rather than being silently swallowed, since the old mapping is already
+  // gone by the time the replacement attempt happens.
+  const changeAiMember = async () => {
+    if (!member || !selected) return;
+    setBusy(true);
+    setChangeError(null);
+    const wasLastMember = group.members.length === 1;
+    try {
+      await fetchJSON(`/api/room-mappings/${group.groupId}/members?memberId=${member.memberId}`, { method: 'DELETE' });
+
+      if (wasLastMember) {
+        await fetchJSON('/api/room-mappings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            hotelId: hotel.id, source, roomNameId: Number(selected),
+            groupSource: 'ai', memberStatus: 'ai', confidence: member.confidence,
+          }),
+        });
+      } else {
+        await fetchJSON(`/api/room-mappings/${group.groupId}/members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source, roomNameId: Number(selected), memberStatus: 'ai', confidence: member.confidence }),
+        });
+      }
+
+      setAdding(false);
+      setSelected('');
+      await onChanged();
+    } catch (e: any) {
+      setChangeError(e.message || 'Failed to change mapping — the original mapping was removed; please re-select.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!hasSourceData) {
+    return <td className="align-top py-2 text-muted small fst-italic">No {sourceDisplayLabel(source)} scan data yet</td>;
   }
 
-  // Mapped by AI — needs acceptance
-  if (mapping && mapping.source === 'ai') {
+  if (member && member.memberStatus === 'ai') {
     return (
-      <td className="align-top py-2">
-        {!editing ? (
-          <div>
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              <span className="small">{mapping.booking_room}</span>
-              <span className="badge text-bg-info" style={{ fontSize: '0.6rem' }}>AI</span>
-              <ConfidenceBadge confidence={mapping.confidence} />
-            </div>
-            <div className="d-flex gap-1 mt-1">
-              <button className="btn btn-sm btn-success" onClick={acceptAi} disabled={busy}>
-                {busy ? <span className="spinner-border spinner-border-sm"></span> : '✓ Accept'}
-              </button>
-              <button className="btn btn-sm btn-outline-secondary" onClick={openEdit}>Change</button>
-              <button className="btn btn-sm btn-outline-danger" onClick={() => onDelete(mapping.id)}>
-                <i className="fa fa-times"></i>
-              </button>
-            </div>
-          </div>
-        ) : editDropdown}
-      </td>
-    );
-  }
-
-  // Unmapped — with or without AI suggestion
-  return (
-    <td className="align-top py-2">
-      {!editing ? (
-        suggestion ? (
+      <td className="align-top py-2" style={{ background: 'rgba(13,110,253,0.06)' }}>
+        {!adding ? (
           <div>
             <div className="d-flex align-items-center gap-1 flex-wrap">
-              <span className="small text-muted fst-italic">{suggestion.booking_room}</span>
-              <span className="badge text-bg-info" style={{ fontSize: '0.6rem' }}>AI suggestion</span>
-              <ConfidenceBadge confidence={suggestion.confidence} />
+              <span className="small">{member.roomName}</span>
+              <span className="badge text-bg-info" style={{ fontSize: '0.6rem' }}>AI</span>
+              <ConfidenceBadge confidence={member.confidence} />
             </div>
-            <div className="text-muted fst-italic mb-1" style={{ fontSize: '0.7rem' }}>{suggestion.reasoning}</div>
-            <div className="d-flex gap-1">
-              <button className="btn btn-sm btn-success" onClick={confirmSuggestion} disabled={busy}>
-                {busy ? <span className="spinner-border spinner-border-sm"></span> : '✓ Confirm'}
+            <div className="d-flex gap-1 mt-1">
+              <button className="btn btn-sm btn-success" disabled={busy} onClick={confirmAi}>
+                {busy ? <span className="spinner-border spinner-border-sm" /> : '✓ Confirm'}
               </button>
-              <button className="btn btn-sm btn-outline-secondary" onClick={openEdit}>Change</button>
+              <button className="btn btn-sm btn-outline-secondary" disabled={busy} onClick={() => { setSelected(String(member.roomNameId)); setAdding(true); }}>Change</button>
+              <button className="btn btn-sm btn-outline-danger" disabled={busy} onClick={removeMember}>Reject</button>
             </div>
           </div>
         ) : (
-          <button className="btn btn-sm btn-outline-warning" onClick={openEdit}>+ Map room</button>
-        )
-      ) : editDropdown}
+          <div>
+            <div className="d-flex gap-1 align-items-center">
+              <select className="form-select form-select-sm" style={{ maxWidth: 220 }} value={selected} onChange={e => setSelected(e.target.value)} disabled={busy}>
+                <option value="">— select room —</option>
+                {unmappedForSource.map(r => <option key={r.id} value={r.id}>{r.roomName}</option>)}
+              </select>
+              <button className="btn btn-sm btn-success" disabled={busy || !selected} onClick={changeAiMember}>
+                {busy ? <span className="spinner-border spinner-border-sm" /> : '✓'}
+              </button>
+              <button className="btn btn-sm btn-outline-secondary" disabled={busy} onClick={() => { setAdding(false); setChangeError(null); }}>✕</button>
+            </div>
+            {changeError && <div className="text-danger small mt-1">{changeError}</div>}
+          </div>
+        )}
+      </td>
+    );
+  }
+
+  if (member) {
+    return (
+      <td className="align-top py-2 position-relative">
+        <div className="d-flex align-items-center gap-2 flex-wrap">
+          <span className="small">{member.roomName}</span>
+          <button
+            className="btn btn-outline-danger ms-auto"
+            style={{ padding: '1px 6px', fontSize: '0.7rem' }}
+            onClick={() => setConfirmingUnlink(true)}
+            title="Unlink"
+          >
+            ✕
+          </button>
+        </div>
+        {confirmingUnlink && (
+          <UnlinkPopover onConfirm={removeMember} onCancel={() => setConfirmingUnlink(false)} />
+        )}
+      </td>
+    );
+  }
+
+  // No member for this source yet
+  return (
+    <td className="align-top py-2">
+      {!adding ? (
+        <button className="btn btn-sm btn-outline-secondary" onClick={() => setAdding(true)} disabled={!unmappedForSource.length}>
+          — [+ add]
+        </button>
+      ) : (
+        <div className="d-flex gap-1 align-items-center">
+          <select className="form-select form-select-sm" style={{ maxWidth: 220 }} value={selected} onChange={e => setSelected(e.target.value)} disabled={busy}>
+            <option value="">— select room —</option>
+            {unmappedForSource.map(r => <option key={r.id} value={r.id}>{r.roomName}</option>)}
+          </select>
+          <button className="btn btn-sm btn-success" disabled={busy || !selected} onClick={() => addMember('manual')}>
+            {busy ? <span className="spinner-border spinner-border-sm" /> : '✓'}
+          </button>
+          <button className="btn btn-sm btn-outline-secondary" disabled={busy} onClick={() => setAdding(false)}>✕</button>
+        </div>
+      )}
     </td>
   );
 }
@@ -185,17 +295,18 @@ function RoomRow({ amelloRoom, mapping, suggestion, bookingRooms, onSave, onDele
 
 function HotelSection({
   hotel,
+  columnSources,
   suggestions,
   onMappingChange,
-  onSuggestionUsed,
 }: {
   hotel: HotelData;
-  suggestions: Map<string, Suggestion>;
-  onMappingChange: () => void;
-  onSuggestionUsed: (hotelId: number, amelloRoom: string) => void;
+  columnSources: string[];
+  suggestions: Suggestion[];
+  onMappingChange: () => Promise<void>;
 }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [msg, setMsg] = React.useState<{ text: string; ok: boolean } | null>(null);
+  const [busyAll, setBusyAll] = React.useState(false);
 
   React.useEffect(() => {
     if (!msg) return;
@@ -203,58 +314,59 @@ function HotelSection({
     return () => clearTimeout(t);
   }, [msg]);
 
-  const mappingByAmello = React.useMemo(() => {
-    const map = new Map<string, Mapping>();
-    for (const m of hotel.mappings) map.set(m.amello_room, m);
-    return map;
-  }, [hotel.mappings]);
+  // Sources with any data at all for this hotel (grouped members + unmapped rooms).
+  const sourcesWithData = React.useMemo(() => {
+    const s = new Set<string>();
+    for (const g of hotel.groups) for (const m of g.members) s.add(m.source);
+    for (const r of hotel.unmapped) s.add(r.source);
+    return s;
+  }, [hotel]);
 
-  const unmappedCount = hotel.amelloRooms.filter(r => !mappingByAmello.has(r)).length;
-  const aiPendingCount = hotel.mappings.filter(m => m.source === 'ai').length;
+  const availableSourceCount = sourcesWithData.size;
 
-  const acceptAll = async () => {
-    const pending = hotel.mappings.filter(m => m.source === 'ai');
-    if (!pending.length) return;
-    setBusy_(true);
-    for (const m of pending) {
-      try {
-        await fetchJSON('/api/room-mappings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ hotelId: hotel.id, amelloRoom: m.amello_room, bookingRoom: m.booking_room, source: 'manual', confidence: m.confidence }),
-        });
-      } catch { /* skip */ }
-    }
-    setMsg({ text: `Accepted ${pending.length} AI mapping(s).`, ok: true });
-    onMappingChange();
-    setBusy_(false);
-  };
-  const [busy_, setBusy_] = React.useState(false);
-  const pendingSuggestionsCount = hotel.amelloRooms.filter(r => !mappingByAmello.has(r) && suggestions.has(r)).length;
+  const aiPendingMembers = React.useMemo(
+    () => hotel.groups.flatMap(g => g.members.filter(m => m.memberStatus === 'ai')),
+    [hotel.groups]
+  );
 
-  const handleSave = async (amelloRoom: string, bookingRoom: string, source: 'manual' | 'ai', confidence?: number) => {
+  const fullyMappedCount = hotel.groups.filter(g => g.members.length >= availableSourceCount && availableSourceCount > 0).length;
+  const partialCount = hotel.groups.filter(g => g.members.length < availableSourceCount).length;
+
+  const wrap = async (fn: () => Promise<void>) => {
     try {
+      await fn();
+      setMsg({ text: 'Saved.', ok: true });
+    } catch (e: any) {
+      setMsg({ text: e.message || 'Failed', ok: false });
+    }
+  };
+
+  const acceptAllAi = async () => {
+    if (!aiPendingMembers.length) return;
+    setBusyAll(true);
+    for (const m of aiPendingMembers) {
+      try {
+        await fetchJSON(`/api/room-mappings/${m.groupId}/members`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ memberId: m.memberId }),
+        });
+      } catch { /* skip individual failures */ }
+    }
+    setMsg({ text: `Accepted ${aiPendingMembers.length} AI mapping(s).`, ok: true });
+    await onMappingChange();
+    setBusyAll(false);
+  };
+
+  const startMapping = async (room: RoomNameRef) => {
+    await wrap(async () => {
       await fetchJSON('/api/room-mappings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hotelId: hotel.id, amelloRoom, bookingRoom, source, confidence: confidence ?? null }),
+        body: JSON.stringify({ hotelId: hotel.id, source: room.source, roomNameId: room.id }),
       });
-      setMsg({ text: 'Saved.', ok: true });
-      onMappingChange();
-    } catch (e: any) {
-      setMsg({ text: e.message || 'Failed to save', ok: false });
-    }
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Remove this mapping?')) return;
-    try {
-      await fetchJSON(`/api/room-mappings?id=${id}`, { method: 'DELETE' });
-      setMsg({ text: 'Mapping removed.', ok: true });
-      onMappingChange();
-    } catch (e: any) {
-      setMsg({ text: e.message || 'Failed to delete', ok: false });
-    }
+      await onMappingChange();
+    });
   };
 
   return (
@@ -267,25 +379,27 @@ function HotelSection({
         <span className="fw-semibold">{hotel.name}</span>
         <span className="text-muted small">({hotel.code})</span>
         <div className="ms-auto d-flex align-items-center gap-2 flex-wrap">
-          {unmappedCount > 0 && <span className="badge text-bg-warning">{unmappedCount} unmapped</span>}
-          {pendingSuggestionsCount > 0 && <span className="badge text-bg-info">{pendingSuggestionsCount} AI suggestions</span>}
-          {aiPendingCount > 0 && (
+          {hotel.unmapped.length > 0 && <span className="badge text-bg-warning">{hotel.unmapped.length} unmapped</span>}
+          {partialCount > 0 && <span className="badge text-bg-secondary">{partialCount} partial</span>}
+          {aiPendingMembers.length > 0 && (
             <>
-              <span className="badge text-bg-info">{aiPendingCount} AI pending</span>
+              <span className="badge text-bg-info">{aiPendingMembers.length} AI pending</span>
               <button
                 className="btn btn-sm btn-outline-success"
                 style={{ fontSize: '0.7rem', padding: '1px 8px' }}
-                disabled={busy_}
-                onClick={e => { e.stopPropagation(); acceptAll(); }}
+                disabled={busyAll}
+                onClick={e => { e.stopPropagation(); acceptAllAi(); }}
               >
-                {busy_ ? <span className="spinner-border spinner-border-sm" /> : '✓ Accept all'}
+                {busyAll ? <span className="spinner-border spinner-border-sm" /> : '✓ Accept all'}
               </button>
             </>
           )}
-          {unmappedCount === 0 && aiPendingCount === 0 && hotel.amelloRooms.length > 0 && (
+          {hotel.unmapped.length === 0 && partialCount === 0 && fullyMappedCount > 0 && (
             <span className="badge text-bg-success">fully mapped</span>
           )}
-          {hotel.amelloRooms.length === 0 && <span className="badge text-bg-secondary border">no scan data</span>}
+          {hotel.groups.length === 0 && hotel.unmapped.length === 0 && (
+            <span className="badge text-bg-secondary border">no scan data</span>
+          )}
           <span className="text-muted small">{collapsed ? '▼' : '▲'}</span>
         </div>
       </div>
@@ -298,34 +412,92 @@ function HotelSection({
             </div>
           )}
 
-          {hotel.amelloRooms.length === 0 ? (
-            <p className="text-muted small m-3">No TUI-Hotels rooms in scan data yet. Run a scan first.</p>
+          {columnSources.length === 0 ? (
+            <p className="text-muted small m-3">No scan sources configured.</p>
           ) : (
             <div className="table-responsive">
-              <table className="table table-sm table-hover mb-0 align-middle">
+              <table className="table table-sm mb-0 align-middle">
                 <thead className="table-light">
                   <tr>
-                    <th style={{ width: '45%' }}>TUI-Hotels Room</th>
-                    <th>Booking.com Room</th>
+                    <th style={{ width: 40 }}></th>
+                    {columnSources.map(src => (
+                      <th key={src}>{sourceDisplayLabel(src)}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {hotel.amelloRooms.map(amelloRoom => (
-                    <tr key={amelloRoom}>
-                      <td className="fw-semibold small align-top py-2">{amelloRoom}</td>
-                      <RoomRow
-                        amelloRoom={amelloRoom}
-                        mapping={mappingByAmello.get(amelloRoom)}
-                        suggestion={suggestions.get(amelloRoom)}
-                        bookingRooms={hotel.bookingRooms}
-                        onSave={handleSave}
-                        onDelete={handleDelete}
-                        onSuggestionUsed={(room) => onSuggestionUsed(hotel.id, room)}
-                      />
-                    </tr>
-                  ))}
+                  {hotel.groups.length === 0 && (
+                    <tr><td colSpan={columnSources.length + 1} className="text-muted small py-2">No mapped groups yet — start from an unmapped room below.</td></tr>
+                  )}
+                  {hotel.groups.map(group => {
+                    const full = group.members.length >= availableSourceCount && availableSourceCount > 0;
+                    return (
+                      <tr key={group.groupId} style={{ borderLeft: `4px solid ${full ? '#198754' : '#fd7e14'}` }}>
+                        <td className="align-top py-2">
+                          {full
+                            ? <span className="badge text-bg-success" title="Fully mapped">✓ {group.members.length}/{availableSourceCount}</span>
+                            : <span className="badge text-bg-warning" title="Partial">◐ {group.members.length}/{availableSourceCount}</span>}
+                        </td>
+                        {columnSources.map(src => (
+                          <GroupCell
+                            key={src}
+                            hotel={hotel}
+                            group={group}
+                            source={src}
+                            hasSourceData={sourcesWithData.has(src)}
+                            onChanged={onMappingChange}
+                          />
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* ── Unmapped rooms per column ── */}
+          <div className="p-3 border-top">
+            <div className="fw-semibold small mb-2 text-muted">Unmapped rooms</div>
+            <div className="row">
+              {columnSources.filter(src => sourcesWithData.has(src)).map(src => {
+                const rooms = hotel.unmapped.filter(r => r.source === src);
+                return (
+                  <div key={src} className="col-md-3 mb-2">
+                    <div className="small fw-semibold mb-1">{sourceDisplayLabel(src)} ({rooms.length})</div>
+                    {rooms.length === 0 ? (
+                      <div className="text-muted small fst-italic">All mapped</div>
+                    ) : (
+                      <ul className="list-unstyled small mb-0">
+                        {rooms.map(r => (
+                          <li key={r.id} className="d-flex align-items-center gap-2 mb-1">
+                            <span className="text-truncate" style={{ maxWidth: 160 }} title={r.roomName}>{r.roomName}</span>
+                            <button className="btn btn-sm btn-outline-warning ms-auto" style={{ fontSize: '0.7rem', padding: '1px 6px' }} onClick={() => startMapping(r)}>
+                              + start mapping
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {suggestions.length > 0 && (
+            <div className="p-3 border-top bg-light">
+              <div className="fw-semibold small mb-2">AI suggestions pending review ({suggestions.length})</div>
+              <ul className="list-unstyled small mb-0">
+                {suggestions.map((s, i) => (
+                  <li key={i} className="mb-1">
+                    <span className="fst-italic text-muted">{sourceDisplayLabel(s.sourceA)}:</span> {s.roomNameA}
+                    {' ↔ '}
+                    <span className="fst-italic text-muted">{sourceDisplayLabel(s.sourceB)}:</span> {s.roomNameB}
+                    <ConfidenceBadge confidence={s.confidence} />
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
@@ -336,13 +508,15 @@ function HotelSection({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+type MappingFilter = 'all' | 'mapped' | 'partial' | 'unmapped' | 'pending';
+
 export default function Page() {
   const [hotels, setHotels] = React.useState<HotelData[]>([]);
+  const [scanSources, setScanSources] = React.useState<ScanSource[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState('');
 
-  // Global AI state
   const [suggesting, setSuggesting] = React.useState(false);
   const [suggestProgress, setSuggestProgress] = React.useState<{ done: number; total: number } | null>(null);
   const [allSuggestions, setAllSuggestions] = React.useState<AllSuggestions>(new Map());
@@ -350,8 +524,12 @@ export default function Page() {
 
   const load = React.useCallback(async () => {
     try {
-      const data = await fetchJSON('/api/room-mappings', { cache: 'no-store' });
+      const [data, sources] = await Promise.all([
+        fetchJSON('/api/room-mappings', { cache: 'no-store' }),
+        fetchJSON('/api/scan-sources', { cache: 'no-store' }),
+      ]);
       setHotels(data.hotels ?? []);
+      setScanSources(sources ?? []);
     } catch (e: any) {
       setError(e.message || 'Failed to load');
     } finally {
@@ -361,9 +539,21 @@ export default function Page() {
 
   React.useEffect(() => { load(); }, [load]);
 
-  // Run AI for all hotels sequentially so we can show progress
+  // Column source list: enabled sources in fixed order, plus any source with
+  // historical data even if since disabled (kept visible per design decision).
+  const columnSources = React.useMemo(() => {
+    const enabled = scanSources.filter(s => s.enabled).map(s => s.name);
+    const historical = new Set<string>();
+    for (const h of hotels) {
+      for (const g of h.groups) for (const m of g.members) historical.add(m.source);
+      for (const r of h.unmapped) historical.add(r.source);
+    }
+    const all = new Set([...enabled, ...historical]);
+    return sortSources(Array.from(all));
+  }, [scanSources, hotels]);
+
   const runAiAll = async () => {
-    const eligible = hotels.filter(h => h.amelloRooms.length > 0 && h.bookingRooms.length > 0);
+    const eligible = hotels.filter(h => h.unmapped.length > 0);
     if (!eligible.length) return;
 
     setSuggesting(true);
@@ -371,7 +561,7 @@ export default function Page() {
     setAllSuggestions(new Map());
     setSuggestProgress({ done: 0, total: eligible.length });
 
-    let totalSuggestions = 0;
+    let totalApplied = 0;
 
     for (let i = 0; i < eligible.length; i++) {
       const hotel = eligible[i];
@@ -382,22 +572,59 @@ export default function Page() {
           body: JSON.stringify({ hotelId: hotel.id }),
         });
 
-        // Save ALL suggestions (both high and low confidence) to DB immediately
-        const allFromAi = [...(result.suggestions ?? []), ...(result.skipped ?? [])];
-        for (const s of allFromAi) {
+        // Only confident suggestions (>= threshold) are auto-applied as AI-pending
+        // members. Low-confidence "skipped" suggestions are surfaced for manual
+        // review only — never written to the DB automatically.
+        const confident: Suggestion[] = result.suggestions ?? [];
+        const lowConfidence: Suggestion[] = result.skipped ?? [];
+
+        if (lowConfidence.length) {
+          setAllSuggestions(prev => {
+            const next = new Map(prev);
+            next.set(hotel.id, [...(next.get(hotel.id) ?? []), ...lowConfidence]);
+            return next;
+          });
+        }
+
+        for (const s of confident) {
           try {
-            await fetchJSON('/api/room-mappings', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                hotelId: hotel.id,
-                amelloRoom: s.amello_room,
-                bookingRoom: s.booking_room,
-                source: 'ai',
-                confidence: s.confidence,
-              }),
-            });
-            totalSuggestions++;
+            // Re-fetch this hotel's current grouping state to decide attach-vs-create,
+            // since earlier suggestions applied in this loop may have changed it.
+            const fresh: HotelData = await fetchJSON(`/api/room-mappings?hotelId=${hotel.id}`, { cache: 'no-store' });
+            const groupWithA = fresh.groups.find(g => g.members.some(m => m.roomNameId === s.roomNameIdA));
+            const groupWithB = fresh.groups.find(g => g.members.some(m => m.roomNameId === s.roomNameIdB));
+
+            if (groupWithA && !groupWithA.members.some(m => m.source === s.sourceB)) {
+              await fetchJSON(`/api/room-mappings/${groupWithA.groupId}/members`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: s.sourceB, roomNameId: s.roomNameIdB, memberStatus: 'ai', confidence: s.confidence }),
+              });
+              totalApplied++;
+            } else if (groupWithB && !groupWithB.members.some(m => m.source === s.sourceA)) {
+              await fetchJSON(`/api/room-mappings/${groupWithB.groupId}/members`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: s.sourceA, roomNameId: s.roomNameIdA, memberStatus: 'ai', confidence: s.confidence }),
+              });
+              totalApplied++;
+            } else if (!groupWithA && !groupWithB) {
+              const created = await fetchJSON('/api/room-mappings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  hotelId: hotel.id, source: s.sourceA, roomNameId: s.roomNameIdA,
+                  groupSource: 'ai', memberStatus: 'ai', confidence: s.confidence,
+                }),
+              });
+              await fetchJSON(`/api/room-mappings/${created.groupId}/members`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: s.sourceB, roomNameId: s.roomNameIdB, memberStatus: 'ai', confidence: s.confidence }),
+              });
+              totalApplied++;
+            }
+            // else: both already grouped with those sources filled — skip, nothing to do.
           } catch {
             // skip individual save failures silently
           }
@@ -408,33 +635,44 @@ export default function Page() {
       setSuggestProgress({ done: i + 1, total: eligible.length });
     }
 
-    // Reload all mapping data from DB so newly saved AI mappings appear
     await load();
 
     setSuggesting(false);
     setSuggestProgress(null);
-    setAllSuggestions(new Map());
-    setAiMsg(totalSuggestions > 0
-      ? `AI saved ${totalSuggestions} mapping${totalSuggestions !== 1 ? 's' : ''} to review.`
+    setAiMsg(totalApplied > 0
+      ? `AI applied ${totalApplied} suggestion${totalApplied !== 1 ? 's' : ''} for review.`
       : 'No new suggestions found.');
   };
 
-  const handleSuggestionUsed = (hotelId: number, amelloRoom: string) => {
-    setAllSuggestions(prev => {
-      const next = new Map(prev);
-      const hotelMap = next.get(hotelId);
-      if (hotelMap) {
-        const updatedHotelMap = new Map(hotelMap);
-        updatedHotelMap.delete(amelloRoom);
-        if (updatedHotelMap.size === 0) next.delete(hotelId);
-        else next.set(hotelId, updatedHotelMap);
-      }
-      return next;
-    });
-  };
-
-  type MappingFilter = 'all' | 'mapped' | 'unmapped' | 'pending';
   const [mappingFilter, setMappingFilter] = React.useState<MappingFilter>('all');
+  const [missingSourceFilter, setMissingSourceFilter] = React.useState<string>('any');
+
+  const hotelMatchesFilter = React.useCallback((h: HotelData) => {
+    const sourcesWithData = new Set<string>();
+    for (const g of h.groups) for (const m of g.members) sourcesWithData.add(m.source);
+    for (const r of h.unmapped) sourcesWithData.add(r.source);
+    const availableCount = sourcesWithData.size;
+
+    const partialGroups = h.groups.filter(g => g.members.length < availableCount);
+    const fullGroups = h.groups.filter(g => g.members.length >= availableCount && availableCount > 0);
+    const aiPending = h.groups.some(g => g.members.some(m => m.memberStatus === 'ai'));
+
+    if (mappingFilter === 'mapped') {
+      return h.unmapped.length === 0 && partialGroups.length === 0 && fullGroups.length > 0;
+    }
+    if (mappingFilter === 'partial') {
+      if (partialGroups.length === 0) return false;
+      if (missingSourceFilter === 'any') return true;
+      return partialGroups.some(g => !g.members.some(m => m.source === missingSourceFilter));
+    }
+    if (mappingFilter === 'unmapped') {
+      return h.unmapped.length > 0;
+    }
+    if (mappingFilter === 'pending') {
+      return aiPending;
+    }
+    return true;
+  }, [mappingFilter, missingSourceFilter]);
 
   const filtered = React.useMemo(() => {
     let list = hotels;
@@ -442,32 +680,15 @@ export default function Page() {
       const term = search.toLowerCase();
       list = list.filter(h => h.name.toLowerCase().includes(term) || h.code.toLowerCase().includes(term));
     }
-    if (mappingFilter === 'mapped') {
-      list = list.filter(h => h.amelloRooms.length > 0 && h.mappings.filter(m => m.source === 'manual').length === h.amelloRooms.length);
-    } else if (mappingFilter === 'unmapped') {
-      const mapped = (h: HotelData) => new Set(h.mappings.map(m => m.amello_room));
-      list = list.filter(h => h.amelloRooms.some(r => !mapped(h).has(r) && !h.mappings.find(m => m.amello_room === r)));
-    } else if (mappingFilter === 'pending') {
-      list = list.filter(h => h.mappings.some(m => m.source === 'ai'));
-    }
+    list = list.filter(hotelMatchesFilter);
     return list;
-  }, [hotels, search, mappingFilter]);
+  }, [hotels, search, hotelMatchesFilter]);
 
-  const totalUnmapped = React.useMemo(() =>
-    hotels.reduce((acc, h) => {
-      const mapped = new Set(h.mappings.map(m => m.amello_room));
-      return acc + h.amelloRooms.filter(r => !mapped.has(r)).length;
-    }, 0), [hotels]
-  );
-
-  const totalPendingSuggestions = React.useMemo(() =>
-    Array.from(allSuggestions.values()).reduce((acc, m) => acc + m.size, 0),
-    [allSuggestions]
-  );
+  const totalUnmapped = React.useMemo(() => hotels.reduce((acc, h) => acc + h.unmapped.length, 0), [hotels]);
 
   return (
     <main>
-      <div style={{ maxWidth: '90%', margin: '0 auto' }}>
+      <div style={{ maxWidth: '95%', margin: '0 auto' }}>
 
         {/* ── Global header ── */}
         <div className="d-flex align-items-center gap-3 mb-3 flex-wrap">
@@ -484,25 +705,14 @@ export default function Page() {
           <div className="card-body d-flex align-items-center gap-3 flex-wrap py-2">
             <div>
               <span className="fw-semibold">AI Auto-Mapping</span>
-              <span className="text-muted small ms-2">Suggests Booking.com matches for all unmapped TUI-Hotels rooms across all hotels</span>
+              <span className="text-muted small ms-2">Suggests matches between unmapped rooms across all source pairs, for all hotels</span>
             </div>
             <div className="ms-auto d-flex align-items-center gap-2">
               {suggestProgress && (
-                <span className="text-muted small">
-                  {suggestProgress.done} / {suggestProgress.total} hotels…
-                </span>
+                <span className="text-muted small">{suggestProgress.done} / {suggestProgress.total} hotels…</span>
               )}
-              {totalPendingSuggestions > 0 && !suggesting && (
-                <span className="badge text-bg-info">{totalPendingSuggestions} suggestions pending</span>
-              )}
-              {aiMsg && !suggesting && (
-                <span className="text-muted small fst-italic">{aiMsg}</span>
-              )}
-              <button
-                className="btn btn-dark"
-                onClick={runAiAll}
-                disabled={suggesting || loading}
-              >
+              {aiMsg && !suggesting && <span className="text-muted small fst-italic">{aiMsg}</span>}
+              <button className="btn btn-dark" onClick={runAiAll} disabled={suggesting || loading}>
                 {suggesting
                   ? <><span className="spinner-border spinner-border-sm me-1"></span>Running AI…</>
                   : '✨ Run AI for All Hotels'}
@@ -511,10 +721,7 @@ export default function Page() {
           </div>
           {suggesting && suggestProgress && (
             <div className="progress" style={{ height: 3, borderRadius: 0 }}>
-              <div
-                className="progress-bar"
-                style={{ width: `${(suggestProgress.done / suggestProgress.total) * 100}%`, transition: 'width 0.3s' }}
-              ></div>
+              <div className="progress-bar" style={{ width: `${(suggestProgress.done / suggestProgress.total) * 100}%`, transition: 'width 0.3s' }}></div>
             </div>
           )}
         </div>
@@ -530,17 +737,29 @@ export default function Page() {
             onChange={e => setSearch(e.target.value)}
           />
           <div className="btn-group">
-            {(['all', 'mapped', 'unmapped', 'pending'] as const).map(f => (
+            {(['all', 'mapped', 'partial', 'unmapped', 'pending'] as const).map(f => (
               <button
                 key={f}
                 type="button"
                 className={`btn btn-sm ${mappingFilter === f ? 'btn-secondary' : 'btn-outline-secondary'}`}
                 onClick={() => setMappingFilter(f)}
               >
-                {f === 'all' ? 'All' : f === 'mapped' ? 'Mapped' : f === 'unmapped' ? 'Unmapped' : 'Pending Approval'}
+                {f === 'all' ? 'All' : f === 'mapped' ? 'Fully mapped' : f === 'partial' ? 'Partial' : f === 'unmapped' ? 'Unmapped' : 'AI pending'}
               </button>
             ))}
           </div>
+          <select
+            className="form-select form-select-sm"
+            style={{ maxWidth: 220 }}
+            value={missingSourceFilter}
+            disabled={mappingFilter !== 'partial'}
+            onChange={e => setMissingSourceFilter(e.target.value)}
+          >
+            <option value="any">Missing source: any</option>
+            {columnSources.map(src => (
+              <option key={src} value={src}>Missing source: {sourceDisplayLabel(src)}</option>
+            ))}
+          </select>
         </div>
 
         {loading && (
@@ -554,9 +773,9 @@ export default function Page() {
           <HotelSection
             key={hotel.id}
             hotel={hotel}
-            suggestions={allSuggestions.get(hotel.id) ?? new Map()}
+            columnSources={columnSources}
+            suggestions={allSuggestions.get(hotel.id) ?? []}
             onMappingChange={load}
-            onSuggestionUsed={handleSuggestionUsed}
           />
         ))}
 
