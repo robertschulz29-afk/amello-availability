@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Header } from './components/Header';
 
-const NAV = [
+type NavLink = { href: string; icon: string; label: string; adminOnly?: boolean };
+
+const NAV: { section: string; links: NavLink[] }[] = [
   {
     section: 'Reports',
     links: [
@@ -23,6 +25,7 @@ const NAV = [
       { href: '/room-mappings',   icon: 'fa-bed',     label: 'Room Mappings' },
       { href: '/hotels',          icon: 'fa-building', label: 'Hotels' },
       { href: '/settings',        icon: 'fa-gear',     label: 'Settings' },
+      { href: '/users',           icon: 'fa-users',    label: 'User Management', adminOnly: true },
     ],
   },
 ];
@@ -31,6 +34,14 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => setRole(data?.role ?? null))
+      .catch(() => setRole(null));
+  }, []);
 
   // Close sidebar on route change (mobile nav)
   useEffect(() => { setSidebarOpen(false); }, [pathname]);
@@ -67,17 +78,19 @@ export default function LayoutContent({ children }: { children: ReactNode }) {
         {NAV.map(group => (
           <div key={group.section}>
             <div className="sidebar-section-label">{group.section}</div>
-            {group.links.map(link => (
-              <Link
-                key={link.href}
-                href={link.href}
-                prefetch={false}
-                className={`sidebar-link${pathname === link.href ? ' active' : ''}`}
-              >
-                <i className={`fas ${link.icon}`} />
-                {link.label}
-              </Link>
-            ))}
+            {group.links
+              .filter(link => !link.adminOnly || role === 'admin')
+              .map(link => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  prefetch={false}
+                  className={`sidebar-link${pathname === link.href ? ' active' : ''}`}
+                >
+                  <i className={`fas ${link.icon}`} />
+                  {link.label}
+                </Link>
+              ))}
           </div>
         ))}
       </aside>

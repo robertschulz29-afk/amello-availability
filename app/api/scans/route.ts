@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sql, query } from '@/lib/db';
 import { DEFAULT_BELLO_MANDATOR, SCAN_BATCH_SIZE } from '@/lib/constants';
 import { ymdToUTC, toYMDUTC, getBaseUrl } from '@/lib/scrapers/process-helpers';
+import { verifySessionToken, COOKIE_NAME } from '@/lib/auth-edge';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,12 @@ export async function GET() {
 /* POST: create a scan and one source job per enabled source */
 export async function POST(req: NextRequest) {
   try {
+    const sessionToken = req.cookies.get(COOKIE_NAME)?.value;
+    const session = sessionToken ? await verifySessionToken(sessionToken) : null;
+    if (session?.role === 'viewer') {
+      return NextResponse.json({ error: 'Viewers cannot start scans' }, { status: 403 });
+    }
+
     const url = new URL(req.url);
     const isCron = url.searchParams.get('cron') === '1' || url.searchParams.has('key');
     const belloMandator = req.headers.get('Bello-Mandator') || DEFAULT_BELLO_MANDATOR;

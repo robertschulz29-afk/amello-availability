@@ -26,8 +26,8 @@ export function verifyPassword(password: string, stored: string): boolean {
 }
 
 // Creates a token compatible with the Edge verifier in auth-edge.ts
-export async function createSessionToken(username: string): Promise<string> {
-  const payload = btoa(JSON.stringify({ username, exp: Date.now() + MAX_AGE * 1000 }))
+export async function createSessionToken(username: string, role: string): Promise<string> {
+  const payload = btoa(JSON.stringify({ username, role, exp: Date.now() + MAX_AGE * 1000 }))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const key = await globalThis.crypto.subtle.importKey(
     'raw',

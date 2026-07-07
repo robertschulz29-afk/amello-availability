@@ -8,6 +8,7 @@ import { verifySessionToken, COOKIE_NAME } from '@/lib/auth-edge';
 const PUBLIC_PATHS = [
   '/login',
   '/api/auth/login',
+  '/api/auth/register',
 ];
 
 // Cron-triggered paths are protected by CRON_SECRET bearer token (checked in route handlers).

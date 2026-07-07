@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql, query } from '@/lib/db';
 import { normalizeYMD } from '@/lib/scrapers/process-helpers';
+import { verifySessionToken, COOKIE_NAME } from '@/lib/auth-edge';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -111,7 +112,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const sessionToken = req.cookies.get(COOKIE_NAME)?.value;
+  const session = sessionToken ? await verifySessionToken(sessionToken) : null;
+  if (session?.role === 'viewer') {
+    return NextResponse.json({ error: 'Viewers cannot delete scans' }, { status: 403 });
+  }
+
   const scanId = Number(params.id);
   if (!Number.isFinite(scanId) || scanId <= 0) {
     return NextResponse.json({ error: 'invalid scan id' }, { status: 400 });

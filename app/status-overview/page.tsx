@@ -80,6 +80,14 @@ export default function Page() {
   const [days, setDays] = React.useState(86);
   const [stayNights, setStayNights] = React.useState(7);
   const [adultCount, setAdultCount] = React.useState(2);
+  const [role, setRole] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => setRole(data?.role ?? null))
+      .catch(() => setRole(null));
+  }, []);
 
   const loadScans = React.useCallback(async () => {
     try {
@@ -227,7 +235,12 @@ export default function Page() {
         {/* ── Create new scan ── */}
         <div className="card mb-4">
           <div className="card-header fw-semibold">Create New Scan</div>
-          <div className="card-body d-flex flex-wrap align-items-start gap-3">
+          {role === 'viewer' && (
+            <div className="alert alert-secondary py-2 small mb-0 rounded-0">
+              Viewers can&apos;t start new scans. Contact an admin or analyst if you need one run.
+            </div>
+          )}
+          <fieldset disabled={role === 'viewer'} className="card-body d-flex flex-wrap align-items-start gap-3 border-0 m-0 p-3">
             <div style={{ width: 200 }}>
               <ScanHotelSelector
                 hotels={hotels}
@@ -288,7 +301,7 @@ export default function Page() {
                 <span className="ms-3 text-warning small">Enable at least one source to start a scan.</span>
               )}
             </div>
-          </div>
+          </fieldset>
         </div>
 
         {/* ── Scan list ── */}

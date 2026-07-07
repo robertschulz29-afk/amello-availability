@@ -11,14 +11,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
   }
 
-  const { rows } = await query('SELECT password_hash FROM users WHERE username = $1', [username]);
+  const { rows } = await query('SELECT password_hash, role, status FROM users WHERE username = $1', [username]);
   const user = rows[0];
 
   if (!user || !verifyPassword(password, user.password_hash)) {
     return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 });
   }
 
-  const token = await createSessionToken(username);
+  if (user.status === 'registered') {
+    return NextResponse.json({ error: 'Your account is pending admin activation' }, { status: 403 });
+  }
+  if (user.status === 'inactive') {
+    return NextResponse.json({ error: 'This account has been deactivated. Contact an administrator.' }, { status: 403 });
+  }
+
+  const token = await createSessionToken(username, user.role);
   const res = NextResponse.json({ ok: true });
   res.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,

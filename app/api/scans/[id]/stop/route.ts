@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
+import { verifySessionToken, COOKIE_NAME } from '@/lib/auth-edge';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,8 +14,14 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const sessionToken = req.cookies.get(COOKIE_NAME)?.value;
+    const session = sessionToken ? await verifySessionToken(sessionToken) : null;
+    if (session?.role === 'viewer') {
+      return NextResponse.json({ error: 'Viewers cannot stop scans' }, { status: 403 });
+    }
+
     const scanId = Number(params.id);
-    
+
     if (!Number.isFinite(scanId) || scanId <= 0) {
       return NextResponse.json({ error: 'Invalid scan ID' }, { status: 400 });
     }

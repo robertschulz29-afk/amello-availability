@@ -21,7 +21,7 @@ async function getKey(): Promise<CryptoKey> {
   );
 }
 
-export async function verifySessionToken(token: string): Promise<{ username: string } | null> {
+export async function verifySessionToken(token: string): Promise<{ username: string; role: string } | null> {
   try {
     const dot = token.lastIndexOf('.');
     if (dot === -1) return null;
@@ -35,7 +35,7 @@ export async function verifySessionToken(token: string): Promise<{ username: str
 
     const data = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
     if (Date.now() > data.exp) return null;
-    return { username: data.username };
+    return { username: data.username, role: data.role };
   } catch {
     return null;
   }
