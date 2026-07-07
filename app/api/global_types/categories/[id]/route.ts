@@ -4,9 +4,10 @@ import { query } from '@/lib/db';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = parseInt(params.id, 10);
+    const { id: idParam } = await params;
+    const id = parseInt(idParam, 10);
     const { name } = await req.json();
     if (!name?.trim()) return NextResponse.json({ error: 'name is required' }, { status: 400 });
     const { rows } = await query(
@@ -20,9 +21,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = parseInt(params.id, 10);
+    const { id: idParam } = await params;
+    const id = parseInt(idParam, 10);
     // Unassign collectors from this category before deleting
     await query(`UPDATE global_type_collector SET type_category_id = NULL WHERE type_category_id = $1`, [id]);
     await query(`DELETE FROM global_types_categories WHERE id = $1`, [id]);

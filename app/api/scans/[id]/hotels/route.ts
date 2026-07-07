@@ -4,8 +4,9 @@ import { query } from '@/lib/db';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const scanId = Number(params.id);
+export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: idParam } = await params;
+  const scanId = Number(idParam);
   if (!Number.isFinite(scanId) || scanId <= 0) {
     return NextResponse.json({ error: 'invalid scan id' }, { status: 400 });
   }

@@ -66,8 +66,9 @@ function extractPrice(responseJson: any): PriceInfo {
   return { roomName: best.roomName, rateName: best.rateName, basePrice: best.basePrice, actualPrice: best.actualPrice, currency: best.currency };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const scanId = Number(params.id);
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: idParam } = await params;
+  const scanId = Number(idParam);
   if (!Number.isFinite(scanId) || scanId <= 0) {
     return new NextResponse('invalid scan id', { status: 400 });
   }

@@ -8,9 +8,10 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const scanId = Number(params.id);
+  const { id: idParam } = await params;
+  const scanId = Number(idParam);
   if (!Number.isFinite(scanId) || scanId <= 0) {
     return NextResponse.json({ error: 'invalid scan id' }, { status: 400 });
   }
@@ -92,9 +93,10 @@ export async function POST(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const scanId = Number(params.id);
+  const { id: idParam } = await params;
+  const scanId = Number(idParam);
   if (!Number.isFinite(scanId) || scanId <= 0) {
     return NextResponse.json({ error: 'invalid scan id' }, { status: 400 });
   }

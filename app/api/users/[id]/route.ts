@@ -7,14 +7,15 @@ export const runtime = 'nodejs';
 const VALID_ROLES = ['admin', 'analyst', 'viewer'];
 const VALID_STATUSES = ['registered', 'active', 'inactive'];
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const token = req.cookies.get(COOKIE_NAME)?.value;
   const session = token ? await verifySessionToken(token) : null;
   if (!session || session.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const targetId = Number(params.id);
+  const { id: idParam } = await params;
+  const targetId = Number(idParam);
   if (!Number.isInteger(targetId) || targetId <= 0) {
     return NextResponse.json({ error: 'Invalid user id' }, { status: 400 });
   }

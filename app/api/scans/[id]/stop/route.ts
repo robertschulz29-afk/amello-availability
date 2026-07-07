@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const sessionToken = req.cookies.get(COOKIE_NAME)?.value;
@@ -20,7 +20,8 @@ export async function POST(
       return NextResponse.json({ error: 'Viewers cannot stop scans' }, { status: 403 });
     }
 
-    const scanId = Number(params.id);
+    const { id: idParam } = await params;
+    const scanId = Number(idParam);
 
     if (!Number.isFinite(scanId) || scanId <= 0) {
       return NextResponse.json({ error: 'Invalid scan ID' }, { status: 400 });
